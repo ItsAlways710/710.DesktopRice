@@ -2,3 +2,9 @@
 # config/komorebi/base.json + vendor/asc + games.toml + config/komorebi/rules.toml.
 # Never commit this; it's regenerated after every clone/pull.
 /config/komorebi/komorebi.json
+
+# YASB runtime-generated files — never commit, regenerated on every launch.
+# yasb_colors.css is auto-written by YASB's SystemColorsService (system_colors: true)
+# from live Windows accent colors; yasb.log is just the app's own log output.
+/config/yasb/yasb_colors.css
+/config/yasb/yasb.log
