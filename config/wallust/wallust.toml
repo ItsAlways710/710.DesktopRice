@@ -1,0 +1,29 @@
+# wallust config — drives komorebi border colors, YASB colors, Windows Terminal
+# scheme, and the Windows accent color, all from whichever wallpaper is active.
+#
+# Invoked via YASB's Wallpapers widget `run_after` (see config/yasb/config.yaml):
+#   wallust run {image} --config-dir config\wallust
+#   pwsh -NoProfile -File tools\apply-wallust-outputs.ps1
+#
+# Slot mapping is deliberately explicit and easy to re-point if a given wallpaper
+# produces a bad combination (see templates/*.tpl) — one-off bad matches aren't a
+# big deal, just change the wallpaper or nudge which color# a variable pulls from.
+
+palette = "kmeans"
+
+[templates]
+yasb-colors = { template = 'yasb-colors.css.tpl', target = 'C:\710.DesktopRice\config\yasb\wallust_colors.css' }
+raw-colors = { template = 'colors.json.tpl', target = 'C:\710.DesktopRice\config\wallust\generated\colors.json' }
+
+# [hooks] is NOT used -- confirmed broken on this pinned 4.1.0-alpha build on
+# Windows: it tries to execute the hook's own KEY NAME as a literal program
+# ("apply: Couldn't run 'apply': program not found"), reproduced even with a
+# trivial `apply = 'notepad.exe'` value, so this isn't specific to our command
+# string. Instead, tools/apply-wallust-outputs.ps1 is chained directly as a
+# second entry in YASB's Wallpapers widget `run_after` list (config/yasb/
+# config.yaml), right after the `wallust run` call -- a mechanism already
+# proven to work. Worth retrying [hooks] here if a future wallust release fixes
+# this (bump the pin, see tools/install-wallust.ps1).
+#
+# [hooks]
+# apply = 'pwsh -NoProfile -File C:\710.DesktopRice\tools\apply-wallust-outputs.ps1'

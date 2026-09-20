@@ -274,6 +274,14 @@ widgets:
         - keys: "ctrl+alt+w"
           action: "toggle_gallery"
           screen: "primary" # active/cursor/primary
+      # Regenerates the whole palette (komorebi borders, YASB colors, Windows
+      # Terminal scheme, Windows accent) from whichever wallpaper was just picked.
+      # wallust's own [hooks] is broken on this alpha build (see config/wallust/
+      # wallust.toml), so the apply script is chained here directly instead of
+      # relying on wallust to call it.
+      run_after:
+        - "C:\\710.DesktopRice\\tools\\bin\\wallust\\wallust.exe run {image} --config-dir C:\\710.DesktopRice\\config\\wallust"
+        - "pwsh -NoProfile -File C:\\710.DesktopRice\\tools\\apply-wallust-outputs.ps1"
   cpu:
     type: "yasb.cpu.CpuWidget"
     options:

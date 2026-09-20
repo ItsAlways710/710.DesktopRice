@@ -1,4 +1,5 @@
 @import "yasb_colors.css";
+@import "wallust_colors.css";
 
 /* Root Variables */
 :root {
@@ -150,17 +151,22 @@
     --redFlash: #18181b;
     --subtext: #4B565C; */
 
-    /* MonochromeAccentDark */
-    --background: #18181b;
-    --background2: #3f3f42;
-    --accent: var(--yasb-accent-light2);
-    --text: #e5e7eb;
-    --accentText: #18181b;
-    --hover: var(--yasb-accent);
-    --mutedBG: #3f3f42;
-    --border: #3f3f42;
-    --redFlash: #e5e7eb;
-    --subtext: #E5E7EB;
+    /* MonochromeAccentDark -> now wallust-driven (see config/wallust/).
+       redFlash is the one exception, kept as a real fixed alert red rather than
+       wallpaper-tinted -- every OTHER scheme in this file uses a genuine red here
+       (Catppuccin/Gruvbox/Nord/etc.); only the old Monochrome presets matched it
+       to text/background on purpose, which was specific to being colorless by
+       design. That reasoning doesn't apply once real colors are driving things. */
+    --background: var(--wallust-background);
+    --background2: var(--wallust-background2);
+    --accent: var(--wallust-accent);
+    --text: var(--wallust-text);
+    --accentText: var(--wallust-accentText);
+    --hover: var(--wallust-hover);
+    --mutedBG: var(--wallust-mutedBG);
+    --border: var(--wallust-border);
+    --redFlash: #e5484d;
+    --subtext: var(--wallust-subtext);
 
     /* MonochromeAccentLight*/
     /* --background: #e5e7eb;
