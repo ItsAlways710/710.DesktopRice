@@ -494,7 +494,7 @@ widgets:
       update_interval: 600
       hide_decimal: true
       units: "imperial" # °F
-      location: "SET_ME, e.g. Kansas City, MO, USA" # TODO: fill in real location before first run
+      location: "00000" # [town removed] - zip is the most unambiguous query for weatherapi.com
       callbacks:
         on_left: "toggle_card"
         on_middle: "do_nothing"
