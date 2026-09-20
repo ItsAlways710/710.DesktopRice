@@ -136,7 +136,13 @@ function Get-UserRulesLayer {
     #   exe = "SomeApp.exe"
     #   [[disable]]
     #   asc = "Some ASC App Name"     # skip a whole ASC-named app's rules entirely
-    if (-not (Test-Path $RulesPath)) { return @(), @() }
+    #
+    # Returns a single [pscustomobject] with .Entries / .Disabled, not two separate
+    # return values - PowerShell flattens arrays written to the output stream, so
+    # `return @(), @()` silently collapses to $null, $null when both are empty
+    # (exactly the case on a first run, before rules.toml exists). Wrapping them in
+    # one object sidesteps that footgun entirely.
+    if (-not (Test-Path $RulesPath)) { return [pscustomobject]@{ Entries = @(); Disabled = @() } }
     $categories = Get-AllCategories
     $currentSection = $null
     $currentEntry = $null
@@ -159,7 +165,7 @@ function Get-UserRulesLayer {
     $out = [System.Collections.Generic.List[object]]::new()
     foreach ($entry in ($sections | Where-Object { $_.__section -ne 'disable' })) {
         $section = $entry.__section
-        if (-not $categories.ContainsKey($section)) {
+        if (-not $categories.Contains($section)) {
             Write-Warning "rules.toml: unknown section [[$section]], skipping."
             continue
         }
@@ -175,7 +181,7 @@ function Get-UserRulesLayer {
             Source   = 'user:rules.toml'
         })
     }
-    return $out, $disabled
+    return [pscustomobject]@{ Entries = $out; Disabled = $disabled }
 }
 
 function Merge-Rules {
@@ -184,7 +190,12 @@ function Merge-Rules {
     # priority information the override logic depends on.
     param([Parameter(Mandatory)]$Layers)
 
-    $placementCategories = @($PlacementCategories.Values)
+    # Named $placementCategoryNames, NOT $placementCategories - PowerShell variable names
+    # are case-insensitive and unqualified lookups walk the CALL STACK, not lexical scope.
+    # A local named $placementCategories would shadow the script-scoped $PlacementCategories
+    # hashtable for every function called from here too (including Get-AllCategories below),
+    # silently breaking it. Learned this the hard way - see git history if it recurs.
+    $placementCategoryNames = @($PlacementCategories.Values)
     $merged = [ordered]@{}
     foreach ($cat in (Get-AllCategories).Values) { $merged[$cat] = [System.Collections.Generic.List[object]]::new() }
 
@@ -193,12 +204,16 @@ function Merge-Rules {
 
     for ($level = 0; $level -lt $Layers.Count; $level++) {
         foreach ($entry in $Layers[$level]) {
-            if ($entry.Category -in $placementCategories) {
+            if ($entry.Category -in $placementCategoryNames) {
                 $target = Get-RuleTargetKey -Rule $entry.Rule
                 if (-not $placementWinner.ContainsKey($target) -or $placementWinner[$target].Level -lt $level) {
                     $placementWinner[$target] = @{ Level = $level; Entries = [System.Collections.Generic.List[object]]::new() }
                 }
                 if ($placementWinner[$target].Level -eq $level) { $placementWinner[$target].Entries.Add($entry) }
+                continue
+            }
+            if (-not $merged.Contains($entry.Category)) {
+                Write-Warning "Unrecognized category '$($entry.Category)' from $($entry.Source) - skipping."
                 continue
             }
             $key = "$($entry.Category)|" + (Get-RuleExactKey -Rule $entry.Rule)
@@ -209,6 +224,10 @@ function Merge-Rules {
     }
     foreach ($target in ($placementWinner.Keys | Sort-Object)) {
         foreach ($entry in $placementWinner[$target].Entries) {
+            if (-not $merged.Contains($entry.Category)) {
+                Write-Warning "Unrecognized category '$($entry.Category)' from $($entry.Source) - skipping."
+                continue
+            }
             $key = "$($entry.Category)|" + (Get-RuleExactKey -Rule $entry.Rule)
             if ($seen.ContainsKey($key)) { continue }
             $seen[$key] = $true
@@ -220,30 +239,40 @@ function Merge-Rules {
 
 # --- Compile -----------------------------------------------------------------------
 
-if (-not (Test-Path $BasePath)) { throw "Missing $BasePath - nothing to compile onto." }
-$base = Get-Content $BasePath -Raw -Encoding UTF8 | ConvertFrom-Json
+try {
+    if (-not (Test-Path $BasePath)) { throw "Missing $BasePath - nothing to compile onto." }
+    $base = Get-Content $BasePath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-$userLayer, $disabledAsc = Get-UserRulesLayer
-$layers = @(
-    ,(Get-AscLayer -Disabled $disabledAsc)   # level 0 - lowest priority
-    ,(Get-GamesLayer)                        # level 1
-    ,$userLayer                              # level 2 - highest priority
-)
-$merged = Merge-Rules -Layers $layers
+    $userRules   = Get-UserRulesLayer
+    $userLayer   = $userRules.Entries
+    $disabledAsc = $userRules.Disabled
+    $layers = @(
+        ,(Get-AscLayer -Disabled $disabledAsc)   # level 0 - lowest priority
+        ,(Get-GamesLayer)                        # level 1
+        ,$userLayer                              # level 2 - highest priority
+    )
+    $merged = Merge-Rules -Layers $layers
 
-foreach ($cat in $merged.Keys) {
-    $rules = @($merged[$cat])
-    if ($rules.Count -eq 0) {
-        if ($base.PSObject.Properties[$cat]) { $base.PSObject.Properties.Remove($cat) }
-        continue
+    foreach ($cat in $merged.Keys) {
+        $rules = @($merged[$cat])
+        if ($rules.Count -eq 0) {
+            if ($base.PSObject.Properties[$cat]) { $base.PSObject.Properties.Remove($cat) }
+            continue
+        }
+        if ($base.PSObject.Properties[$cat]) { $base.$cat = $rules }
+        else { $base | Add-Member -NotePropertyName $cat -NotePropertyValue $rules }
     }
-    if ($base.PSObject.Properties[$cat]) { $base.$cat = $rules }
-    else { $base | Add-Member -NotePropertyName $cat -NotePropertyValue $rules }
-}
 
-$base | ConvertTo-Json -Depth 50 | Set-Content -Path $OutPath -Encoding UTF8
-Write-Host "Compiled $OutPath"
-foreach ($cat in (Get-AllCategories).Values) {
-    $count = @($merged[$cat]).Count
-    if ($count -gt 0) { Write-Host ("  {0,-38} {1}" -f $cat, $count) }
+    $base | ConvertTo-Json -Depth 50 | Set-Content -Path $OutPath -Encoding UTF8
+    Write-Host "Compiled $OutPath"
+    foreach ($cat in (Get-AllCategories).Values) {
+        $count = @($merged[$cat]).Count
+        if ($count -gt 0) { Write-Host ("  {0,-38} {1}" -f $cat, $count) }
+    }
+}
+catch {
+    Write-Host "FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host $_.InvocationInfo.PositionMessage -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
+    throw
 }
