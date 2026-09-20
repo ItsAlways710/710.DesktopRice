@@ -256,7 +256,7 @@ widgets:
       label: "<span>\udb83\udc8d</span>"
       change_automatically: false
     # Example path to folder with images. Can be a single string or a list of strings.
-      image_path: "D:\\OneDrive\\Pictures\\Wallpapers\\Themes\\Monochrome" 
+      image_path: "C:\\710.DesktopRice\\assets\\wallpapers"
       engine:
         enabled: true
         animation: "slide_top" # circle/slide_top/diamond/split
@@ -428,7 +428,7 @@ widgets:
             play: "\uf5b0"
             pause: "\ue62e"
         power:
-          show: true
+          show: false # crashes on this machine - see plan doc YASB section
           power_plan_title: "Power Plan"
           power_mode_title: "Power Mode"
           button_menu_icon: "\ue76c"
