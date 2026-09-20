@@ -8,3 +8,8 @@
 # from live Windows accent colors; yasb.log is just the app's own log output.
 /config/yasb/yasb_colors.css
 /config/yasb/yasb.log
+
+# wallust binary — downloaded by tools/install-wallust.ps1 from its pinned
+# Codeberg release (no winget/scoop package exists for it). Never commit;
+# install.ps1 can always re-fetch the identical pinned bytes byte-for-byte.
+/tools/bin/
