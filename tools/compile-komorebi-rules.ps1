@@ -1,0 +1,249 @@
+#Requires -Version 7.0
+<#
+.SYNOPSIS
+  Compiles config/komorebi/base.json + vendor/asc/applications.json + games.toml +
+  config/komorebi/rules.toml into the real config/komorebi/komorebi.json that komorebi
+  reads. Run this after editing any of those four inputs, then reload komorebi.
+
+  This file is NOT tracked in git (see .gitignore) - it's always regenerated from its
+  sources, so it can never drift from them and never needs hand-editing.
+
+.NOTES
+  Two kinds of rule category, handled differently:
+    - "placement" (ignore_rules / manage_rules / floating_applications): a window can
+      only go one place, so when two layers disagree about the SAME window, the
+      higher-priority layer wins outright and the loser's entry is dropped, not just
+      out-voted.
+    - "attribute" (transparency_ignore_rules / tray_and_multi_window_applications /
+      object_name_change_applications / slow_application_identifiers /
+      layered_applications): these describe behavior, never conflict, so every layer's
+      entries are simply unioned.
+
+  Priority, low to high: vendor/asc -> games.toml -> config/komorebi/rules.toml.
+  "Same window" identity = kind+id (ignoring matching_strategy); a compound (array)
+  rule's identity is the sorted combination of all its conditions.
+#>
+
+$ErrorActionPreference = 'Stop'
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)  # tools/.. = repo root
+
+$BasePath   = Join-Path $RepoRoot 'config\komorebi\base.json'
+$AscPath    = Join-Path $RepoRoot 'vendor\asc\applications.json'
+$GamesPath  = Join-Path $RepoRoot 'games.toml'
+$RulesPath  = Join-Path $RepoRoot 'config\komorebi\rules.toml'
+$OutPath    = Join-Path $RepoRoot 'config\komorebi\komorebi.json'
+
+# Category key: what a source file calls it -> the real komorebi.json array name.
+$PlacementCategories = [ordered]@{
+    ignore   = 'ignore_rules'
+    manage   = 'manage_rules'
+    floating = 'floating_applications'
+}
+$AttributeCategories = [ordered]@{
+    layered               = 'layered_applications'
+    object_name_change    = 'object_name_change_applications'
+    tray_and_multi_window = 'tray_and_multi_window_applications'
+    slow_application      = 'slow_application_identifiers'
+    transparency_ignore   = 'transparency_ignore_rules'
+}
+function Get-AllCategories {
+    $all = [ordered]@{}
+    foreach ($m in @($PlacementCategories, $AttributeCategories)) {
+        foreach ($k in $m.Keys) { $all[$k] = $m[$k] }
+    }
+    $all
+}
+
+function ConvertTo-RuleObject {
+    # Normalizes one rule (a single condition, or an array of conditions = AND) to a
+    # plain object with kind/id/matching_strategy (defaulting matching_strategy to
+    # "Equals", same default komorebi itself uses).
+    param([Parameter(Mandatory)]$Rule)
+    $one = {
+        param($r)
+        $id = if ($r -is [hashtable]) { $r['id'] } else { $r.id }
+        $kind = if ($r -is [hashtable]) { $r['kind'] } else { $r.kind }
+        $strategy = if ($r -is [hashtable]) { $r['matching_strategy'] } else { $r.matching_strategy }
+        [pscustomobject]@{ kind = $kind; id = $id; matching_strategy = ($strategy ? $strategy : 'Equals') }
+    }
+    if ($Rule -is [System.Collections.IEnumerable] -and $Rule -isnot [string] -and $Rule -isnot [hashtable]) {
+        @(foreach ($r in $Rule) { & $one $r })
+    } else {
+        & $one $Rule
+    }
+}
+
+function Get-RuleTargetKey {
+    # Identity used to decide "is this the same window another layer opined about",
+    # ignoring matching_strategy - Equals vs Legacy on the same exe is still the same
+    # window as far as who-wins is concerned.
+    param([Parameter(Mandatory)]$Rule)
+    $parts = foreach ($r in @($Rule)) { "$($r.kind)=$($r.id)".ToLowerInvariant() }
+    ($parts | Sort-Object) -join '&'
+}
+
+function Get-RuleExactKey {
+    # Identity used only for de-duplicating within the same category (includes
+    # matching_strategy, since that's a real difference for exact-duplicate purposes).
+    param([Parameter(Mandatory)]$Rule)
+    $parts = foreach ($r in @($Rule)) { "$($r.kind)=$($r.id)/$($r.matching_strategy)".ToLowerInvariant() }
+    ($parts | Sort-Object) -join '&'
+}
+
+function Get-AscLayer {
+    param([string[]]$Disabled = @())
+    if (-not (Test-Path $AscPath)) { return @() }
+    $asc = Get-Content $AscPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+    $categories = Get-AllCategories
+    $skip = @($Disabled | Where-Object { $_ } | ForEach-Object { $_.ToLowerInvariant() })
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($app in ($asc.Keys | Sort-Object)) {
+        if ($app.StartsWith('$')) { continue }
+        if ($app.ToLowerInvariant() -in $skip) { continue }
+        foreach ($key in $categories.Keys) {
+            if (-not $asc[$app].ContainsKey($key)) { continue }
+            foreach ($rule in $asc[$app][$key]) {
+                $out.Add(@{ Category = $categories[$key]; Rule = ConvertTo-RuleObject -Rule $rule; Source = "asc:$app" })
+            }
+        }
+    }
+    $out
+}
+
+function Get-GamesLayer {
+    # games.toml is a flat "exe = ""Name.exe""" list under [[launchers]] / [[games]] -
+    # every entry becomes an ignore_rules entry. Parsed line-by-line on purpose (not a
+    # general TOML parser): this file's shape is simple and fixed, and a tiny parser
+    # scoped to exactly what we use is easier to read and debug than a dependency.
+    if (-not (Test-Path $GamesPath)) { return @() }
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($line in Get-Content $GamesPath -Encoding UTF8) {
+        if ($line -match '^\s*exe\s*=\s*"([^"]+)"') {
+            $out.Add(@{
+                Category = 'ignore_rules'
+                Rule     = [pscustomobject]@{ kind = 'Exe'; id = $Matches[1]; matching_strategy = 'Equals' }
+                Source   = 'games.toml'
+            })
+        }
+    }
+    $out
+}
+
+function Get-UserRulesLayer {
+    # config/komorebi/rules.toml - your own overrides. Doesn't need to exist; an absent
+    # file just means "no overrides yet", not an error.
+    #   [[ignore]]
+    #   exe = "SomeApp.exe"
+    #   [[disable]]
+    #   asc = "Some ASC App Name"     # skip a whole ASC-named app's rules entirely
+    if (-not (Test-Path $RulesPath)) { return @(), @() }
+    $categories = Get-AllCategories
+    $currentSection = $null
+    $currentEntry = $null
+    $sections = [System.Collections.Generic.List[object]]::new()
+    foreach ($rawLine in Get-Content $RulesPath -Encoding UTF8) {
+        $line = $rawLine.Trim()
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        if ($line -match '^\[\[(\w+)\]\]$') {
+            if ($currentEntry) { $sections.Add($currentEntry) }
+            $currentEntry = [ordered]@{ __section = $Matches[1] }
+            continue
+        }
+        if ($line -match '^(\w+)\s*=\s*"([^"]*)"$' -and $currentEntry) {
+            $currentEntry[$Matches[1]] = $Matches[2]
+        }
+    }
+    if ($currentEntry) { $sections.Add($currentEntry) }
+
+    $disabled = @($sections | Where-Object { $_.__section -eq 'disable' } | ForEach-Object { $_['asc'] })
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($entry in ($sections | Where-Object { $_.__section -ne 'disable' })) {
+        $section = $entry.__section
+        if (-not $categories.ContainsKey($section)) {
+            Write-Warning "rules.toml: unknown section [[$section]], skipping."
+            continue
+        }
+        $kind = $null; $id = $null
+        if ($entry.Contains('exe'))   { $kind = 'Exe';   $id = $entry['exe'] }
+        elseif ($entry.Contains('class')) { $kind = 'Class'; $id = $entry['class'] }
+        elseif ($entry.Contains('title')) { $kind = 'Title'; $id = $entry['title'] }
+        else { Write-Warning "rules.toml: [[$section]] entry needs exe/class/title, skipping."; continue }
+        $strategy = if ($entry.Contains('matching_strategy')) { $entry['matching_strategy'] } else { 'Equals' }
+        $out.Add(@{
+            Category = $categories[$section]
+            Rule     = [pscustomobject]@{ kind = $kind; id = $id; matching_strategy = $strategy }
+            Source   = 'user:rules.toml'
+        })
+    }
+    return $out, $disabled
+}
+
+function Merge-Rules {
+    # $Layers is an array of arrays, lowest priority first. Left un-typed on purpose:
+    # a typed [object[]] would flatten the layer boundaries into one list and lose the
+    # priority information the override logic depends on.
+    param([Parameter(Mandatory)]$Layers)
+
+    $placementCategories = @($PlacementCategories.Values)
+    $merged = [ordered]@{}
+    foreach ($cat in (Get-AllCategories).Values) { $merged[$cat] = [System.Collections.Generic.List[object]]::new() }
+
+    $placementWinner = @{}   # target key -> @{ Level; Entries }
+    $seen = @{}
+
+    for ($level = 0; $level -lt $Layers.Count; $level++) {
+        foreach ($entry in $Layers[$level]) {
+            if ($entry.Category -in $placementCategories) {
+                $target = Get-RuleTargetKey -Rule $entry.Rule
+                if (-not $placementWinner.ContainsKey($target) -or $placementWinner[$target].Level -lt $level) {
+                    $placementWinner[$target] = @{ Level = $level; Entries = [System.Collections.Generic.List[object]]::new() }
+                }
+                if ($placementWinner[$target].Level -eq $level) { $placementWinner[$target].Entries.Add($entry) }
+                continue
+            }
+            $key = "$($entry.Category)|" + (Get-RuleExactKey -Rule $entry.Rule)
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            $merged[$entry.Category].Add($entry.Rule)
+        }
+    }
+    foreach ($target in ($placementWinner.Keys | Sort-Object)) {
+        foreach ($entry in $placementWinner[$target].Entries) {
+            $key = "$($entry.Category)|" + (Get-RuleExactKey -Rule $entry.Rule)
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            $merged[$entry.Category].Add($entry.Rule)
+        }
+    }
+    $merged
+}
+
+# --- Compile -----------------------------------------------------------------------
+
+if (-not (Test-Path $BasePath)) { throw "Missing $BasePath - nothing to compile onto." }
+$base = Get-Content $BasePath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+$userLayer, $disabledAsc = Get-UserRulesLayer
+$layers = @(
+    ,(Get-AscLayer -Disabled $disabledAsc)   # level 0 - lowest priority
+    ,(Get-GamesLayer)                        # level 1
+    ,$userLayer                              # level 2 - highest priority
+)
+$merged = Merge-Rules -Layers $layers
+
+foreach ($cat in $merged.Keys) {
+    $rules = @($merged[$cat])
+    if ($rules.Count -eq 0) {
+        if ($base.PSObject.Properties[$cat]) { $base.PSObject.Properties.Remove($cat) }
+        continue
+    }
+    if ($base.PSObject.Properties[$cat]) { $base.$cat = $rules }
+    else { $base | Add-Member -NotePropertyName $cat -NotePropertyValue $rules }
+}
+
+$base | ConvertTo-Json -Depth 50 | Set-Content -Path $OutPath -Encoding UTF8
+Write-Host "Compiled $OutPath"
+foreach ($cat in (Get-AllCategories).Values) {
+    $count = @($merged[$cat]).Count
+    if ($count -gt 0) { Write-Host ("  {0,-38} {1}" -f $cat, $count) }
+}
