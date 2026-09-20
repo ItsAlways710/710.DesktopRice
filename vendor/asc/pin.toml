@@ -1,0 +1,7 @@
+# Pin record for vendor/asc/applications.json — community-maintained komorebi
+# app-specific rules (LGUG2Z/komorebi-application-specific-configuration).
+# Update deliberately (fetch upstream, diff, re-pin), never automatically.
+repo = "LGUG2Z/komorebi-application-specific-configuration"
+commit = "e647fc15970964777dedbb4ba79d5e8547d722fb"
+date = "2026-07-16"
+sha256 = "c4680fda08b7e188017ceabed65d2d7252e6a0c0a3e0933a00aa54638a3e4f50"
