@@ -10,6 +10,7 @@
   "border_style": "Rounded",
   "transparency": true,
   "transparency_alpha": 220,
+  "mouse_follows_focus": false,
   "monitors": [
     {
       "workspaces": [

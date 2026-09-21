@@ -21,3 +21,9 @@
 # wallust-generated raw color data, consumed by tools/apply-wallust-outputs.ps1.
 # Regenerated every wallust run alongside the YASB CSS above. Never commit.
 /config/wallust/generated/
+
+# Ad-hoc debug dumps from `komorebic.exe static-config-schema` / live-state
+# inspection during troubleshooting (e.g. `komorebic.exe ... | Out-File`).
+# Never commit; regenerate on demand when diagnosing a live issue.
+/_schema_dump.json
+/_state_dump.json

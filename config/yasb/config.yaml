@@ -1,12 +1,17 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/amnweb/yasb/main/schema.json
 # For more information, visit https://github.com/amnweb/yasb/wiki
-# watch_* are FALSE on purpose (ported from winarchy's own config, which documents why):
-# YASB's hot-reload re-subscribes the komorebi widget to its named pipe WITHOUT closing
-# the previous subscription. With more than one live listener, they fight each other over
-# komorebi's state/focus, which is exactly the "connects fine, never renders, CPU creeps up"
-# behavior we spent a night chasing. Reload YASB with a clean kill+restart instead of
-# relying on file-watch hot-reload or `yasbc reload`.
-watch_stylesheet: false
+# watch_config stays FALSE on purpose (confirmed from YASB's own source,
+# core/bar_manager.py: on_config_modified): a config.yaml change on disk triggers a full
+# reload_application() process restart, which is the path that produced the "connects
+# fine, never renders, CPU creeps up" komorebi-pipe-subscription bug we spent a night
+# chasing (ported this off from winarchy's own config, which documents the same issue).
+# watch_stylesheet is safe and back ON: confirmed from source (core/watcher.py /
+# on_styles_modified) that a stylesheet change -- including an imported file like
+# wallust_colors.css -- only calls bar.setStyleSheet() on the already-built bars. It
+# never touches widgets, listeners, or komorebi at all, so it can't reintroduce the
+# widget bug. This is what makes wallpaper-driven color changes show up on the YASB bar
+# live again, without needing a manual reload.
+watch_stylesheet: true
 watch_config: false
 system_colors: true
 debug: false
@@ -202,7 +207,7 @@ widgets:
     options:
       hide_if_offline: true
       label: "{layout_name}"
-      layouts: ['bsp', 'columns', 'rows', 'grid', 'vertical_stack', 'horizontal_stack', 'ultrawide_vertical_stack','right_main_vertical_stack']
+      layouts: ['bsp', 'columns', 'rows', 'grid', 'scrolling', 'vertical_stack', 'horizontal_stack', 'ultrawide_vertical_stack','right_main_vertical_stack']
       layout_icons:
         bsp: "\uebeb"
         columns: "\uebf7"
