@@ -13,14 +13,14 @@
 # live again, without needing a manual reload.
 watch_stylesheet: true
 watch_config: false
-system_colors: true
+system_colors: false
 debug: false
 update_check: true
 bars:
   primary-bar:
     enabled: true
-    # style: "adaptive" #style_adaptive_exclude: ["wallpapers", "systray"]  -- disabled for testing, see note below
-    # style_adaptive_exclude: ["wallpapers"]
+    style: "adaptive"
+    style_adaptive_exclude: ["wallpapers", "systray"]
     screens:
     - '*'
     class_name: yasb-bar
