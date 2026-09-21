@@ -271,11 +271,29 @@ widgets:
     options:
       label: "<span>\udb83\udc8d</span>"
       change_automatically: false
-    # Example path to folder with images. Can be a single string or a list of strings.
-      image_path: "C:\\710.DesktopRice\\assets\\wallpapers"
+    # Scans both folders (and their subfolders) for wallpapers: the repo's own
+    # small tracked default set, and a separate, untracked personal collection
+    # that never touches git -- see claude/winarchy-decoupling-plan.md,
+    # Wallpapers section.
+      image_path:
+        - "C:\\710.DesktopRice\\assets\\wallpapers"
+        - "C:\\Users\\USERNAME\\Pictures\\wallpapers"
       engine:
-        enabled: true
-        animation: "slide_top" # circle/slide_top/diamond/split
+        # Disabled -- YASB's WallpaperEngine crossfade transition has a real,
+        # reproducible bug: it crashes the whole YASB process some time after
+        # a wallpaper switch (AttributeError: no attribute '_progress' in
+        # paintEvent, or a hard native-level crash with no Python traceback
+        # at all -- two different failure signatures observed, both from the
+        # same code path). Confirmed NOT dependent on clicking elsewhere --
+        # reproduced once with zero user interaction for 50s after the
+        # switch. Disabling this only drops the cosmetic slide/circle/
+        # diamond transition effect -- WallpaperManager.set_wallpaper()
+        # falls through to the real IDesktopWallpaper COM call either way,
+        # so clicking a wallpaper still actually changes it and still
+        # regenerates the palette (run_after still fires). See
+        # claude/winarchy-decoupling-plan.md, YASB section.
+        enabled: false
+        animation: "slide_top" # circle/slide_top/diamond/split -- unused while disabled
       gallery:
         image_width: 520
         image_corner_radius: 6
