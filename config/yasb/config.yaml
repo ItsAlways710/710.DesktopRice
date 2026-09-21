@@ -1,14 +1,20 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/amnweb/yasb/main/schema.json
 # For more information, visit https://github.com/amnweb/yasb/wiki
-watch_stylesheet: true
-watch_config: true
+# watch_* are FALSE on purpose (ported from winarchy's own config, which documents why):
+# YASB's hot-reload re-subscribes the komorebi widget to its named pipe WITHOUT closing
+# the previous subscription. With more than one live listener, they fight each other over
+# komorebi's state/focus, which is exactly the "connects fine, never renders, CPU creeps up"
+# behavior we spent a night chasing. Reload YASB with a clean kill+restart instead of
+# relying on file-watch hot-reload or `yasbc reload`.
+watch_stylesheet: false
+watch_config: false
 system_colors: true
 debug: false
 update_check: true
 bars:
   primary-bar:
     enabled: true
-    style: "adaptive" #style_adaptive_exclude: ["wallpapers", "systray"]
+    # style: "adaptive" #style_adaptive_exclude: ["wallpapers", "systray"]  -- disabled for testing, see note below
     # style_adaptive_exclude: ["wallpapers"]
     screens:
     - '*'
@@ -172,7 +178,12 @@ widgets:
       label_workspace_populated_btn: "{index}"
       label_default_name: ""
       label_zero_index: false
-      hide_empty_workspaces: true
+      # false, matching winarchy's own config: true hides every workspace button
+      # except whichever one currently has focus on that specific monitor -- which
+      # explains "connects fine, shows nothing" on a secondary monitor whose
+      # workspace isn't the globally-focused one, and loses the multi-workspace
+      # view on the extra monitor entirely.
+      hide_empty_workspaces: false
       hide_if_offline: true
       toggle_workspace_layer:
         enabled: false

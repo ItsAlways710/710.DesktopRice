@@ -729,8 +729,16 @@
 }
 
 /*Style for buttons.*/
+/* Explicit baseline (color/padding/margin), not just relying on the global "*"
+   fallback + status-specific overrides -- ported from winarchy's own styles.css,
+   which sets these explicitly on the bare .ws-btn class as a guaranteed-visible
+   baseline regardless of which status subclass (or none) ends up applied. */
 .komorebi-workspaces .ws-btn {
     border: none;
+    color: var(--subtext);
+    background-color: transparent;
+    padding: 0px 6px;
+    margin: 0px 2px;
 }
 
 /*Style for buttons which contain window and are not empty.*/
@@ -759,6 +767,7 @@
 .komorebi-active-layout .widget-container {}
 .komorebi-active-layout .label {
     font-family: var(--specialFont);
+    color: var(--accent);
     padding-top: 1px;
 }
 
