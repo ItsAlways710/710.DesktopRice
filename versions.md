@@ -23,7 +23,7 @@ Columns:
 - **Last touched** — date this row was last verified against the real machine (not just
   edited in this file).
 
-## `Pre-existing?` — a judgment call, not a fact, and it needs your review
+## `Pre-existing?` — a judgment call, reviewed and confirmed by the user 2026-09-22
 
 This column is *not* "was this literally installed before `install.ps1` existed" — on
 Dell, that's true of everything below, since `install.ps1` has never actually run yet
@@ -33,15 +33,14 @@ whether 710.DesktopRice is installed, or is it a dedicated piece of this specifi
 tiling-WM stack that's useless without it?**
 
 Marked `no` (dedicated to this stack, safe for a plain `.\uninstall.ps1` to remove):
-komorebi, YASB, AutoHotkey, Flow Launcher, wallust.
+komorebi, YASB, AutoHotkey, Flow Launcher, wallust, ShareX.
 
 Marked `yes` (general-purpose, protected by default — `uninstall.ps1` requires `-Force` to
-touch these), **because getting this wrong in the removal direction is the more expensive
-mistake**: ShareX, Windows Terminal, the Nerd Font, Starship, fzf, zoxide, eza, bat,
-Everything, PSFzf. Several of these are a real guess on my part (flagged `?` below) — I have
-no actual evidence one way or the other for whether you'd want to keep them without this
-repo; I defaulted to protecting them rather than silently deciding for you. **Please review
-the `?` rows and flip them to `no` if you'd actually want a full uninstall to remove them.**
+touch these): Windows Terminal, the Nerd Font, Starship, fzf, zoxide, eza, bat, Everything,
+PSFzf. **Reviewed and confirmed by the user 2026-09-22** — originally flagged `?` as
+Claude's own conservative guess with no real evidence either way (defaulted to protecting
+rather than silently deciding); the user reviewed the full list, confirmed these stay
+protected, and moved ShareX from protected to removable-by-default.
 
 | Component | Version | Source | Install ID | Pre-existing? | Last touched |
 |---|---|---|---|---|---|
@@ -50,16 +49,16 @@ the `?` rows and flip them to `no` if you'd actually want a full uninstall to re
 | AutoHotkey | 2.0.26 | winget | AutoHotkey.AutoHotkey | no | 2026-09-21 |
 | Flow Launcher | 2.1.3 | winget | Flow-Launcher.Flow-Launcher | no | 2026-09-21 |
 | wallust | 4.1.0-alpha | github-release | explosion-mental/wallust | no | 2026-09-21 |
-| ShareX | latest | winget | ShareX.ShareX | yes ? | 2026-09-21 |
+| ShareX | latest | winget | ShareX.ShareX | no | 2026-09-21 |
 | Windows Terminal | latest | winget | Microsoft.WindowsTerminal | yes | 2026-09-21 |
-| JetBrainsMono Nerd Font | latest | winget | DEVCOM.JetBrainsMonoNerdFont | yes ? | 2026-09-21 |
-| Starship | latest | winget | Starship.Starship | yes ? | 2026-09-21 |
-| fzf | latest | winget | junegunn.fzf | yes ? | 2026-09-21 |
-| zoxide | latest | winget | ajeetdsouza.zoxide | yes ? | 2026-09-21 |
-| eza | latest | winget | eza-community.eza | yes ? | 2026-09-21 |
-| bat | latest | winget | sharkdp.bat | yes ? | 2026-09-21 |
-| Everything | latest | winget | voidtools.Everything | yes ? | 2026-09-21 |
-| PSFzf | latest | psgallery | PSFzf | yes ? | 2026-09-21 |
+| JetBrainsMono Nerd Font | latest | winget | DEVCOM.JetBrainsMonoNerdFont | yes | 2026-09-21 |
+| Starship | latest | winget | Starship.Starship | yes | 2026-09-21 |
+| fzf | latest | winget | junegunn.fzf | yes | 2026-09-21 |
+| zoxide | latest | winget | ajeetdsouza.zoxide | yes | 2026-09-21 |
+| eza | latest | winget | eza-community.eza | yes | 2026-09-21 |
+| bat | latest | winget | sharkdp.bat | yes | 2026-09-21 |
+| Everything | latest | winget | voidtools.Everything | yes | 2026-09-21 |
+| PSFzf | latest | psgallery | PSFzf | yes | 2026-09-21 |
 
 ## Notes on specific rows
 
