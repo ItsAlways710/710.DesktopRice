@@ -27,3 +27,15 @@
 # Never commit; regenerate on demand when diagnosing a live issue.
 /_schema_dump.json
 /_state_dump.json
+
+# Per-machine AHK hotkey overrides -- same pattern as winarchy's own
+# user.ahk: NOT versioned, so a machine's local tweaks survive a `git pull`
+# that updates config/ahk/710.ahk, the same way winarchy's version survives
+# `winarchy update`. Optionally included by 710.ahk (#Include *i), so its
+# absence on a fresh clone is fine.
+/config/ahk/user.ahk
+
+# Flow Launcher Settings.json backup written by tools/setup-flow-launcher.ps1
+# before its one-time JSON round-trip rewrite. Lives outside the repo tree
+# in practice (%APPDATA%), listed here only for completeness/safety.
+*.bak
