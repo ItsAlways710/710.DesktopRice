@@ -39,3 +39,12 @@
 # before its one-time JSON round-trip rewrite. Lives outside the repo tree
 # in practice (%APPDATA%), listed here only for completeness/safety.
 *.bak
+
+# Machine-local monitor identity, written by install.ps1 from a real
+# `komorebic.exe monitor-information` run on THIS machine (index -> serial_number_id).
+# Never tracked: a monitor's serial number is as machine-specific as a secret, and
+# hardcoding one machine's values here would silently break tiling on any other
+# machine (e.g. a future 3-monitor Godzilla setup). Same pattern as user.ahk above --
+# absence is fine, tools/compile-komorebi-rules.ps1 just omits the key when it's not
+# there. See claude/winarchy-decoupling-plan.md's multi-monitor section.
+/config/komorebi/display-index.local.json

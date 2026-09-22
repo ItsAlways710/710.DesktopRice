@@ -52,7 +52,14 @@ if (-not $plugins -or -not $plugins.ContainsKey($programPluginId)) {
     Write-Warning "Flow's Program plugin settings not found (did you run Flow Launcher at least once?) -- Apps keyword not applied."
 } else {
     $program = $plugins[$programPluginId]
-    $keywords = if ($null -eq $program['ActionKeywords']) { @() } else { @($program['ActionKeywords']) }
+    # The outer @(...) around the whole if/else is load-bearing, not stylistic: without
+    # it, assigning the OUTPUT of an if/else statement collapses a single-element array
+    # to a bare scalar (same class of footgun as compile-komorebi-rules.ps1's documented
+    # "return @(), @()" case, just triggered by if/else assignment instead of return).
+    # Confirmed by direct repro: a pre-existing single-keyword ActionKeywords (e.g. just
+    # ["*"]) silently became the STRING "*", so `+ 'app'` string-concatenated instead of
+    # array-appending, and a second run concatenated onto the corrupted result again.
+    $keywords = @(if ($null -eq $program['ActionKeywords']) { @() } else { @($program['ActionKeywords']) })
     if ($keywords -contains 'app') {
         Write-Host "Apps keyword already applied."
     } else {

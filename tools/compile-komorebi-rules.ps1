@@ -2,8 +2,9 @@
 <#
 .SYNOPSIS
   Compiles config/komorebi/base.json + vendor/asc/applications.json + games.toml +
-  config/komorebi/rules.toml into the real config/komorebi/komorebi.json that komorebi
-  reads. Run this after editing any of those four inputs, then reload komorebi.
+  config/komorebi/rules.toml + config/komorebi/display-index.local.json into the real
+  config/komorebi/komorebi.json that komorebi reads. Run this after editing any of those
+  inputs, then reload komorebi.
 
   This file is NOT tracked in git (see .gitignore) - it's always regenerated from its
   sources, so it can never drift from them and never needs hand-editing.
@@ -22,16 +23,29 @@
   Priority, low to high: vendor/asc -> games.toml -> config/komorebi/rules.toml.
   "Same window" identity = kind+id (ignoring matching_strategy); a compound (array)
   rule's identity is the sorted combination of all its conditions.
+
+  display_index_preferences is handled separately from the three rule layers above: it
+  isn't a rule at all, it's a monitor-index -> serial_number_id map, and it's exactly as
+  machine-specific as a secret (a different machine's monitor arrangement would make a
+  hardcoded value actively wrong, not just inapplicable). So it never comes from
+  base.json or any tracked source - it comes from config/komorebi/display-index.local.json,
+  a small gitignored file that install.ps1 generates from that machine's own
+  `komorebic.exe monitor-information` output (same pattern as config/ahk/user.ahk: not
+  versioned, survives `git pull`, exists only where actually needed). When that file is
+  absent - a fresh clone, or a machine install.ps1 hasn't been run on yet - the key is
+  simply omitted from the compiled output, and komorebi falls back to whatever order
+  Windows enumerates that session.
 #>
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)  # tools/.. = repo root
 
-$BasePath   = Join-Path $RepoRoot 'config\komorebi\base.json'
-$AscPath    = Join-Path $RepoRoot 'vendor\asc\applications.json'
-$GamesPath  = Join-Path $RepoRoot 'games.toml'
-$RulesPath  = Join-Path $RepoRoot 'config\komorebi\rules.toml'
-$OutPath    = Join-Path $RepoRoot 'config\komorebi\komorebi.json'
+$BasePath         = Join-Path $RepoRoot 'config\komorebi\base.json'
+$AscPath          = Join-Path $RepoRoot 'vendor\asc\applications.json'
+$GamesPath        = Join-Path $RepoRoot 'games.toml'
+$RulesPath        = Join-Path $RepoRoot 'config\komorebi\rules.toml'
+$DisplayIndexPath = Join-Path $RepoRoot 'config\komorebi\display-index.local.json'
+$OutPath          = Join-Path $RepoRoot 'config\komorebi\komorebi.json'
 
 # Category key: what a source file calls it -> the real komorebi.json array name.
 $PlacementCategories = [ordered]@{
@@ -184,6 +198,30 @@ function Get-UserRulesLayer {
     return [pscustomobject]@{ Entries = $out; Disabled = $disabled }
 }
 
+function Get-DisplayIndexPreferences {
+    # config/komorebi/display-index.local.json - machine-local, gitignored, written by
+    # install.ps1 from a real `komorebic.exe monitor-information` run on that machine.
+    # Expected shape: a flat object mapping monitor-config array index (as a string) to
+    # that monitor's serial_number_id (as a string), e.g. {"0": "0", "1": "1234567890"}.
+    # Supports up to 4 keys (4 displays) - just more entries in the same map, nothing
+    # structural changes past that. Returns $null (not @{}) when there's nothing to
+    # merge, so the caller can tell "omit the key" apart from "merge an empty map".
+    if (-not (Test-Path $DisplayIndexPath)) { return $null }
+    $raw = Get-Content $DisplayIndexPath -Raw -Encoding UTF8
+    if (-not $raw.Trim()) { return $null }
+    try {
+        $map = $raw | ConvertFrom-Json -AsHashtable
+    } catch {
+        Write-Warning "config/komorebi/display-index.local.json exists but isn't valid JSON, ignoring it: $($_.Exception.Message)"
+        return $null
+    }
+    if ($null -eq $map -or $map.Count -eq 0) { return $null }
+    if ($map.Count -gt 4) {
+        Write-Warning "display-index.local.json has $($map.Count) entries; only 4 displays are supported, using it as-is anyway."
+    }
+    $map
+}
+
 function Merge-Rules {
     # $Layers is an array of arrays, lowest priority first. Left un-typed on purpose:
     # a typed [object[]] would flatten the layer boundaries into one list and lose the
@@ -263,11 +301,29 @@ try {
         else { $base | Add-Member -NotePropertyName $cat -NotePropertyValue $rules }
     }
 
+    # display_index_preferences: not a rule layer, machine-local, merged in only when
+    # config/komorebi/display-index.local.json exists (see Get-DisplayIndexPreferences).
+    $displayIndex = Get-DisplayIndexPreferences
+    if ($displayIndex) {
+        if ($base.PSObject.Properties['display_index_preferences']) {
+            $base.display_index_preferences = $displayIndex
+        } else {
+            $base | Add-Member -NotePropertyName 'display_index_preferences' -NotePropertyValue $displayIndex
+        }
+    } elseif ($base.PSObject.Properties['display_index_preferences']) {
+        # base.json itself should never carry this (it's tracked and shared across every
+        # machine's git pull), but strip it defensively if it ever ends up there anyway.
+        $base.PSObject.Properties.Remove('display_index_preferences')
+    }
+
     $base | ConvertTo-Json -Depth 50 | Set-Content -Path $OutPath -Encoding UTF8
     Write-Host "Compiled $OutPath"
     foreach ($cat in (Get-AllCategories).Values) {
         $count = @($merged[$cat]).Count
         if ($count -gt 0) { Write-Host ("  {0,-38} {1}" -f $cat, $count) }
+    }
+    if ($displayIndex) {
+        Write-Host ("  {0,-38} {1}" -f 'display_index_preferences', "$($displayIndex.Count) monitor(s)")
     }
 }
 catch {
