@@ -14,6 +14,7 @@ palette = "kmeans"
 [templates]
 yasb-colors = { template = 'yasb-colors.css.tpl', target = 'C:\710.DesktopRice\config\yasb\wallust_colors.css' }
 raw-colors = { template = 'colors.json.tpl', target = 'C:\710.DesktopRice\config\wallust\generated\colors.json' }
+starship = { template = 'starship.toml.tpl', target = 'C:\710.DesktopRice\config\pwsh\starship.toml' }
 
 # [hooks] is NOT used -- confirmed broken on this pinned 4.1.0-alpha build on
 # Windows: it tries to execute the hook's own KEY NAME as a literal program

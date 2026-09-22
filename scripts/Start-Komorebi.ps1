@@ -1,0 +1,165 @@
+# Start-Komorebi.ps1 -- resilient komorebi startup for 710.DesktopRice's autostart.
+#
+# Launched hidden by the At-LogOn Scheduled Task (tools/lib/activation.ps1's
+# Get-AutostartComponents). Ported from winarchy's scripts/Start-Komorebi.ps1 @ 4574fc7
+# (tag v1.4.0). Fixes the same two causes of komorebi staying OFFLINE after logon/unlock:
+#   a) an early panic (Application Error 0xc0000409 -- Rust abort).
+#   b) "failed call to AllowSetForegroundWindow after 5 retries" (komorebi's main.rs:219):
+#      komorebi starts before the session has a real foreground window yet. Typical on a
+#      fast unlock: the LogonTrigger fires before the desktop has settled.
+# No-op if komorebi is already running.
+
+$root = Split-Path $PSScriptRoot -Parent
+$Root = $root
+$env:KOMOREBI_CONFIG_HOME = Join-Path $root 'config\komorebi'
+$exe    = Join-Path $env:ProgramFiles 'komorebi\bin\komorebi.exe'
+$logDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
+$log    = Join-Path $logDir 'komorebi-autostart.log'
+$outLog = Join-Path $logDir 'komorebi.out.log'
+$errLog = Join-Path $logDir 'komorebi.err.log'
+
+New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+# P/Invoke to detect a real foreground window and lower the lock timeout. Without this,
+# komorebi's own AllowSetForegroundWindow call is refused while the desktop hasn't settled.
+Add-Type -Namespace Win710 -Name Fg -MemberDefinition @'
+[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll", SetLastError=true)] public static extern bool SystemParametersInfo(uint a, uint b, System.IntPtr c, uint d);
+[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, System.UIntPtr extra);
+'@
+
+function Reset-ForegroundLock {
+    # Synthesizes an Alt tap (down/up). Windows releases the foreground lock when the
+    # session receives an input event, letting komorebi's AllowSetForegroundWindow
+    # succeed. Without this, on a boot where some other app is holding the foreground,
+    # komorebi cuts out after 5 retries (main.rs:219) for the whole budget below.
+    [Win710.Fg]::keybd_event(0x12, 0, 0, [System.UIntPtr]::Zero)        # VK_MENU down
+    [Win710.Fg]::keybd_event(0x12, 0, 0x2, [System.UIntPtr]::Zero)      # VK_MENU up (KEYEVENTF_KEYUP)
+}
+
+function Test-ForegroundReady {
+    [bool]((Get-Process explorer -ErrorAction SilentlyContinue) -and `
+           ([Win710.Fg]::GetForegroundWindow() -ne [System.IntPtr]::Zero))
+}
+
+function Write-Log([string]$m) {
+    "{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m | Out-File -FilePath $log -Append -Encoding utf8
+}
+
+function Test-KomorebiRunning { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) }
+
+if (-not (Test-Path $exe)) { Write-Log "komorebi.exe not found at $exe; aborting."; exit 1 }
+if (Test-KomorebiRunning)  { Write-Log 'komorebi already running; nothing to do.'; exit 0 }
+
+Write-Log '--- startup (autostart) ---'
+
+# Clean up stale state from an unclean exit. komorebi.sock is an AF_UNIX socket; if
+# komorebi crashed, the file can be left behind and the next startup can fail to bind
+# until it's cleared (the typical cause of "offline at boot, doesn't come up on its own").
+# Safe to delete here since we've already confirmed komorebi is NOT running.
+foreach ($stale in @('komorebi.sock', 'komorebi.hwnd.json')) {
+    $f = Join-Path $logDir $stale
+    if (Test-Path $f) {
+        try { Remove-Item $f -Force -ErrorAction Stop; Write-Log "cleared stale state: $stale" }
+        catch { Write-Log "couldn't remove ${stale}: $($_.Exception.Message)" }
+    }
+}
+
+# Game-mode state is per-session: session float rules die with komorebi. If the flag
+# survives a reboot, AHK starts up believing it's mid-game with no way to know otherwise.
+$stateDir = Join-Path $root 'state'
+foreach ($stale in @('game-mode.flag', 'game-mode-floated')) {
+    $f = Join-Path $stateDir $stale
+    if (Test-Path $f) {
+        Remove-Item $f -Force -ErrorAction SilentlyContinue
+        Write-Log "cleared stale session state: $stale"
+    }
+}
+
+$overallDeadline = (Get-Date).AddMinutes(5)
+
+# 1) Wait for a real foreground (explorer + a non-zero foreground window), not just explorer.
+while ((Get-Date) -lt $overallDeadline -and -not (Test-ForegroundReady)) { Start-Sleep -Milliseconds 500 }
+Start-Sleep -Seconds 2
+
+# 2) Time-budgeted attempts: re-wait for foreground each round, lower the lock timeout,
+#    launch hidden, and check it survives >8s. Retries until $overallDeadline, not just a
+#    handful of seconds.
+$attempt = 0
+while ((Get-Date) -lt $overallDeadline) {
+    if (Test-KomorebiRunning) { Write-Log 'komorebi alive; done.'; exit 0 }
+    $attempt++
+
+    while ((Get-Date) -lt $overallDeadline -and -not (Test-ForegroundReady)) { Start-Sleep -Milliseconds 500 }
+    [Win710.Fg]::SystemParametersInfo(0x2001, 0, [System.IntPtr]::Zero, 0x3) | Out-Null
+    Reset-ForegroundLock
+
+    Write-Log "attempt ${attempt}: launching komorebi.exe"
+    try {
+        $p = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru `
+                -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+    } catch {
+        Write-Log "attempt ${attempt}: failed to launch: $($_.Exception.Message)"
+        Start-Sleep -Seconds 2
+        continue
+    }
+
+    Start-Sleep -Seconds 8
+    if (-not $p.HasExited) {
+        Write-Log "attempt ${attempt}: komorebi still alive after 8s. OK."
+        # Mitigation: on some boots the primary monitor (index 0) ends up focused on
+        # workspace 2 (index 1) instead of 1. Root cause unknown; force the primary
+        # monitor's workspace 0 only on a fresh startup. Needs the socket already bound,
+        # hence after the survival check.
+        $komorebic = Join-Path (Split-Path $exe) 'komorebic.exe'
+        if (Test-Path $komorebic) {
+            try {
+                & $komorebic focus-monitor-workspace 0 0 *> $null
+                Write-Log 'primary monitor refocused to workspace 0.'
+            } catch { Write-Log "couldn't refocus workspace 0: $($_.Exception.Message)" }
+
+            # Unmanage games.toml windows that komorebi already tiled on its initial scan
+            # (a retile/ignore-rule doesn't retroactively unmanage them).
+            try {
+                . (Join-Path $root 'tools\lib\window-slots.ps1')
+                $games = @(Get-GameExes)
+                $stateJson = & $komorebic state 2>$null | ConvertFrom-Json
+                $tiledExes = @(
+                    foreach ($m in $stateJson.monitors.elements) {
+                        foreach ($ws in $m.workspaces.elements) {
+                            foreach ($c in $ws.containers.elements) {
+                                foreach ($w in $c.windows.elements) { $w.exe }
+                            }
+                        }
+                    }
+                ) | Sort-Object -Unique
+                $toFree = @($tiledExes | Where-Object { $games -contains $_ })
+                foreach ($gameExe in $toFree) {
+                    & $komorebic eager-focus $gameExe *> $null
+                    & $komorebic unmanage *> $null
+                }
+                if ($toFree.Count -gt 0) {
+                    & $komorebic retile *> $null
+                    Write-Log "unmanaged $($toFree.Count) games.toml window(s) that were already tiled ($($toFree -join ', ')) + retile."
+                }
+            } catch { Write-Log "couldn't unmanage games.toml windows post-startup: $($_.Exception.Message)" }
+        }
+        exit 0
+    }
+
+    $code = try { $p.ExitCode } catch { '?' }
+    Write-Log "attempt ${attempt}: komorebi exited quickly (code '$code'). stderr:"
+    $stderr = if (Test-Path $errLog) { (Get-Content $errLog -Raw -ErrorAction SilentlyContinue) } else { '' }
+    if ($stderr) { foreach ($ln in ($stderr -split "`r?`n" | Where-Object { $_ })) { Write-Log "    | $ln" } }
+    else { Write-Log '    | (empty stderr)' }
+
+    if ($stderr -match 'AllowSetForegroundWindow') {
+        Write-Log "attempt ${attempt}: foreground still not ready; waiting longer before retry."
+        Start-Sleep -Seconds 5
+    } else {
+        Start-Sleep -Seconds 3
+    }
+}
+
+Write-Log "5 minute budget exhausted; komorebi never came up."
+exit 1

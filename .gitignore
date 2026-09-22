@@ -48,3 +48,29 @@
 # absence is fine, tools/compile-komorebi-rules.ps1 just omits the key when it's not
 # there. See claude/winarchy-decoupling-plan.md's multi-monitor section.
 /config/komorebi/display-index.local.json
+
+# Window placement preferences for THIS machine -- `monitor` is keyed by the same
+# machine-local serial_number_id as display-index.local.json above, so this can't be
+# shared across machines either. Captured with tools/save-window-layout.ps1; see
+# config/windows.toml.example (tracked) for the format.
+/config/windows.toml
+
+# wallust-generated starship prompt config (see config/wallust/wallust.toml's
+# [templates] and tools/apply-wallust-outputs.ps1). Absent until wallust has run once;
+# starship just uses its own built-in defaults until then. Never commit.
+/config/pwsh/starship.toml
+
+# Per-machine pwsh profile override -- same pattern as config/ahk/user.ahk: NOT
+# versioned, dot-sourced last by config/pwsh/profile.ps1, absence is fine.
+/config/pwsh/user.ps1
+
+# Runtime state: zoxide/starship init-script cache (config/pwsh/profile.ps1's
+# Get-ToolInit), and anything else a script drops here at runtime. Always regenerable,
+# never hand-edited -- nothing under here should ever need to be committed.
+/state/
+
+# Registry key backups (tools/lib/activation.ps1's Backup-RegistryKey), written before
+# every taskbar/hardening registry change so `uninstall.ps1` (or a person) can hand-
+# restore from a real reg.exe export if a revert ever needs it. Local safety net, not
+# repo content.
+/backups/

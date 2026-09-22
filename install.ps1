@@ -26,12 +26,19 @@
     updates" feature by design (see claude/winarchy-decoupling-plan.md).
 
 .NOTES
-  Deliberately does NOT start or restart komorebi/YASB/AHK, does not register autostart,
-  does not touch the taskbar, and does not add Windows Defender exclusions. winarchy does
-  all of these behind its own -Activate flag; this repo hasn't reviewed or aligned on any
-  of them yet, so this installer stays coexistence-only until that's an explicit, separate
-  decision. See "Next steps" at the end of a run for the exact command to (re)launch
-  komorebi with this repo's config once you're ready to do that by hand.
+  Windows Defender exclusions, the pwsh $PROFILE hook, and Flow Launcher's Everything
+  plugin are applied unconditionally on every run (matching winarchy's own install.ps1 @
+  4574fc7, tag v1.4.0 -- none of these are gated behind -Activate upstream either).
+
+  -Activate registers autostart (Scheduled Tasks At-LogOn: komorebi, YASB, window-slots,
+  ShareX, AHK), hides the native taskbar, applies HKCU-only Windows hardening (no Bing
+  search / ad suggestions / Copilot-Widgets-TaskView buttons / Start recommendations),
+  zeroes Explorer's Startup app-launch delay, and starts everything right away. Without
+  -Activate, none of that happens -- packages, config, theming, Defender exclusions, the
+  profile hook and Everything plugin are still applied, but nothing autostarts and the
+  taskbar/hardening/Startup-delay registry settings are left alone. See "Next steps" at
+  the end of a run for the exact command to (re)launch komorebi with this repo's config
+  by hand instead.
 
   KOMOREBI_CONFIG_HOME is a single shared User-scope environment variable that winarchy's
   own startup path also reads and never resets -- if winarchy is still installed on this
@@ -53,11 +60,13 @@
 
 .EXAMPLE
   .\install.ps1                # install/update everything this repo owns
+  .\install.ps1 -Activate      # ...and autostart + hide taskbar + harden + start now
   .\install.ps1 -SkipPackages  # skip the winget loop; still does env vars / wallust /
                                 # display-index / Flow setup / recompile
 #>
 [CmdletBinding()]
 param(
+    [switch]$Activate,
     [switch]$SkipPackages
 )
 $ErrorActionPreference = 'Stop'
@@ -66,6 +75,11 @@ $Root = $PSScriptRoot
 function Step-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -ForegroundColor Green }
 function Step-Info { param([string]$Message) Write-Host "  [..] $Message" -ForegroundColor Cyan }
 function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -ForegroundColor Yellow }
+
+# Defender exclusions, hardening, taskbar, autostart, and the shell-profile hook all live
+# here, shared with uninstall.ps1's matching revert steps. Step-Ok/Info/Warn above must be
+# defined before this dot-source -- activation.ps1 uses ours rather than its own copies.
+. (Join-Path $Root 'tools\lib\activation.ps1')
 
 Write-Host "`n== 710.DesktopRice install ==" -ForegroundColor Cyan
 
@@ -249,23 +263,113 @@ if ($displayMap) {
     Step-Info "Not written this run -- config/komorebi/komorebi.json will simply omit display_index_preferences (fine before komorebi has ever run here); re-run .\install.ps1 later to pick it up."
 }
 
-# --- 5. Flow Launcher setup -------------------------------------------------------------
+# --- 5. Windows Defender exclusions (unconditional) --------------------------------------
+# Not gated behind -Activate -- matches winarchy's own install.ps1 exactly (Set-
+# WinarchyDefenderExclusions runs unconditionally there too). Needs elevation; warns and
+# skips (doesn't fail the install) if this shell isn't elevated -- see tools/lib/
+# activation.ps1.
+Write-Host "`n-- Windows Defender exclusions --" -ForegroundColor Cyan
+Set-DefenderExclusions
+
+# --- 6. Shell profile hook ($PROFILE -> config\pwsh\profile.ps1) -------------------------
+# Also unconditional -- winarchy calls Install-WinarchyShellProfile in its own install.ps1
+# outside the -Activate block too. Idempotent; snapshots the previous $PROFILE to a .bak
+# alongside it before changing anything.
+Write-Host "`n-- Shell profile ($PROFILE hook) --" -ForegroundColor Cyan
+Install-ShellProfile
+
+# --- 7. Flow Launcher setup (settings + Everything plugin) -------------------------------
 Write-Host "`n-- Flow Launcher --" -ForegroundColor Cyan
 & (Join-Path $Root 'tools\setup-flow-launcher.ps1')
 if ($LASTEXITCODE -ne 0) {
     Step-Info "Flow Launcher setup skipped this run (see message above) -- harmless if Flow hasn't been run yet; re-run .\install.ps1 after its first launch."
 }
 
-# --- 6. Recompile komorebi.json ----------------------------------------------------------
+# --- 8. Recompile komorebi.json -----------------------------------------------------------
 Write-Host "`n-- Compiling komorebi.json --" -ForegroundColor Cyan
 & (Join-Path $Root 'tools\compile-komorebi-rules.ps1')
 
+# --- 9. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ----
+if ($Activate) {
+    Write-Host "`n-- Activate --" -ForegroundColor Cyan
+
+    Register-Autostart
+
+    try {
+        if (Set-TaskbarAutoHide -Enabled $true) { Step-Ok 'Native taskbar set to auto-hide' }
+        else { Step-Ok 'Native taskbar already set to auto-hide' }
+    } catch { Step-Warn "Could not set the taskbar to auto-hide: $($_.Exception.Message)" }
+
+    try {
+        $n = Set-WindowsHardening
+        Step-Ok "Windows hardening applied ($n setting(s) changed: no Bing search, ad suggestions, Copilot/Widgets/Task View buttons, Start recommendations)"
+    } catch { Step-Warn "Could not apply Windows hardening: $($_.Exception.Message)" }
+
+    try {
+        Set-StartupDelay
+        Step-Ok 'Startup app-launch delay removed (StartupDelayInMSec=0)'
+    } catch { Step-Warn "Could not remove the Startup app-launch delay: $($_.Exception.Message)" }
+
+    Step-Info 'Starting services...'
+    # Direct launcher invocation, not `komorebic start`/`yasbc start` -- the same
+    # resilient scripts the Scheduled Tasks use, so "start now" and "start at next logon"
+    # are one code path instead of two (komorebic start in particular is the flaky one;
+    # see scripts/Start-Komorebi.ps1's own header for why).
+    $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (Get-KomorebiExe) {
+        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-Komorebi.ps1`""
+        )
+    }
+    $yasbc = (Get-Command yasbc -ErrorAction SilentlyContinue)?.Source
+    if ($yasbc) {
+        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-Yasb.ps1`"",
+            '-YasbExe', "`"$yasbc`"", '-YasbConfigHome', "`"$Root\config\yasb`""
+        )
+    }
+    $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
+    if ((Get-KomorebiExe) -and $pwsh) {
+        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-WindowSlots.ps1`""
+        )
+    }
+    $sharexExe = Get-ShareXExe
+    if ($sharexExe) { Start-Process $sharexExe -ArgumentList '-silent' }
+    $ahkExe = Get-AhkExe
+    if ($ahkExe) {
+        Remove-Item Env:CLAUDE_CODE_CHILD_SESSION, Env:CLAUDECODE -ErrorAction SilentlyContinue
+        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-Ahk.ps1`"",
+            '-AhkExe', "`"$ahkExe`"", '-ScriptPath', "`"$Root\config\ahk\710.ahk`""
+        )
+    }
+    Step-Ok 'Services launching in the background (see %LOCALAPPDATA%\710.DesktopRice\*-autostart.log if one seems to not have come up).'
+} else {
+    # Migration path: if autostart was already active from a previous -Activate run,
+    # re-register it so it picks up any change to how components are launched (e.g. a
+    # newer launcher script) without switching modes. If it was never active
+    # (coexistence-only), nothing is touched.
+    $autostart = Get-AutostartStatus
+    if (@($autostart.Values | Where-Object { $_ }).Count -gt 0) {
+        Write-Host "`n-- Activate --" -ForegroundColor Cyan
+        Step-Info 'Autostart is active: re-registering to pick up any startup changes...'
+        Register-Autostart
+    } else {
+        Step-Info 'Not -Activate: packages/config/theming/Defender/profile/Flow are applied, but autostart, the taskbar, hardening and the Startup delay are untouched.'
+        Step-Info 'Run .\install.ps1 -Activate when ready to make this repo the active shell experience.'
+    }
+}
+
 # --- Done -----------------------------------------------------------------------------
 Write-Host "`n== Install complete ==" -ForegroundColor Cyan
-Write-Host "This script did not start or restart komorebi/YASB/AHK (coexistence mode -- see NOTES)."
-Write-Host "To load this repo's config into a running komorebi, in a NEW terminal (so it sees the"
-Write-Host "env vars just registered):"
-Write-Host ""
-Write-Host "    komorebic.exe stop" -ForegroundColor DarkGray
-Write-Host "    Start-Process komorebi.exe -WindowStyle Hidden -ArgumentList '--config',`"$Root\config\komorebi\komorebi.json`"" -ForegroundColor DarkGray
-Write-Host ""
+if (-not $Activate) {
+    Write-Host "This run did not start or restart komorebi/YASB/AHK, or touch autostart/taskbar/hardening."
+    Write-Host "To load this repo's config into a running komorebi by hand, in a NEW terminal (so it sees"
+    Write-Host "the env vars just registered):"
+    Write-Host ""
+    Write-Host "    komorebic.exe stop" -ForegroundColor DarkGray
+    Write-Host "    Start-Process komorebi.exe -WindowStyle Hidden -ArgumentList '--config',`"$Root\config\komorebi\komorebi.json`"" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "Or re-run with -Activate to have this script do all of that (plus autostart) for you."
+}

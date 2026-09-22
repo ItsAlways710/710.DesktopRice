@@ -7,6 +7,16 @@
 #SingleInstance Force
 ProcessSetPriority "High"   ; the dispatcher must always respond, ~0 cost
 
+; Clears inherited Claude Code sub-session flags / a stray empty NO_COLOR, so any child
+; process this dispatcher spawns (pwsh, komorebic) doesn't inherit dev-session state from
+; wherever AHK itself got launched. Ported from winarchy's winarchy.ahk @ 4574fc7 (tag
+; v1.4.0) -- our own 710.ahk was missing all three despite an earlier pass here believing
+; they were already ported; verified against the live file before adding these, not
+; assumed. EnvSet(name) with no second arg deletes the var from THIS process's environment.
+EnvSet('CLAUDE_CODE_CHILD_SESSION')
+EnvSet('CLAUDECODE')
+EnvSet('NO_COLOR')
+
 ; --- Paths (this script lives at <repo>\config\ahk) ------------------------
 RepoRoot := RegExReplace(A_ScriptDir, "\\config\\ahk$")
 StateDir := RepoRoot "\state"
@@ -316,10 +326,13 @@ ShowThemedGuiMenu(items, title) {
     pad := 16, rowH := 30, titleH := 32, labelW := 220
     w := pad * 2 + labelW
 
-    g.SetFont('s12 bold', 'Segoe UI')
+    ; JetBrainsMono Nerd Font, not Segoe UI: install.ps1 installs it unconditionally
+    ; (DEVCOM.JetBrainsMonoNerdFont), so there's no silent-fallback risk to hedge against
+    ; here -- matches winarchy's own themed system menu, which relies on the same font.
+    g.SetFont('s12 bold', 'JetBrainsMono Nerd Font')
     g.Add('Text', Format('x{} y{} w{} c{}', pad, pad, labelW, ac), title)
 
-    g.SetFont('s11 norm', 'Segoe UI')
+    g.SetFont('s11 norm', 'JetBrainsMono Nerd Font')
     y0 := pad + titleH
     ; selection bar added first so it sits behind the (BackgroundTrans) row
     ; text, then gets moved onto the active row by SetThemedMenuSel().
@@ -593,10 +606,12 @@ ToggleKeyOverlay() {
         if (colOf[i] != col)
             col := colOf[i], row := 0
         x := pad + col * colW
-        g.SetFont('s10 bold', 'Consolas')
+        ; JetBrainsMono Nerd Font here too, matching winarchy's key overlay -- see the
+        ; themed-system-menu comment above for why this isn't a silent-fallback risk.
+        g.SetFont('s10 bold', 'JetBrainsMono Nerd Font')
         g.Add('Text', Format('x{} y{} w{} c{} +0x0C', x, pad + row * rowH, keyW + gap + descW, ac), StrUpper(s.title))
         row += 1
-        g.SetFont('s10 norm', 'Consolas')
+        g.SetFont('s10 norm', 'JetBrainsMono Nerd Font')
         for it in s.items {
             y := pad + row * rowH
             g.Add('Text', Format('x{} y{} w{} c{} +0x0C', x, y, keyW, fg), it.keys)
@@ -762,6 +777,7 @@ ToggleFlowApps() {
 }
 
 #Space::ToggleFlow()              ; Flow Launcher
+#s::ToggleFlow()                  ; Win+S (search) -- winarchy @ 4574fc7, ported as-is
 #^Space::ToggleFlowApps()         ; Flow Launcher, apps only
 
 ; ============================================================================

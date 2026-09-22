@@ -11,6 +11,14 @@
     keyword or anything else in Settings.json. Idempotent: safe to re-run,
     only backs up and writes if something actually needs to change.
 
+    Also installs the official Flow-Launcher.Plugin.Everything plugin (pinned v1.7.7,
+    from its GitHub release zip) if it's missing -- ported from winarchy's
+    Install-WinarchyFlowEverythingPlugin (Identity.ps1 @ 4574fc7, tag v1.4.0). Without it,
+    Flow falls back to its own much slower/weaker "Explorer" plugin for file search, which
+    defeats voidtools Everything being installed at all. Requires Everything itself to
+    already be installed (install.ps1 brings it via winget); if it isn't, the plugin would
+    be inert, so this just warns and skips rather than downloading it for nothing.
+
     ActionKeyword merge: this is what makes 710.ahk's ToggleFlowApps()
     (SUPER+Ctrl+Space) actually scope its query to installed programs only --
     real parity with Omarchy's Walker "Apps" launcher, no hand-curated app
@@ -92,15 +100,56 @@ if ($identityNeeded) {
 }
 
 if (-not $changed) {
-    Write-Host "Nothing to do -- Flow Launcher already fully configured: $settingsPath"
-    exit 0
+    Write-Host "Settings.json already fully configured: $settingsPath"
+} else {
+    # Simple one-time backup before the JSON round-trip rewrite (we don't have
+    # winarchy's New-WinarchySnapshot module here -- this is the cheap
+    # equivalent, not a full snapshot system).
+    Copy-Item $settingsPath "$settingsPath.bak" -Force
+    $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
+    Write-Host "Flow Launcher settings updated: $settingsPath"
+    Write-Host "Backup of the previous Settings.json saved to: $settingsPath.bak"
 }
 
-# Simple one-time backup before the JSON round-trip rewrite (we don't have
-# winarchy's New-WinarchySnapshot module here -- this is the cheap
-# equivalent, not a full snapshot system).
-Copy-Item $settingsPath "$settingsPath.bak" -Force
+# Everything-plugin install below always runs, even when Settings.json itself needed no
+# change -- it used to sit behind an early `exit 0` here on the (very common) idempotent
+# path, which meant a re-run could never actually install the plugin once the keyword/
+# identity settings were already correct. Fixed so both steps are independently idempotent
+# instead of the second depending on the first having work to do.
 
-$settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
-Write-Host "Flow Launcher settings updated: $settingsPath"
-Write-Host "Backup of the previous Settings.json saved to: $settingsPath.bak"
+# --- Everything plugin: pinned release zip, installed once, idempotent -------------
+# Ported from winarchy's Install-WinarchyFlowEverythingPlugin (Identity.ps1 @ 4574fc7).
+$EverythingPluginId = 'D2D2C23B084D411DB66FE0C79D6C2A6E'
+$EverythingPluginVersion = '1.7.7'
+$EverythingPluginUrl = "https://github.com/Flow-Launcher/Flow.Launcher.Plugin.Everything/releases/download/v$EverythingPluginVersion/Flow.Launcher.Plugin.Everything.zip"
+
+$everythingExe = @("$env:ProgramFiles\Everything\Everything.exe", "${env:ProgramFiles(x86)}\Everything\Everything.exe") |
+    Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $everythingExe) {
+    Write-Warning 'voidtools Everything not installed; Flow Everything plugin not installed (winget install voidtools.Everything).'
+} else {
+    $pluginsDir = Join-Path "$env:APPDATA\FlowLauncher" 'Plugins'
+    $alreadyInstalled = (Test-Path $pluginsDir) -and (
+        Get-ChildItem $pluginsDir -Directory -ErrorAction SilentlyContinue | Where-Object {
+            $manifest = Join-Path $_.FullName 'plugin.json'
+            (Test-Path $manifest) -and ((Get-Content $manifest -Raw | ConvertFrom-Json).ID -eq $EverythingPluginId)
+        } | Select-Object -First 1
+    )
+    if ($alreadyInstalled) {
+        Write-Host 'Flow Everything plugin already installed.'
+    } elseif (-not (Test-Path $pluginsDir)) {
+        Write-Warning 'Flow Launcher Plugins dir not found (did you run Flow at least once?); Everything plugin not installed.'
+    } else {
+        $zipPath = Join-Path ([System.IO.Path]::GetTempPath()) 'Flow.Launcher.Plugin.Everything.zip'
+        $destDir = Join-Path $pluginsDir "Everything-$EverythingPluginVersion"
+        try {
+            Invoke-WebRequest -Uri $EverythingPluginUrl -OutFile $zipPath -UseBasicParsing
+            Expand-Archive -Path $zipPath -DestinationPath $destDir -Force
+            Write-Host "Flow Everything plugin installed: $destDir (restart Flow to load it)"
+        } catch {
+            Write-Warning "Could not install the Flow Everything plugin: $($_.Exception.Message)"
+        } finally {
+            Remove-Item $zipPath -ErrorAction SilentlyContinue
+        }
+    }
+}

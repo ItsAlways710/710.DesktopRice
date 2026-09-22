@@ -1,0 +1,18 @@
+# Window placement preferences -- EXAMPLE. The real file, config/windows.toml, is
+# machine-local (gitignored) because `monitor` is keyed by THIS machine's
+# komorebic monitor-information serial_number_id, same reasoning as
+# config/komorebi/display-index.local.json.
+#
+# Don't hand-write config/windows.toml from scratch: arrange your windows the way you
+# want them, then run tools\save-window-layout.ps1 -- it captures monitor/workspace/slot
+# for every managed window automatically. Come back and add `pin = true` to any entry you
+# want the autostart daemon (scripts\Start-WindowSlots.ps1) to actively keep in place;
+# without `pin`, an app is only ever placed once, when it opens.
+
+[[windows]]
+exe = "firefox.exe"
+monitor = "0"
+workspace = 0
+workspace_name = "web"
+slot = 0
+pin = true

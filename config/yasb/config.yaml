@@ -251,9 +251,16 @@ widgets:
       show_battery: false
       show_in_popup: 1
       show_volume: false
-      show_network: true
-      use_hook: true
       icons_per_row: 3
+      # show_network / use_hook used to be listed twice here with conflicting values
+      # (true then false for both) -- a genuine duplicate-key typo, not an intentional
+      # override. YAML's last-key-wins meant `false` was already what actually applied;
+      # this just removes the dead duplicate rather than changing behavior. false matches
+      # the show_battery/show_volume/show_unpinned pattern above (native icon categories
+      # off, surfaced elsewhere in the bar instead) -- and separately, this repo skips
+      # winarchy's net-icon autostart component (a different mechanism entirely; see
+      # claude/winarchy-decoupling-plan.md), so there's currently no network status shown
+      # either way regardless of this toggle.
       show_network: false
       use_hook: false # Whether to use the new systray hook instead of the legacy systray monitor
       hide_icons: [] # Optional, list of process names to hide (e.g. ["discord"])
