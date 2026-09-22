@@ -125,6 +125,14 @@ if ($allRows.Count -eq 0) {
 }
 $wingetRows = @($allRows | Where-Object { $_.Source -eq 'winget' })
 
+# Per-package winget source override -- kept in sync with install.ps1's own copy of this
+# table (see its comment for why PowerShell 7 needs this). Every InstallId not listed here
+# resolves through winget's default (community) source, matching today's un-annotated
+# behavior for every other row.
+$PackageSources = @{
+    '9MZ1SNWT0N5D' = 'msstore'   # PowerShell 7
+}
+
 # --- 1. Stop any running 710.DesktopRice processes -----------------------------------
 # Unconditional -- regardless of whether -Activate/autostart was ever used on this
 # machine, install.ps1 -Activate's own "start now" step (or a person starting things by
@@ -184,7 +192,9 @@ Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME (User scope, only wh
 # --- 5. Remove winget pins -----------------------------------------------------------
 Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
     foreach ($row in ($wingetRows | Where-Object { $_.Version -ne 'latest' })) {
-        winget pin remove --id $row.InstallId 2>$null | Out-Null
+        $pinArgs = @('pin', 'remove', '--id', $row.InstallId)
+        if ($PackageSources.ContainsKey($row.InstallId)) { $pinArgs += @('--source', $PackageSources[$row.InstallId]) }
+        winget @pinArgs 2>$null | Out-Null
     }
 } 'Winget pins removed'
 
@@ -201,7 +211,9 @@ foreach ($row in $wingetRows) {
         continue
     }
     Invoke-Step "Uninstall $id" {
-        winget uninstall --id $id --exact --silent 2>$null | Out-Null
+        $uninstallArgs = @('uninstall', '--id', $id, '--exact', '--silent')
+        if ($PackageSources.ContainsKey($id)) { $uninstallArgs += @('--source', $PackageSources[$id]) }
+        winget @uninstallArgs 2>$null | Out-Null
     } "$id uninstalled"
 }
 

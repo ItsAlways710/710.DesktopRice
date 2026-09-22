@@ -37,10 +37,12 @@ komorebi, YASB, AutoHotkey, Flow Launcher, wallust, ShareX.
 
 Marked `yes` (general-purpose, protected by default — `uninstall.ps1` requires `-Force` to
 touch these): Windows Terminal, the Nerd Font, Starship, fzf, zoxide, eza, bat, Everything,
-PSFzf. **Reviewed and confirmed by the user 2026-09-22** — originally flagged `?` as
-Claude's own conservative guess with no real evidence either way (defaulted to protecting
-rather than silently deciding); the user reviewed the full list, confirmed these stay
-protected, and moved ShareX from protected to removable-by-default.
+PSFzf, PowerShell 7. **Reviewed and confirmed by the user 2026-09-22** — originally flagged
+`?` as Claude's own conservative guess with no real evidence either way (defaulted to
+protecting rather than silently deciding); the user reviewed the full list, confirmed these
+stay protected, and moved ShareX from protected to removable-by-default. PowerShell 7 was
+added the same session, at the user's explicit request, as a new pinned `-Force`-protected
+row (not part of the original review — decided directly, not guessed).
 
 | Component | Version | Source | Install ID | Pre-existing? | Last touched |
 |---|---|---|---|---|---|
@@ -51,6 +53,7 @@ protected, and moved ShareX from protected to removable-by-default.
 | wallust | 4.1.0-alpha | github-release | explosion-mental/wallust | no | 2026-09-21 |
 | ShareX | latest | winget | ShareX.ShareX | no | 2026-09-21 |
 | Windows Terminal | latest | winget | Microsoft.WindowsTerminal | yes | 2026-09-21 |
+| PowerShell 7 | 7.6.6 | winget | 9MZ1SNWT0N5D | yes | 2026-09-22 |
 | JetBrainsMono Nerd Font | latest | winget | DEVCOM.JetBrainsMonoNerdFont | yes | 2026-09-21 |
 | Starship | latest | winget | Starship.Starship | yes | 2026-09-21 |
 | fzf | latest | winget | junegunn.fzf | yes | 2026-09-21 |
@@ -80,6 +83,23 @@ earlier session. A real, intentional deviation from winarchy's pin, not a typo.
 **wallust** — no winget/scoop package exists; installed via `tools/install-wallust.ps1`
 from its pinned Codeberg release, SHA256-verified. See that script and the Palette section
 of the plan doc.
+
+**PowerShell 7** — Dell's existing install is the Microsoft Store/MSIX build
+(`AppData\Local\Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe`), not
+the traditional MSI package, confirmed via Windows Terminal's dynamic-profile `commandline`
+field (that path itself can't be browsed directly — `AppData\...\WindowsApps` is a
+protected/inaccessible location, even via the device bridge running as the machine's own
+user). `9MZ1SNWT0N5D` is the Microsoft Store product ID (confirmed via the Store listing at
+`apps.microsoft.com/detail/9mz1snwt0n5d`), not `Microsoft.PowerShell` (that's the separate
+traditional MSI package — pinning that one instead would risk installing a redundant second
+copy alongside the Store build already here). `install.ps1` and `uninstall.ps1` pass
+`--source msstore` for this one package specifically (see `$PackageSources` in both
+scripts), since winget's default community source doesn't carry it. Version `7.6.6` is what
+the user reported live (`$PSVersionTable.PSVersion` on Dell, 2026-09-22) — not independently
+verified against a real `winget list --source msstore` run (the device bridge can't invoke
+winget), so if the exact-version pin match ever misbehaves the first time `install.ps1`
+actually runs, check whether winget's own catalog reports a 4-part MSIX-style version (e.g.
+`7.6.6.0`) instead of this 3-part one.
 
 **Not tracked here**: Windows Terminal, ShareX and Everything ship with no meaningful
 "pin" concept in this project's own usage (no config of ours depends on an exact build),

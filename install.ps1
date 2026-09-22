@@ -92,6 +92,7 @@ $CorePins = [ordered]@{
     'AmN.yasb'                    = '2.0.7'
     'AutoHotkey.AutoHotkey'       = '2.0.26'
     'Flow-Launcher.Flow-Launcher' = '2.1.3'
+    '9MZ1SNWT0N5D'                = '7.6.6'   # PowerShell 7 -- msstore source, see $PackageSources below
 }
 # Required, not pinned -- always installed at whatever winget currently offers.
 $RequiredPackages = @(
@@ -105,6 +106,15 @@ $RequiredPackages = @(
     'sharkdp.bat',
     'voidtools.Everything'
 )
+# Per-package winget source override. Every package above resolves through winget's
+# default (community) source except PowerShell 7 -- Dell's own install is the Store/MSIX
+# build, which lives in the msstore source, not the traditional MSI package under
+# Microsoft.PowerShell (see versions.md's PowerShell 7 note for how that was confirmed).
+# uninstall.ps1 keeps a matching copy of this table; if you add another msstore-sourced
+# package here, add it there too.
+$PackageSources = @{
+    '9MZ1SNWT0N5D' = 'msstore'   # PowerShell 7
+}
 
 if (-not $SkipPackages) {
     Write-Host "`n-- Packages (winget) --" -ForegroundColor Cyan
@@ -114,7 +124,10 @@ if (-not $SkipPackages) {
 
     foreach ($id in $allPackages.Keys) {
         $pinVersion = $allPackages[$id]
-        $listed = winget list --id $id --exact --accept-source-agreements 2>$null | Out-String
+        $source = $PackageSources[$id]
+        $listArgs = @('list', '--id', $id, '--exact', '--accept-source-agreements')
+        if ($source) { $listArgs += @('--source', $source) }
+        $listed = (winget @listArgs 2>$null) | Out-String
         $alreadyInstalled = $listed -match [regex]::Escape($id)
         if ($alreadyInstalled) {
             Step-Ok "$id already installed"
@@ -122,13 +135,16 @@ if (-not $SkipPackages) {
             Step-Info "Installing $id ..."
             $wingetArgs = @('install', '--id', $id, '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements')
             if ($pinVersion) { $wingetArgs += @('--version', $pinVersion) }
+            if ($source) { $wingetArgs += @('--source', $source) }
             winget @wingetArgs
             if ($LASTEXITCODE -ne 0) {
                 Step-Warn "winget install $id exited with code $LASTEXITCODE -- check the output above."
             }
         }
         if ($pinVersion) {
-            winget pin add --id $id 2>$null | Out-Null
+            $pinArgs = @('pin', 'add', '--id', $id)
+            if ($source) { $pinArgs += @('--source', $source) }
+            winget @pinArgs 2>$null | Out-Null
         }
     }
 
