@@ -44,6 +44,33 @@ function ConvertTo-Rgb {
     }
 }
 
+function Save-OriginalStateOnce {
+    <# Self-contained one-time snapshot -- this script stays dependency-free by design (see
+       its own header above), so this duplicates tools\lib\activation.ps1's Save-
+       OriginalState rather than dot-sourcing it. Same path convention
+       (%LOCALAPPDATA%\710.DesktopRice\original-state\<label>.json), so uninstall.ps1's
+       Restore-* functions (which DO dot-source that file) can read what this writes. Keep
+       both copies in sync if this shape ever changes. #>
+    param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)]$Data)
+    $dir = Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $file = Join-Path $dir "$Label.json"
+    if (Test-Path $file) { return }
+    $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $file -Encoding UTF8
+}
+
+function Get-RegValueSnapshotLocal {
+    <# Same shape as activation.ps1's Get-RegValueSnapshot (single named value, never a
+       whole key -- see that function's own comment for why) -- duplicated here for the
+       same dependency-free reason as Save-OriginalStateOnce above. #>
+    param([string]$Path, [string]$Name)
+    $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    if (-not $item) { return [ordered]@{ Existed = $false; Value = $null; Type = $null } }
+    $kind = 'String'
+    try { $kind = (Get-Item -Path $Path).GetValueKind($Name).ToString() } catch { }
+    [ordered]@{ Existed = $true; Value = $item.$Name; Type = $kind }
+}
+
 function Get-ShadedHex {
     <# Lerp '#rrggbb' toward white (Factor > 0) or black (Factor < 0).
        Ported from winarchy's Get-WinarchyShadedHex. #>
@@ -93,16 +120,29 @@ if ($komorebiRunning) {
 # Ported from winarchy's Set-WinarchyWindowsAppearance / Send-WinarchyColorSetChange.
 # Always dark mode -- no light-mode path exists anywhere in this project.
 $personalize = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+$dwm = 'HKCU:\SOFTWARE\Microsoft\Windows\DWM'
+# One-time snapshot of whatever these values were before this script ever ran -- only the
+# very first run (across the life of the install, not just this process) actually writes
+# the file; every later wallpaper change finds it already there and skips. Restored by
+# uninstall.ps1's Restore-WindowsAccent (tools\lib\activation.ps1).
+Save-OriginalStateOnce -Label 'windows-accent' -Data @{
+    Personalize_AppsUseLightTheme    = Get-RegValueSnapshotLocal -Path $personalize -Name 'AppsUseLightTheme'
+    Personalize_SystemUsesLightTheme = Get-RegValueSnapshotLocal -Path $personalize -Name 'SystemUsesLightTheme'
+    Personalize_ColorPrevalence      = Get-RegValueSnapshotLocal -Path $personalize -Name 'ColorPrevalence'
+    Dwm_ColorPrevalence              = Get-RegValueSnapshotLocal -Path $dwm -Name 'ColorPrevalence'
+    Dwm_AccentColor                  = Get-RegValueSnapshotLocal -Path $dwm -Name 'AccentColor'
+    Dwm_ColorizationColor            = Get-RegValueSnapshotLocal -Path $dwm -Name 'ColorizationColor'
+}
 Set-ItemProperty -Path $personalize -Name 'AppsUseLightTheme' -Value 0 -Type DWord
 Set-ItemProperty -Path $personalize -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
 Set-ItemProperty -Path $personalize -Name 'ColorPrevalence' -Value 1 -Type DWord
-Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\DWM' -Name 'ColorPrevalence' -Value 1 -Type DWord
+Set-ItemProperty -Path $dwm -Name 'ColorPrevalence' -Value 1 -Type DWord
 
 try {
     $accentRgb = ConvertTo-Rgb -Hex $accent
     $abgr = (0xFF -shl 24) -bor ($accentRgb.B -shl 16) -bor ($accentRgb.G -shl 8) -bor $accentRgb.R
-    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\DWM' -Name 'AccentColor' -Value $abgr -Type DWord
-    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\DWM' -Name 'ColorizationColor' -Value $abgr -Type DWord
+    Set-ItemProperty -Path $dwm -Name 'AccentColor' -Value $abgr -Type DWord
+    Set-ItemProperty -Path $dwm -Name 'ColorizationColor' -Value $abgr -Type DWord
 }
 catch {
     Write-Warning "Windows accent not applied: $($_.Exception.Message)"
@@ -146,6 +186,22 @@ $wtSettingsPath = $wtSettingsCandidates | Where-Object { Test-Path $_ } | Select
 if ($wtSettingsPath) {
     $wt = Get-Content $wtSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
 
+    # One-time snapshot of whatever these fields were before this script ever ran -- same
+    # reasoning as the 'windows-accent' snapshot above, captured from the raw parsed
+    # settings before any of the "ensure structure exists" defensive lines below touch
+    # anything. Restored by uninstall.ps1's Restore-WindowsTerminalSettings (tools\lib\
+    # activation.ps1), alongside install.ps1 Section 8's separate 'terminal-defaultprofile'
+    # snapshot -- see that function's own comment for why this is two labels, not one.
+    $colorSchemeExisted = $wt['profiles'] -is [hashtable] -and $wt['profiles']['defaults'] -is [hashtable] -and $wt['profiles']['defaults'].ContainsKey('colorScheme')
+    $existingWallustTheme = if ($wt['themes'] -is [array]) { @($wt['themes']) | Where-Object { $_['name'] -eq 'wallust' } | Select-Object -First 1 } else { $null }
+    Save-OriginalStateOnce -Label 'terminal-colorscheme' -Data @{
+        ColorSchemeExisted       = $colorSchemeExisted
+        ColorScheme              = if ($colorSchemeExisted) { $wt['profiles']['defaults']['colorScheme'] } else { $null }
+        ThemeKeyExisted          = $wt.ContainsKey('theme')
+        Theme                    = $wt['theme']
+        WallustThemeEntryExisted = $null -ne $existingWallustTheme
+    }
+
     if (-not $wt.ContainsKey('profiles') -or $wt['profiles'] -isnot [hashtable]) { $wt['profiles'] = @{} }
     if (-not $wt['profiles'].ContainsKey('defaults') -or $wt['profiles']['defaults'] -isnot [hashtable]) {
         $wt['profiles']['defaults'] = @{}
@@ -165,28 +221,4 @@ if ($wtSettingsPath) {
     Write-Host "Windows Terminal: colorScheme + theme set to 'wallust'."
 } else {
     Write-Host "Windows Terminal settings.json not found -- skipped."
-}
-
-# --- Lock screen sync ---------------------------------------------------------
-# Fires the on-demand elevated 'lock-screen-sync' Scheduled Task (registered by
-# install.ps1 -Activate; see tools\lib\activation.ps1's Register-LockScreenSyncTask and
-# scripts\Sync-LockScreen.ps1) so the lock screen picks up whatever the wallpaper was just
-# changed to. Deliberately inline schtasks.exe calls rather than dot-sourcing
-# activation.ps1 -- this script runs on every single wallpaper change and stays
-# dependency-free by design, same as the rest of this file. Doesn't pass the wallpaper path
-# as an argument: Sync-LockScreen.ps1 re-reads it itself from the registry, so there's
-# nothing to keep in sync here beyond just firing the task. A quiet Write-Host, never a
-# Warning, if the task isn't registered yet -- a completely normal state before the first
-# `install.ps1 -Activate`, not a broken one.
-$lockScreenTask = '\710.DesktopRice\lock-screen-sync'
-& schtasks.exe /Query /TN $lockScreenTask *> $null
-if ($LASTEXITCODE -eq 0) {
-    & schtasks.exe /Run /TN $lockScreenTask *> $null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Lock screen sync triggered."
-    } else {
-        Write-Warning "Lock screen sync task exists but failed to start (exit $LASTEXITCODE)."
-    }
-} else {
-    Write-Host "Lock-screen-sync task not registered yet (run install.ps1 -Activate) -- skipped."
 }

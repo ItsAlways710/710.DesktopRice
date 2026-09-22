@@ -49,6 +49,137 @@ function Backup-RegistryKey {
     $dest
 }
 
+# --- Original-state snapshots (true "restore to before 710.DesktopRice" on uninstall) --
+# Different problem from Backup-RegistryKey above and from the hardening/taskbar revert
+# pattern further down: those settings don't exist on a stock Windows install, so
+# reverting them just means deleting the value. Wallpaper, accent color, the lock screen,
+# and Windows Terminal's default shell/colorScheme are NOT like that -- something was
+# already there before 710.DesktopRice ever touched it, and a real uninstall needs to put
+# that exact something back, not just remove what we added. These functions snapshot
+# whatever's about to change, exactly ONCE (gated on the snapshot not already existing --
+# a second, third, Nth install.ps1/wallpaper-change run never overwrites an earlier
+# snapshot with what is by then already OUR OWN state), into
+# %LOCALAPPDATA%\710.DesktopRice\original-state\<label>.json -- machine-local, outside the
+# repo entirely, same convention as this repo's autostart logs
+# (%LOCALAPPDATA%\710.DesktopRice\*-autostart.log). uninstall.ps1 restores from these and
+# deletes each snapshot file once it's been used, so a future re-install starts clean and
+# snapshots fresh again rather than restoring an increasingly stale state.
+#
+# tools\apply-wallust-outputs.ps1 needs this SAME path convention and JSON shape but
+# deliberately doesn't dot-source this file (stays dependency-free -- see its own header),
+# so it carries a small duplicated copy of Save-OriginalState/Get-RegValueSnapshot rather
+# than calling these. Keep both copies in sync if this shape ever changes.
+function Get-OriginalStateDir {
+    $dir = Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $dir
+}
+
+function Save-OriginalState {
+    <# One-time snapshot: writes <label>.json only if it doesn't already exist. $Data is
+       whatever the caller wants restored later -- typically a small hashtable of exactly
+       the field(s) about to change, not the whole surrounding file/key. #>
+    param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)]$Data)
+    $file = Join-Path (Get-OriginalStateDir) "$Label.json"
+    if (Test-Path $file) { return }
+    $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $file -Encoding UTF8
+}
+
+function Get-OriginalState {
+    <# Returns the snapshotted hashtable for $Label, or $null if it was never taken --
+       callers treat $null as "nothing to restore" (this machine's install never actually
+       reached the point of changing this setting), a safe no-op, not a warning. #>
+    param([Parameter(Mandatory)][string]$Label)
+    $file = Join-Path (Get-OriginalStateDir) "$Label.json"
+    if (-not (Test-Path $file)) { return $null }
+    Get-Content $file -Raw | ConvertFrom-Json -AsHashtable
+}
+
+function Remove-OriginalState {
+    param([Parameter(Mandatory)][string]$Label)
+    Remove-Item (Join-Path (Get-OriginalStateDir) "$Label.json") -Force -ErrorAction SilentlyContinue
+}
+
+function Get-RegValueSnapshot {
+    <# One registry value's current Existed/Value/Type (Value/Type both $null if absent) --
+       the unit Save-OriginalState snapshots and Set-RegValueFromSnapshot restores, for a
+       SINGLE named value, never a whole key -- so restoring never clobbers an unrelated
+       sibling value under the same key that changed for some other reason in between
+       (e.g. HKCU\Control Panel\Desktop holds a lot more than just WallPaper). #>
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Name)
+    $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    if (-not $item) { return [ordered]@{ Existed = $false; Value = $null; Type = $null } }
+    $kind = 'String'
+    try { $kind = (Get-Item -Path $Path).GetValueKind($Name).ToString() } catch { }
+    [ordered]@{ Existed = $true; Value = $item.$Name; Type = $kind }
+}
+
+function Set-RegValueFromSnapshot {
+    <# Restores one value from a Get-RegValueSnapshot-shaped hashtable: sets it back if it
+       existed before, removes it entirely if it didn't (matching how the hardening revert
+       already treats "never existed" -- hand it back to Windows' own default). #>
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)]$Snapshot)
+    if (-not $Snapshot.Existed) {
+        Remove-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    } else {
+        if (-not (Test-Path $Path)) { $null = New-Item -Path $Path -Force }
+        Set-ItemProperty -Path $Path -Name $Name -Value $Snapshot.Value -Type $Snapshot.Type -ErrorAction SilentlyContinue
+    }
+}
+
+function Send-SettingChangeBroadcast {
+    <# HWND_BROADCAST + WM_SETTINGCHANGE("ImmersiveColorSet"), SMTO_ABORTIFHUNG -- makes an
+       accent-color change apply live, no logoff/restart. Ported inline from
+       tools\apply-wallust-outputs.ps1's own copy of this P/Invoke (that script keeps its
+       own -- see this file's header note above -- this copy is for Restore-WindowsAccent,
+       called from uninstall.ps1, which already dot-sources this file). #>
+    if (-not ('TenSeven.Native.SettingChange' -as [type])) {
+        Add-Type -Namespace TenSeven.Native -Name SettingChange -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+'@
+    }
+    $result = [UIntPtr]::Zero
+    [TenSeven.Native.SettingChange]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'ImmersiveColorSet', 2, 1000, [ref]$result) | Out-Null
+}
+
+function Set-DesktopWallpaper {
+    <# SPI_SETDESKWALLPAPER=0x0014, SPIF_UPDATEINIFILE|SPIF_SENDCHANGE=0x03 -- writes
+       HKCU\Control Panel\Desktop\WallPaper and applies live, no logoff/restart needed.
+       Shared by install.ps1 Section 4 (sets the first-run default) and
+       Restore-OriginalWallpaper below (sets it back to whatever was there before). #>
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not ('TenSeven.Native.Wallpaper' -as [type])) {
+        Add-Type -Namespace TenSeven.Native -Name Wallpaper -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, string pvParam, uint fWinIni);
+'@
+    }
+    $ok = [TenSeven.Native.Wallpaper]::SystemParametersInfo(0x0014, 0, $Path, 0x03)
+    if (-not $ok) { throw "SystemParametersInfo returned false (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
+}
+
+function Save-OriginalWallpaper {
+    <# One-time snapshot of the wallpaper as it stood before install.ps1 Section 4 ever
+       set the repo's default -- called from there, right before the first Set-
+       DesktopWallpaper call. #>
+    Save-OriginalState -Label 'wallpaper' -Data (Get-RegValueSnapshot -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper')
+}
+
+function Restore-OriginalWallpaper {
+    <# Reverts Save-OriginalWallpaper -- called from uninstall.ps1. $null from Get-
+       OriginalState means install.ps1 never actually reached Section 4's wallpaper-setting
+       branch on this machine (already using one of the repo's own wallpapers, or the
+       default image was missing) -- safe no-op, not a warning. #>
+    $snap = Get-OriginalState -Label 'wallpaper'
+    if (-not $snap) { return $false }
+    if ($snap.Existed -and $snap.Value) {
+        Set-DesktopWallpaper -Path $snap.Value
+    }
+    Remove-OriginalState -Label 'wallpaper'
+    return $true
+}
+
 # --- Component discovery (shared by Defender exclusions + autostart) ----------------
 function Get-KomorebiExe {
     $found = (Get-Command komorebi.exe -ErrorAction SilentlyContinue)?.Source
@@ -546,6 +677,19 @@ function Register-LockScreenSyncTask {
         Step-Warn 'Lock-screen sync: pwsh.exe not found on PATH -- skipping (install PowerShell 7 first).'
         return
     }
+    # One-time snapshot of PersonalizationCSP as it stood before this task can ever fire
+    # and write to it -- registration (here) is the only point that's guaranteed to run
+    # before the first sync, so it's the right place to capture "before", not
+    # Sync-LockScreen.ps1 itself (which only ever SETS these values, never should be the
+    # one deciding what "original" means). Almost always Existed=$false for all three on
+    # a non-managed machine (PersonalizationCSP is an Enterprise/MDM-only key Home doesn't
+    # ship with) -- see Restore-LockScreen below for what that means on revert.
+    $cspPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
+    Save-OriginalState -Label 'lockscreen-personalizationcsp' -Data @{
+        LockScreenImageStatus = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImageStatus'
+        LockScreenImagePath   = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImagePath'
+        LockScreenImageUrl    = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImageUrl'
+    }
     $script = Join-Path $Root 'scripts\Sync-LockScreen.ps1'
     $user = "$env:USERDOMAIN\$env:USERNAME"
     $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) '710-task-lock-screen-sync.xml'
@@ -565,14 +709,42 @@ function Register-LockScreenSyncTask {
 }
 
 function Unregister-LockScreenSyncTask {
-    <# Reverts Register-LockScreenSyncTask -- called from uninstall.ps1. Deleting the task
-       does NOT revert the PersonalizationCSP registry keys Sync-LockScreen.ps1 already wrote
-       (so the current lock screen image is left as-is, and the manual "choose a photo"
-       option stays greyed out) -- reverting those needs a separate elevated registry cleanup
-       this repo doesn't automate yet; see the plan doc. Mirrors Unregister-Autostart: no
-       elevation check, best-effort, ignores the exit code. #>
+    <# Reverts Register-LockScreenSyncTask -- called from uninstall.ps1. Only deletes the
+       Scheduled Task itself; the actual PersonalizationCSP registry values are a separate
+       concern, reverted by Restore-LockScreen below (uninstall.ps1 calls both). Mirrors
+       Unregister-Autostart: no elevation check, best-effort, ignores the exit code. #>
     $full = Get-TaskFullName -TaskName 'lock-screen-sync'
     & schtasks.exe /Delete /TN $full /F *> $null
+}
+
+function Restore-LockScreen {
+    <# Reverts whatever Sync-LockScreen.ps1 wrote to PersonalizationCSP, back to the
+       Save-OriginalState 'lockscreen-personalizationcsp' snapshot Register-
+       LockScreenSyncTask took at registration time. $null means that snapshot was never
+       taken (lock-screen sync was never successfully registered on this machine) -- safe
+       no-op. On the common case (the key didn't exist before -- see Register-
+       LockScreenSyncTask's comment), this deletes the whole PersonalizationCSP key rather
+       than three now-empty values, so the manual "choose a photo" Settings option comes
+       back too, not just an empty-but-still-managed key. Requires elevation (HKLM) --
+       warns and skips, same as every other elevation-gated revert in this file, rather
+       than failing the uninstall. #>
+    $snap = Get-OriginalState -Label 'lockscreen-personalizationcsp'
+    if (-not $snap) { return $false }
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Step-Warn 'Lock-screen registry keys need an elevated shell to revert -- re-run uninstall.ps1 from an admin PowerShell to finish restoring the original lock screen.'
+        return $false
+    }
+    $cspPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
+    $anyExistedBefore = $snap.LockScreenImageStatus.Existed -or $snap.LockScreenImagePath.Existed -or $snap.LockScreenImageUrl.Existed
+    if (-not $anyExistedBefore) {
+        Remove-Item -Path $cspPath -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        Set-RegValueFromSnapshot -Path $cspPath -Name 'LockScreenImageStatus' -Snapshot $snap.LockScreenImageStatus
+        Set-RegValueFromSnapshot -Path $cspPath -Name 'LockScreenImagePath' -Snapshot $snap.LockScreenImagePath
+        Set-RegValueFromSnapshot -Path $cspPath -Name 'LockScreenImageUrl' -Snapshot $snap.LockScreenImageUrl
+    }
+    Remove-OriginalState -Label 'lockscreen-personalizationcsp'
+    return $true
 }
 
 # --- Stopping running components (uninstall-only; not gated behind -Activate) --------
@@ -693,4 +865,131 @@ function Remove-ShellProfile {
     if ($updated) { Set-Content -Path $profilePath -Value ($updated + "`r`n") -Encoding utf8NoBOM }
     else { Remove-Item $profilePath }
     Step-Ok "Profile hook removed: $profilePath (previous saved to $profilePath.bak)"
+}
+
+# --- Restoring theming side effects (wallpaper/accent/Terminal/Flow) -- uninstall-only --
+# The wallpaper/lock-screen restore functions live next to what they revert, above
+# (Restore-OriginalWallpaper near Set-DesktopWallpaper, Restore-LockScreen near
+# Register-LockScreenSyncTask). These three cover the rest of what install.ps1 Section 4
+# and tools\apply-wallust-outputs.ps1 change on a real wallpaper/theme apply, plus Flow
+# Launcher's settings -- all called from uninstall.ps1.
+function Restore-WindowsAccent {
+    <# Reverts the accent-color/dark-mode values tools\apply-wallust-outputs.ps1 sets,
+       back to its own 'windows-accent' snapshot (taken there, via a small duplicated
+       inline copy of Save-OriginalState/Get-RegValueSnapshot -- see that script and this
+       file's header note on why it doesn't dot-source this one). $null means that script
+       never actually ran on this machine -- safe no-op. #>
+    $snap = Get-OriginalState -Label 'windows-accent'
+    if (-not $snap) { return $false }
+    $personalize = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+    $dwm = 'HKCU:\SOFTWARE\Microsoft\Windows\DWM'
+    Set-RegValueFromSnapshot -Path $personalize -Name 'AppsUseLightTheme' -Snapshot $snap.Personalize_AppsUseLightTheme
+    Set-RegValueFromSnapshot -Path $personalize -Name 'SystemUsesLightTheme' -Snapshot $snap.Personalize_SystemUsesLightTheme
+    Set-RegValueFromSnapshot -Path $personalize -Name 'ColorPrevalence' -Snapshot $snap.Personalize_ColorPrevalence
+    Set-RegValueFromSnapshot -Path $dwm -Name 'ColorPrevalence' -Snapshot $snap.Dwm_ColorPrevalence
+    Set-RegValueFromSnapshot -Path $dwm -Name 'AccentColor' -Snapshot $snap.Dwm_AccentColor
+    Set-RegValueFromSnapshot -Path $dwm -Name 'ColorizationColor' -Snapshot $snap.Dwm_ColorizationColor
+    Send-SettingChangeBroadcast
+    Remove-OriginalState -Label 'windows-accent'
+    return $true
+}
+
+function Restore-WindowsTerminalSettings {
+    <# Reverts both Terminal changes back to their own independent snapshots: 'terminal-
+       colorscheme' (profiles.defaults.colorScheme/theme/the "wallust" themes[] entry --
+       taken by tools\apply-wallust-outputs.ps1's own inline duplicate, same reasoning as
+       Restore-WindowsAccent above) and 'terminal-defaultprofile' (taken by install.ps1
+       Section 8). Two separate labels, not one, because they're written by two different
+       scripts that don't run in a fixed relative order relative to each other over the
+       life of an install (Section 4 calls apply-wallust-outputs.ps1 before Section 8 ever
+       runs on a first install, but apply-wallust-outputs.ps1 also fires independently on
+       every later real wallpaper change) -- combining them into one label would let
+       whichever runs first "win" the snapshot and silently drop the other's fields.
+       Applies whichever of the two snapshots exist (each is independently optional) to
+       the CURRENT settings.json in a single read-modify-write, so anything else the person
+       changed in Terminal in between (a new profile, a font tweak) survives. #>
+    $colorSnap = Get-OriginalState -Label 'terminal-colorscheme'
+    $profileSnap = Get-OriginalState -Label 'terminal-defaultprofile'
+    if (-not $colorSnap -and -not $profileSnap) { return $false }
+
+    $wtSettingsCandidates = @(
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+        "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
+    )
+    $wtSettingsPath = $wtSettingsCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $wtSettingsPath) {
+        Step-Info 'Windows Terminal settings.json not found -- nothing to restore (already gone, or Terminal was never launched).'
+        Remove-OriginalState -Label 'terminal-colorscheme'
+        Remove-OriginalState -Label 'terminal-defaultprofile'
+        return $true
+    }
+    $wt = Get-Content $wtSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+
+    if ($colorSnap) {
+        if ($colorSnap.ColorSchemeExisted -and $wt['profiles'] -and $wt['profiles']['defaults'] -is [hashtable]) {
+            $wt['profiles']['defaults']['colorScheme'] = $colorSnap.ColorScheme
+        } elseif ($wt['profiles'] -and $wt['profiles']['defaults'] -is [hashtable]) {
+            $wt['profiles']['defaults'].Remove('colorScheme')
+        }
+        if ($colorSnap.ThemeKeyExisted) { $wt['theme'] = $colorSnap.Theme }
+        elseif ($wt.ContainsKey('theme')) { $wt.Remove('theme') }
+        if (-not $colorSnap.WallustThemeEntryExisted -and $wt['themes'] -is [array]) {
+            $wt['themes'] = @($wt['themes'] | Where-Object { $_['name'] -ne 'wallust' })
+        }
+        Remove-OriginalState -Label 'terminal-colorscheme'
+    }
+    if ($profileSnap) {
+        if ($profileSnap.Existed) { $wt['defaultProfile'] = $profileSnap.Value }
+        elseif ($wt.ContainsKey('defaultProfile')) { $wt.Remove('defaultProfile') }
+        Remove-OriginalState -Label 'terminal-defaultprofile'
+    }
+
+    $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8
+    return $true
+}
+
+function Restore-FlowLauncherSettings {
+    <# Reverts setup-flow-launcher.ps1's ActionKeyword merge and identity toggles back to
+       its 'flow-settings' snapshot (taken there, before either ever changes anything), and
+       removes the Everything plugin folder this repo installed (matched by its fixed
+       plugin ID, not by folder name, same as setup-flow-launcher.ps1's own idempotency
+       check). $null means setup-flow-launcher.ps1 never actually changed anything on this
+       machine (Flow's Settings.json didn't exist yet, or everything was already how this
+       repo wants it on the very first run) -- safe no-op either way. Same read-modify-
+       write-current-file approach as Restore-WindowsTerminalSettings, so anything else the
+       person changed in Flow's settings in between survives. #>
+    $snap = Get-OriginalState -Label 'flow-settings'
+    $everythingPluginId = 'D2D2C23B084D411DB66FE0C79D6C2A6E'
+    $pluginsDir = Join-Path "$env:APPDATA\FlowLauncher" 'Plugins'
+    if (Test-Path $pluginsDir) {
+        Get-ChildItem $pluginsDir -Directory -ErrorAction SilentlyContinue | Where-Object {
+            $manifest = Join-Path $_.FullName 'plugin.json'
+            (Test-Path $manifest) -and ((Get-Content $manifest -Raw | ConvertFrom-Json).ID -eq $everythingPluginId)
+        } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (-not $snap) { return $false }
+
+    $settingsPath = Join-Path "$env:APPDATA\FlowLauncher" 'Settings\Settings.json'
+    if (-not (Test-Path $settingsPath)) {
+        Step-Info 'Flow Launcher Settings.json not found -- nothing to restore.'
+        Remove-OriginalState -Label 'flow-settings'
+        return $true
+    }
+    $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+
+    $plugins = $settings['PluginSettings']['Plugins']
+    if ($plugins -and $plugins.ContainsKey($snap.ProgramPluginId)) {
+        $program = $plugins[$snap.ProgramPluginId]
+        if ($snap.ActionKeywordsExisted) { $program['ActionKeywords'] = @($snap.ActionKeywords) }
+        elseif ($program.ContainsKey('ActionKeywords')) { $program.Remove('ActionKeywords') }
+    }
+    foreach ($k in $snap.Identity.Keys) {
+        $field = $snap.Identity[$k]
+        if ($field.Existed) { $settings[$k] = $field.Value }
+        elseif ($settings.ContainsKey($k)) { $settings.Remove($k) }
+    }
+
+    $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
+    Remove-OriginalState -Label 'flow-settings'
+    return $true
 }

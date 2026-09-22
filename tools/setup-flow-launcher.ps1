@@ -43,6 +43,21 @@
 
 $ErrorActionPreference = 'Stop'
 
+function Save-OriginalStateOnce {
+    <# Self-contained one-time snapshot -- this script has no dependency on tools\lib\
+       activation.ps1 today and this keeps it that way, so this duplicates that file's
+       Save-OriginalState rather than dot-sourcing it. Same path convention
+       (%LOCALAPPDATA%\710.DesktopRice\original-state\<label>.json), so uninstall.ps1's
+       Restore-FlowLauncherSettings (which DOES dot-source that file) can read what this
+       writes. Keep both copies in sync if this shape ever changes. #>
+    param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)]$Data)
+    $dir = Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $file = Join-Path $dir "$Label.json"
+    if (Test-Path $file) { return }
+    $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $file -Encoding UTF8
+}
+
 $settingsPath = Join-Path "$env:APPDATA\FlowLauncher" 'Settings\Settings.json'
 if (-not (Test-Path $settingsPath)) {
     Write-Warning "Flow Launcher Settings.json not found at $settingsPath -- run Flow Launcher at least once first, then re-run this script."
@@ -56,6 +71,26 @@ $changed = $false
 # Fixed ID of Flow's built-in "Program" plugin (Flow.Launcher.Plugin.Program/plugin.json).
 $programPluginId = '791FC278BA414111B8D1886DFE447410'
 $plugins = $settings['PluginSettings']['Plugins']
+
+# One-time snapshot of everything this script is about to touch, taken up front regardless
+# of whether either block below actually finds something to change this run -- covers both
+# the ActionKeywords merge and the identity toggles in one shot, restored together by
+# uninstall.ps1's Restore-FlowLauncherSettings (tools\lib\activation.ps1). Only the very
+# first run (across the life of the install, not just this process) actually writes the
+# file; every later re-run finds it already there and skips.
+$programExisted = $plugins -and $plugins.ContainsKey($programPluginId)
+Save-OriginalStateOnce -Label 'flow-settings' -Data @{
+    ProgramPluginId       = $programPluginId
+    ActionKeywordsExisted = $programExisted -and $null -ne $plugins[$programPluginId]['ActionKeywords']
+    ActionKeywords        = if ($programExisted) { @(if ($null -eq $plugins[$programPluginId]['ActionKeywords']) { @() } else { @($plugins[$programPluginId]['ActionKeywords']) }) } else { @() }
+    Identity              = @{
+        HideNotifyIcon      = @{ Existed = $settings.ContainsKey('HideNotifyIcon');      Value = $settings['HideNotifyIcon'] }
+        AutoUpdates         = @{ Existed = $settings.ContainsKey('AutoUpdates');         Value = $settings['AutoUpdates'] }
+        AutoUpdatePlugins   = @{ Existed = $settings.ContainsKey('AutoUpdatePlugins');   Value = $settings['AutoUpdatePlugins'] }
+        DontPromptUpdateMsg = @{ Existed = $settings.ContainsKey('DontPromptUpdateMsg'); Value = $settings['DontPromptUpdateMsg'] }
+    }
+}
+
 if (-not $plugins -or -not $plugins.ContainsKey($programPluginId)) {
     Write-Warning "Flow's Program plugin settings not found (did you run Flow Launcher at least once?) -- Apps keyword not applied."
 } else {
@@ -102,9 +137,10 @@ if ($identityNeeded) {
 if (-not $changed) {
     Write-Host "Settings.json already fully configured: $settingsPath"
 } else {
-    # Simple one-time backup before the JSON round-trip rewrite (we don't have
-    # winarchy's New-WinarchySnapshot module here -- this is the cheap
-    # equivalent, not a full snapshot system).
+    # Plain most-recent-previous-write backup, separate from the 'flow-settings' true-
+    # original snapshot above -- this one gets overwritten on every run that changes
+    # anything, a quick just-in-case copy before the JSON round-trip rewrite, not what
+    # uninstall.ps1 restores from.
     Copy-Item $settingsPath "$settingsPath.bak" -Force
     $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
     Write-Host "Flow Launcher settings updated: $settingsPath"

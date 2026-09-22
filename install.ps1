@@ -230,17 +230,12 @@ if ($currentWallpaper -and $currentWallpaper.StartsWith($wallpaperRepoDir, [Syst
     Step-Warn "Default wallpaper not found at $defaultWallpaper -- skipping first-run theme."
 } else {
     try {
-        if (-not ('Wallust.Native.Wallpaper' -as [type])) {
-            Add-Type -Namespace Wallust.Native -Name Wallpaper -MemberDefinition @'
-[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, string pvParam, uint fWinIni);
-'@
-        }
-        # SPI_SETDESKWALLPAPER=0x0014, SPIF_UPDATEINIFILE|SPIF_SENDCHANGE=0x03 -- writes
-        # the same HKCU\Control Panel\Desktop\WallPaper value scripts\Sync-LockScreen.ps1
-        # later reads back, and applies live with no logoff/restart needed.
-        $ok = [Wallust.Native.Wallpaper]::SystemParametersInfo(0x0014, 0, $defaultWallpaper, 0x03)
-        if (-not $ok) { throw "SystemParametersInfo returned false (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
+        # One-time snapshot of whatever wallpaper was here before -- Set-DesktopWallpaper
+        # below is about to overwrite it, and uninstall.ps1's Restore-OriginalWallpaper
+        # needs this to put the real original back, not just delete our own value (both in
+        # tools\lib\activation.ps1).
+        Save-OriginalWallpaper
+        Set-DesktopWallpaper -Path $defaultWallpaper
         Step-Ok "Desktop wallpaper set to $defaultWallpaper"
 
         & $wallustExe run $defaultWallpaper --config-dir (Join-Path $Root 'config\wallust') 2>&1 | Out-Null
@@ -361,6 +356,14 @@ if ($wtSettingsPath) {
     $pwshProfile = @($wt['profiles']['list']) | Where-Object { $_['source'] -eq 'Windows.Terminal.PowershellCore' } | Select-Object -First 1
     if ($pwshProfile -and $pwshProfile['guid']) {
         if ($wt['defaultProfile'] -ne $pwshProfile['guid']) {
+            # One-time snapshot of whatever the default profile was before -- separate
+            # label from apply-wallust-outputs.ps1's own 'terminal-colorscheme' snapshot
+            # (see Restore-WindowsTerminalSettings in tools\lib\activation.ps1 for why two
+            # labels, not one) since this is the only place that ever touches this field.
+            Save-OriginalState -Label 'terminal-defaultprofile' -Data @{
+                Existed = $wt.ContainsKey('defaultProfile')
+                Value   = $wt['defaultProfile']
+            }
             $wt['defaultProfile'] = $pwshProfile['guid']
             $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8
             Step-Ok "Windows Terminal default profile set to PowerShell 7 ($($pwshProfile['guid']))"

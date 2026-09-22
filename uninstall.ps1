@@ -7,29 +7,42 @@
   Stops every process 710.DesktopRice may have started (komorebi, YASB, the window-slots
   daemon, ShareX, AHK) regardless of whether -Activate was ever used, then reverts
   everything install.ps1 -Activate touches (autostart Scheduled Tasks, native-taskbar
-  auto-hide, HKCU registry hardening, Explorer's Startup-delay), everything install.ps1
-  applies unconditionally (the pwsh $PROFILE hook, Windows Defender exclusions), the env
-  vars and winget pins install.ps1 sets, then removes the packages this repo's own
-  install.ps1 installs -- EXCEPT any row versions.md marks Pre-existing? = yes, which is
-  left alone unless you pass -Force (see versions.md for what that column means and why
-  most rows currently default to protected). -Keep <Install ID> protects additional
-  specific packages beyond whatever versions.md already protects.
+  auto-hide, HKCU registry hardening, Explorer's Startup-delay, the lock-screen sync task
+  and the lock-screen image itself), everything install.ps1 applies unconditionally (the
+  pwsh $PROFILE hook, Windows Defender exclusions, the desktop wallpaper, Windows accent
+  color/dark-mode, Windows Terminal's colorScheme/theme/default shell, Flow Launcher's
+  ActionKeyword merge/identity toggles/Everything plugin), the env vars and winget pins
+  install.ps1 sets, then removes the packages this repo's own install.ps1 installs --
+  EXCEPT any row versions.md marks Pre-existing? = yes, which is left alone unless you
+  pass -Force (see versions.md for what that column means and why most rows currently
+  default to protected). -Keep <Install ID> protects additional specific packages beyond
+  whatever versions.md already protects.
+
+  A genuine before-710.DesktopRice restore, not just a removal of what this repo added:
+  the wallpaper, lock screen, accent color and Windows Terminal settings are restored to
+  their exact real prior values (snapshotted once, the first time each was ever about to
+  change -- see tools\lib\activation.ps1's "Original-state snapshots" section), not reset
+  to some assumed default and not left as whatever this repo last set them to.
 
   Never touches the repo itself (config/, tools/, this script) or anything outside what
   install.ps1 itself touches -- delete the folder yourself if you want it gone too. Does
   not remove config/windows.toml (your saved window-slot preferences) or the wallust-
-  generated theming files -- those are your data/output, not install state.
+  generated palette files under config/wallust/generated/ -- those are your data/output,
+  not install state.
 
 .NOTES
-  winarchy's own uninstall.ps1 never stops a running process and never reverts autostart,
-  the taskbar, hardening, or the Startup delay at all -- a machine it "uninstalled" from
-  could still have komorebi/YASB/AHK running and autostarting at next logon. This script
-  closes that gap: stopping is unconditional (first thing, every run, regardless of
-  whether this machine ever used -Activate), and every -Activate-gated setting install.ps1
-  can apply is reverted here to match, whether or not -Activate was ever actually used on
-  this machine (each revert is itself idempotent/self-detecting -- reverting a setting
-  that was never applied is a safe no-op, same as install.ps1's own steps being safe to
-  re-run).
+  winarchy's own uninstall.ps1 never stops a running process, never reverts autostart, the
+  taskbar, hardening, or the Startup delay, and never restores wallpaper/accent/Terminal/
+  Flow settings either -- a machine it "uninstalled" from could still have komorebi/YASB/
+  AHK running and autostarting at next logon, with every cosmetic change left behind
+  permanently. This script closes both gaps: stopping is unconditional (first thing, every
+  run, regardless of whether this machine ever used -Activate), every -Activate-gated
+  setting install.ps1 can apply is reverted here to match whether or not -Activate was
+  ever actually used, and every real Windows setting install.ps1/tools\apply-wallust-
+  outputs.ps1 change gets its exact prior value put back rather than just being abandoned
+  (each revert is itself idempotent/self-detecting -- reverting a setting that was never
+  applied, or restoring a snapshot that was never taken, is a safe no-op, same as
+  install.ps1's own steps being safe to re-run).
 
   -DryRun exists because this script can only really be validated by actually destroying
   a real install -- same reasoning winarchy's own uninstall.ps1 documents for its own
@@ -156,7 +169,11 @@ Invoke-ActivationRevert 'Unregister autostart (Scheduled Tasks + Startup fallbac
 }
 Invoke-ActivationRevert 'Unregister lock-screen sync task' {
     Unregister-LockScreenSyncTask
-    Step-Ok 'Lock-screen sync task unregistered (the PersonalizationCSP registry keys it already wrote are left in place -- see tools\lib\activation.ps1)'
+    Step-Ok 'Lock-screen sync task unregistered'
+}
+Invoke-ActivationRevert 'Restore original lock screen' {
+    if (Restore-LockScreen) { Step-Ok 'Lock screen restored to whatever it was before this repo ever managed it' }
+    else { Step-Info 'Lock-screen sync was never actually registered on this machine -- nothing to restore.' }
 }
 Invoke-ActivationRevert 'Un-hide the native taskbar' {
     if (Set-TaskbarAutoHide -Enabled $false) { Step-Ok 'Native taskbar auto-hide turned off' }
@@ -171,10 +188,35 @@ Invoke-ActivationRevert "Restore Explorer's Startup app-launch delay" {
     Step-Ok 'Startup app-launch delay setting removed (Explorer falls back to its own ~10s default)'
 }
 
-# --- 3. Revert unconditional install.ps1 steps: shell profile, Defender exclusions ----
+# --- 3. Revert unconditional install.ps1 steps: shell profile, Defender exclusions,
+#        wallpaper/accent/Terminal/Flow theming ----------------------------------------
+# All of Section 4/8/9's effects below are also unconditional -- install.ps1 reaches them
+# whether or not -Activate was used -- so, like the shell profile hook and Defender
+# exclusions, they're reverted here regardless of -Activate history. Each Restore-*
+# function (tools\lib\activation.ps1) is its own safe no-op if the thing it covers was
+# never actually snapshotted on this machine (see that file's "Original-state snapshots"
+# section header for the full design).
 Write-Host "`n-- Revert shell profile / Defender exclusions --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Remove the pwsh $PROFILE hook' { Remove-ShellProfile }
 Invoke-ActivationRevert 'Remove Windows Defender exclusions' { Remove-DefenderExclusions }
+
+Write-Host "`n-- Revert wallpaper / accent color / Windows Terminal / Flow Launcher --" -ForegroundColor Cyan
+Invoke-ActivationRevert 'Restore original desktop wallpaper' {
+    if (Restore-OriginalWallpaper) { Step-Ok 'Desktop wallpaper restored to whatever it was before this repo ever set a default' }
+    else { Step-Info 'This repo never actually changed the wallpaper on this machine (already using one of its own) -- nothing to restore.' }
+}
+Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' {
+    if (Restore-WindowsAccent) { Step-Ok 'Windows accent color and light/dark-mode settings restored' }
+    else { Step-Info 'tools\apply-wallust-outputs.ps1 never actually ran on this machine -- nothing to restore.' }
+}
+Invoke-ActivationRevert 'Restore original Windows Terminal colorScheme / theme / default shell' {
+    if (Restore-WindowsTerminalSettings) { Step-Ok 'Windows Terminal settings restored' }
+    else { Step-Info 'Windows Terminal was never actually themed or had its default shell changed on this machine -- nothing to restore.' }
+}
+Invoke-ActivationRevert 'Restore original Flow Launcher settings + remove the Everything plugin' {
+    if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored and this repo''s Everything plugin removed' }
+    else { Step-Info 'setup-flow-launcher.ps1 never actually changed anything on this machine -- nothing to restore.' }
+}
 
 # --- 4. Revert env vars -------------------------------------------------------------
 Write-Host "`n-- Config environment variables --" -ForegroundColor Cyan
@@ -256,6 +298,18 @@ Invoke-Step "Remove machine-local generated files (display-index.local.json, kom
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\display-index.local.json')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\komorebi.json')
 } 'Machine-local generated files removed'
+
+# --- 10. Original-state snapshot folder --------------------------------------------------
+# Each Restore-* function above already deletes its own snapshot file once it's actually
+# used one; this just cleans up the (should now be empty) folder itself, and any snapshot
+# that was never consumed (e.g. Restore-LockScreen skipped because this shell wasn't
+# elevated) so a future re-install snapshots fresh state again rather than restoring an
+# increasingly stale one. -Force -ErrorAction SilentlyContinue rather than checking
+# "empty first": a leftover unconsumed snapshot is still safe to just delete here, since
+# its only purpose was this uninstall run.
+Invoke-Step "Remove original-state snapshot folder" {
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state')
+} 'Original-state snapshot folder removed'
 
 Write-Host ''
 if ($DryRun) {
