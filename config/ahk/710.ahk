@@ -21,6 +21,8 @@ EnvSet('NO_COLOR')
 RepoRoot := RegExReplace(A_ScriptDir, "\\config\\ahk$")
 StateDir := RepoRoot "\state"
 DirCreate(StateDir)
+GameFlag := StateDir "\game-mode.flag"
+GamesToml := RepoRoot "\games.toml"
 
 ; ============================================================================
 ; komorebi
@@ -800,6 +802,213 @@ ToggleStayAwake() {
 }
 
 #^w::ToggleStayAwake()             ; keep the machine awake
+
+; ============================================================================
+; Game mode -- state tracking only, NOT floating. games.toml-listed exes are
+; already floated unconditionally by komorebi's own compiled rules (see
+; tools/compile-komorebi-rules.ps1 / the App rules section of the plan doc),
+; regardless of whether this flag is set. This watcher exists to (a) give the
+; tray/main menu a live ON/OFF indicator and (b) hot-reload games.toml when a
+; game is first detected. Ported from winarchy's winarchy.ahk @ 4574fc7 --
+; ToggleGameMode() drops the Winarchy('game-mode on/off') CLI call per the
+; plan doc's "gets a small rewrite" note and just flips the flag file
+; directly, matching ToggleStayAwake()'s existing pattern in this file. The
+; unused MonitorGetPrimary() probe in winarchy's original fullscreen-check
+; (never read again once the per-monitor loop below it starts) is dropped
+; here as dead code, not a behavior change.
+; ============================================================================
+GameExes := Map()
+LoadGames() {
+    global GameExes, GamesToml
+    GameExes := Map()
+    if !FileExist(GamesToml)
+        return
+    for line in StrSplit(FileRead(GamesToml, 'UTF-8'), '`n') {
+        if RegExMatch(line, 'i)^\s*exe\s*=\s*"([^"]+)"', &m) {
+            exe := StrLower(m[1])
+            if !InStr(exe, '*')
+                GameExes[exe] := true
+        }
+    }
+}
+LoadGames()
+
+GameModeActive := false
+SetTimer(GameWatch, 1000)
+
+GameWatch() {
+    global GameModeActive, GameFlag, GameExes
+    active := false
+
+    ; 1) Manual/tray flag
+    if FileExist(GameFlag)
+        active := true
+
+    ; 2) Foreground process listed in games.toml
+    if !active {
+        try {
+            exe := StrLower(WinGetProcessName('A'))
+            if GameExes.Has(exe) || GameExes.Has(RegExReplace(exe, '\.exe$'))
+                active := true
+        }
+    }
+
+    ; 3) Safety net: fullscreen-exclusive (no caption, covers a whole monitor)
+    if !active {
+        try {
+            hwnd := WinGetID('A')
+            style := WinGetStyle(hwnd)
+            if !(style & 0xC00000) {            ; no WS_CAPTION
+                WinGetPos(&x, &y, &w, &h, hwnd)
+                loop MonitorGetCount() {
+                    MonitorGet(A_Index, &l, &t, &r, &b)
+                    if (x <= l && y <= t && x + w >= r && y + h >= b) {
+                        exe := StrLower(WinGetProcessName(hwnd))
+                        ; never treat shell/desktop/the bar itself as a game
+                        if exe != 'explorer.exe' && exe != 'searchhost.exe' && exe != 'yasb.exe'
+                            active := true
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    if (active && !GameModeActive) {
+        GameModeActive := true
+        LoadGames()                              ; pick up any hot-added game
+    } else if (!active && GameModeActive) {
+        GameModeActive := false
+    }
+}
+
+ToggleGameMode() {
+    global GameFlag
+    if FileExist(GameFlag) {
+        FileDelete(GameFlag)
+        TrayTip('Game mode: off', '710sRice')
+    } else {
+        FileAppend('', GameFlag)
+        TrayTip('Game mode: on', '710sRice')
+    }
+}
+
+; ============================================================================
+; Tray + main menu (Apps / Capture / Tiling / Game mode)
+; ============================================================================
+; Shared {text, action} / {text, sub:[...]} item structure (same shape
+; SysMenuItems above already uses -- ShowThemedGuiMenu()'s back-stack drills
+; into a `sub` array and Backspace returns, arbitrarily deep, for free; see
+; ThemedMenuInvoke()/ThemedMenuBack()). Fed to TWO different renderers:
+;   - the real tray icon's right-click, via native A_TrayMenu -- Windows
+;     draws that menu itself and it can't be themed; winarchy's own comment
+;     on this exact point: "the tray's right-click still uses native
+;     A_TrayMenu... equally functional fallback." Unavoidable, not a gap.
+;   - SUPER+Alt+Space, via ShowThemedGuiMenu() -- the wallust-themed popup,
+;     consistent with the System menu (SUPER+Esc) and Key overlay (SUPER+K).
+; Ported from winarchy's SetupTray()/WinarchyCaptureItems()/
+; WinarchyTilingItems(). Themes and Bar submenus are dropped (both
+; eliminated entirely elsewhere in this repo -- see the plan doc's Palette
+; and YASB sections); Doctor and Reload-stack are left out rather than wired
+; to nothing, since neither is built yet in this repo (next up, not this
+; pass). Capture's action strings are Sharex()'s real ShareX CLI switches,
+; matching this file's own 8 already-wired capture hotkeys exactly (not
+; winarchy's old Winarchy('screenshot ...') CLI pass-through, and not the 5
+; extra ShareX actions winarchy exposes that this repo never wired a hotkey
+; for) -- the exact fix the plan doc's App rules/AHK section already flagged
+; as still owed ("Capture menu items -- small consistency fix while
+; rewriting").
+CaptureItems := [
+    {text: 'Region (SUPER+Shift+S)',                action: (*) => Sharex('RectangleRegion')},
+    {text: 'Active window (SUPER+Shift+W)',         action: (*) => Sharex('ActiveWindow')},
+    {text: 'Full screen (SUPER+Shift+P)',           action: (*) => Sharex('PrintScreen')},
+    {text: 'Record (SUPER+Shift+V)',                action: (*) => Sharex('ScreenRecorder')},
+    {text: 'Stop recording (SUPER+Ctrl+V)',         action: (*) => Sharex('StopScreenRecording')},
+    {text: 'Record as GIF (SUPER+Shift+G)',         action: (*) => Sharex('ScreenRecorderGIF')},
+    {text: 'Text from screen -- OCR (SUPER+Ctrl+O)', action: (*) => Sharex('OCR')},
+    {text: 'Scan QR (SUPER+Ctrl+Q)',                action: (*) => Sharex('QRCodeScanRegion')} ]
+
+TilingItems := [
+    {text: 'Manage this window',                         action: (*) => Komorebic('manage')},
+    {text: 'Unmanage this window',                        action: (*) => Komorebic('unmanage')},
+    {text: 'Stop tiling this workspace (SUPER+Shift+Z)',  action: (*) => Komorebic('toggle-tiling')},
+    {text: 'New windows: stack / tile',                   action: (*) => Komorebic('toggle-window-container-behaviour')},
+    {text: 'Title bars',                                  action: (*) => Komorebic('toggle-title-bars')},
+    {text: 'Mouse follows focus',                         action: (*) => Komorebic('toggle-mouse-follows-focus')},
+    {text: 'Restore hidden windows',                      action: (*) => Komorebic('restore-windows')} ]
+
+; Built fresh each open (not a static array) so Game mode / Stay awake show
+; their CURRENT state -- matches winarchy's own dynamic hint text for these.
+MainMenuItems() {
+    global GameFlag, AwakeFlag
+    return [
+        {text: 'Apps (SUPER+Ctrl+Space)', action: (*) => ToggleFlowApps()},
+        {text: 'Capture', sub: CaptureItems},
+        {text: 'Tiling',  sub: TilingItems},
+        {text: 'Game mode: ' (FileExist(GameFlag) ? 'ON (click to turn off)' : 'OFF (click to turn on)'),
+            action: (*) => ToggleGameMode()},
+        {text: 'Stay awake: ' (FileExist(AwakeFlag) ? 'ON (click to turn off)' : 'OFF (click to turn on)'),
+            action: (*) => ToggleStayAwake()},
+        {text: 'System (SUPER+Esc)', sub: SysMenuItems},
+        {text: 'Quit 710.DesktopRice', action: (*) => QuitStack()} ]
+}
+
+OpenMainMenu(*) {
+    global ThemedMenuGui, ThemedMenuStack
+    if (ThemedMenuGui != '') {          ; already open -- toggle closes
+        CloseThemedMenu()
+        return
+    }
+    RefreshMenuColors()
+    ThemedMenuStack := []
+    ShowThemedGuiMenu(MainMenuItems(), '710sRice')
+}
+
+; Builds a native Menu() tree from the shared {text, action}/{text, sub}
+; structure -- recursive so Capture/Tiling/System (all one level deep today)
+; and any deeper nesting later both just work.
+BuildNativeMenu(menuObj, items) {
+    for item in items {
+        if item.HasOwnProp('sub') {
+            childMenu := Menu()
+            BuildNativeMenu(childMenu, item.sub)
+            menuObj.Add(item.text, childMenu)
+        } else {
+            menuObj.Add(item.text, item.action)
+        }
+    }
+}
+
+SetupTray() {
+    ico := RepoRoot "\assets\logo\710rice.ico"
+    if FileExist(ico)
+        try TraySetIcon(ico)   ; no logo asset exists yet -- keeps AHK's default until one does
+    A_IconTip := '710sRice'
+
+    tray := A_TrayMenu
+    tray.Delete()               ; drop AHK's default Pause/Suspend/Reload/Edit menu
+    BuildNativeMenu(tray, MainMenuItems())
+    tray.Default := 'Apps (SUPER+Ctrl+Space)'
+    tray.ClickCount := 1        ; single left-click runs Default, matching winarchy
+}
+SetupTray()
+
+#!Space::OpenMainMenu()             ; main menu (Apps/Capture/Tiling/Game mode/...)
+
+QuitStack() {
+    ; Ordered, non-elevated stop: komorebi, then the bar/capture tools, AHK last.
+    ; window-slots is deliberately left running -- it idles harmlessly once
+    ; komorebi is gone (its own loop just waits and retries; see
+    ; tools/lib/window-slots.ps1), and a clean stop needs pwsh + its own
+    ; Stop-WindowSlotsDaemon, not worth wiring a second copy of that here.
+    ; Flow Launcher isn't touched either -- unlike komorebi/YASB/ShareX/AHK,
+    ; it's not one of this repo's own autostart components (see install.ps1's
+    ; -Activate docstring), it manages its own lifecycle independently.
+    try Komorebic('stop')
+    try RunWait('taskkill /IM yasb.exe /F', , 'Hide')
+    try RunWait('taskkill /IM ShareX.exe /F', , 'Hide')
+    ExitApp()
+}
 
 ; ============================================================================
 ; User overrides (config\ahk\user.ahk, gitignored -- per-machine only, same

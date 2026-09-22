@@ -278,18 +278,51 @@ Set-DefenderExclusions
 Write-Host "`n-- Shell profile ($PROFILE hook) --" -ForegroundColor Cyan
 Install-ShellProfile
 
-# --- 7. Flow Launcher setup (settings + Everything plugin) -------------------------------
+# --- 7. Windows Terminal: default shell (PowerShell 7) -----------------------------------
+# One-time preference, not a per-wallpaper concern -- deliberately NOT folded into
+# tools/apply-wallust-outputs.ps1 (which re-runs on every wallpaper change and would
+# silently re-clobber a manual change back to this every time). Looked up by `source`
+# rather than a hardcoded GUID: Windows Terminal auto-generates the PowerShellCore dynamic
+# profile once it detects pwsh.exe, and while its GUID is deterministic/stable across
+# machines in practice, matching on `source` here means this doesn't silently break if
+# that assumption is ever wrong on a machine (Godzilla, eventually) this hasn't been
+# verified against yet.
+Write-Host "`n-- Windows Terminal default shell --" -ForegroundColor Cyan
+$wtSettingsCandidates = @(
+    "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+    "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
+)
+$wtSettingsPath = $wtSettingsCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($wtSettingsPath) {
+    $wt = Get-Content $wtSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+    $pwshProfile = @($wt['profiles']['list']) | Where-Object { $_['source'] -eq 'Windows.Terminal.PowershellCore' } | Select-Object -First 1
+    if ($pwshProfile -and $pwshProfile['guid']) {
+        if ($wt['defaultProfile'] -ne $pwshProfile['guid']) {
+            $wt['defaultProfile'] = $pwshProfile['guid']
+            $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8
+            Step-Ok "Windows Terminal default profile set to PowerShell 7 ($($pwshProfile['guid']))"
+        } else {
+            Step-Ok 'Windows Terminal default profile already PowerShell 7'
+        }
+    } else {
+        Step-Warn "No PowerShell 7 profile found in Windows Terminal's settings.json yet -- open Terminal once (it generates this profile the first time it sees pwsh.exe on PATH), then re-run .\install.ps1."
+    }
+} else {
+    Step-Warn 'Windows Terminal settings.json not found -- default shell not set (install/launch Windows Terminal first).'
+}
+
+# --- 8. Flow Launcher setup (settings + Everything plugin) -------------------------------
 Write-Host "`n-- Flow Launcher --" -ForegroundColor Cyan
 & (Join-Path $Root 'tools\setup-flow-launcher.ps1')
 if ($LASTEXITCODE -ne 0) {
     Step-Info "Flow Launcher setup skipped this run (see message above) -- harmless if Flow hasn't been run yet; re-run .\install.ps1 after its first launch."
 }
 
-# --- 8. Recompile komorebi.json -----------------------------------------------------------
+# --- 9. Recompile komorebi.json -----------------------------------------------------------
 Write-Host "`n-- Compiling komorebi.json --" -ForegroundColor Cyan
 & (Join-Path $Root 'tools\compile-komorebi-rules.ps1')
 
-# --- 9. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ----
+# --- 10. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ---
 if ($Activate) {
     Write-Host "`n-- Activate --" -ForegroundColor Cyan
 
@@ -330,8 +363,18 @@ if ($Activate) {
     }
     $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
     if ((Get-KomorebiExe) -and $pwsh) {
+        # window-slots needs real pwsh (PS7-only syntax -- see tools/lib/window-slots.ps1's
+        # own `?.` usage) to even parse, so it can't be launched directly under the legacy
+        # $ps host used above for komorebi/YASB. Same trampoline as the Scheduled Task
+        # action in tools/lib/activation.ps1's Get-AutostartComponents: the hidden legacy
+        # powershell.exe host just launches pwsh hidden in turn. Bug fix, not a new
+        # pattern -- this immediate "start now" launch had drifted from the already-correct
+        # Scheduled Task version and would otherwise crash on launch with a silent parse
+        # error (nothing redirects this Start-Process call's output).
+        $slots = Join-Path $Root 'scripts\Start-WindowSlots.ps1'
+        $inner = "Start-Process -FilePath '$pwsh' -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$slots'"
         Start-Process $ps -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-WindowSlots.ps1`""
+            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-Command', "`"$inner`""
         )
     }
     $sharexExe = Get-ShareXExe
