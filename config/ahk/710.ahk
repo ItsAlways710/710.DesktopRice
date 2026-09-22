@@ -950,7 +950,7 @@ MainMenuItems() {
         {text: 'Stay awake: ' (FileExist(AwakeFlag) ? 'ON (click to turn off)' : 'OFF (click to turn on)'),
             action: (*) => ToggleStayAwake()},
         {text: 'System (SUPER+Esc)', sub: SysMenuItems},
-        {text: 'Quit 710.DesktopRice', action: (*) => QuitStack()} ]
+        {text: 'Quit 710sRice', action: (*) => QuitStack()} ]
 }
 
 OpenMainMenu(*) {
