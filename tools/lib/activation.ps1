@@ -476,6 +476,105 @@ function Get-AutostartStatus {
     $status
 }
 
+# --- Lock-screen sync (on-demand elevated task) ---------------------------------------
+function New-OnDemandElevatedTaskXml {
+    <# On-demand-only (empty <Triggers /> -- no LogonTrigger) with RunLevel HighestAvailable,
+       so the registered task carries its OWN elevation: once install.ps1 -Activate (itself
+       run elevated) registers it, a later `schtasks /Run` -- even from an unelevated caller
+       like apply-wallust-outputs.ps1 -- runs it elevated with no UAC prompt, because Task
+       Scheduler grants the token the Principal asks for rather than the caller's own.
+       Otherwise mirrors New-TaskXml's shape (IgnoreNew multiple-instances policy), except
+       AllowHardTerminate=true and a 1-minute ExecutionTimeLimit rather than New-TaskXml's
+       false/unlimited -- this runs a single quick registry write, not a long-lived daemon,
+       so a runaway instance should be killable and shouldn't be able to block later runs
+       (IgnoreNew) indefinitely. #>
+    param([Parameter(Mandatory)][string]$Description, [Parameter(Mandatory)][string]$Command,
+          [string]$Arguments = '', [Parameter(Mandatory)][string]$User)
+    $u = [System.Security.SecurityElement]::Escape($User)
+    $desc = [System.Security.SecurityElement]::Escape($Description)
+    $cmd = [System.Security.SecurityElement]::Escape($Command)
+    $arg = [System.Security.SecurityElement]::Escape($Arguments)
+    @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>$desc</Description>
+  </RegistrationInfo>
+  <Triggers />
+  <Principals>
+    <Principal id="Author">
+      <UserId>$u</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <ExecutionTimeLimit>PT1M</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>$cmd</Command>
+      <Arguments>$arg</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+}
+
+function Register-LockScreenSyncTask {
+    <# Registers the on-demand elevated 'lock-screen-sync' task (see
+       New-OnDemandElevatedTaskXml and scripts\Sync-LockScreen.ps1). No LogonTrigger -- it
+       never fires on its own; tools\apply-wallust-outputs.ps1 fires it with `schtasks /Run`
+       every time the wallpaper (and so the wallust palette) changes. Requires an elevated
+       shell to REGISTER (same as Set-DefenderExclusions); once registered, later RUNS need
+       no further elevation (see New-OnDemandElevatedTaskXml). Idempotent (/F overwrites).
+       Warn-and-skip if not elevated or pwsh is missing -- never fails the install; the lock
+       screen just won't sync until install.ps1 is re-run from an admin shell with PS7
+       present. #>
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Step-Warn 'Lock-screen sync needs an elevated shell to register -- re-run install.ps1 from an admin PowerShell to enable it.'
+        return
+    }
+    $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
+    if (-not $pwsh) {
+        Step-Warn 'Lock-screen sync: pwsh.exe not found on PATH -- skipping (install PowerShell 7 first).'
+        return
+    }
+    $script = Join-Path $Root 'scripts\Sync-LockScreen.ps1'
+    $user = "$env:USERDOMAIN\$env:USERNAME"
+    $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) '710-task-lock-screen-sync.xml'
+    try {
+        $xml = New-OnDemandElevatedTaskXml -Description '710.DesktopRice: syncs the lock screen image to the current wallpaper (on-demand, fired by apply-wallust-outputs.ps1)' `
+            -Command $pwsh -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$script`"" -User $user
+        Set-Content -Path $xmlPath -Value $xml -Encoding Unicode
+        $full = Get-TaskFullName -TaskName 'lock-screen-sync'
+        & schtasks.exe /Create /TN $full /XML $xmlPath /F *> $null
+        if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
+        Step-Ok 'Lock-screen sync task registered (fires on wallpaper change, via apply-wallust-outputs.ps1).'
+    } catch {
+        Step-Warn "Lock-screen sync: failed to register the task ($($_.Exception.Message))."
+    } finally {
+        Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Unregister-LockScreenSyncTask {
+    <# Reverts Register-LockScreenSyncTask -- called from uninstall.ps1. Deleting the task
+       does NOT revert the PersonalizationCSP registry keys Sync-LockScreen.ps1 already wrote
+       (so the current lock screen image is left as-is, and the manual "choose a photo"
+       option stays greyed out) -- reverting those needs a separate elevated registry cleanup
+       this repo doesn't automate yet; see the plan doc. Mirrors Unregister-Autostart: no
+       elevation check, best-effort, ignores the exit code. #>
+    $full = Get-TaskFullName -TaskName 'lock-screen-sync'
+    & schtasks.exe /Delete /TN $full /F *> $null
+}
+
 # --- Stopping running components (uninstall-only; not gated behind -Activate) --------
 function Stop-RunningComponents {
     <# Stops every process 710.DesktopRice may have launched, whether or not -Activate/

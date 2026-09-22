@@ -166,3 +166,27 @@ if ($wtSettingsPath) {
 } else {
     Write-Host "Windows Terminal settings.json not found -- skipped."
 }
+
+# --- Lock screen sync ---------------------------------------------------------
+# Fires the on-demand elevated 'lock-screen-sync' Scheduled Task (registered by
+# install.ps1 -Activate; see tools\lib\activation.ps1's Register-LockScreenSyncTask and
+# scripts\Sync-LockScreen.ps1) so the lock screen picks up whatever the wallpaper was just
+# changed to. Deliberately inline schtasks.exe calls rather than dot-sourcing
+# activation.ps1 -- this script runs on every single wallpaper change and stays
+# dependency-free by design, same as the rest of this file. Doesn't pass the wallpaper path
+# as an argument: Sync-LockScreen.ps1 re-reads it itself from the registry, so there's
+# nothing to keep in sync here beyond just firing the task. A quiet Write-Host, never a
+# Warning, if the task isn't registered yet -- a completely normal state before the first
+# `install.ps1 -Activate`, not a broken one.
+$lockScreenTask = '\710.DesktopRice\lock-screen-sync'
+& schtasks.exe /Query /TN $lockScreenTask *> $null
+if ($LASTEXITCODE -eq 0) {
+    & schtasks.exe /Run /TN $lockScreenTask *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Lock screen sync triggered."
+    } else {
+        Write-Warning "Lock screen sync task exists but failed to start (exit $LASTEXITCODE)."
+    }
+} else {
+    Write-Host "Lock-screen-sync task not registered yet (run install.ps1 -Activate) -- skipped."
+}

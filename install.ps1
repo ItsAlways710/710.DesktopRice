@@ -208,7 +208,54 @@ if ($wallustUpToDate) {
     }
 }
 
-# --- 4. Monitor identity (display_index_preferences) ----------------------------------
+# --- 4. First-run default theme (wallpaper + lock screen) -----------------------------
+# Only on a genuine first run: if the current desktop wallpaper is already one of this
+# repo's own (assets\wallpapers\*), a previous install.ps1 run -- or the person themselves,
+# picking a different one from that same folder -- already themed this machine; leave it
+# alone rather than stomping a deliberate choice on every re-run. Otherwise, set
+# assets\wallpapers\710Default001.png as the desktop wallpaper and run the exact same
+# wallust + apply-wallust-outputs.ps1 pipeline YASB's Wallpapers widget runs on every real
+# wallpaper change (see config\yasb\config.yaml's run_after) -- so komorebi borders, the
+# Windows accent color, Windows Terminal, and (once -Activate registers its Scheduled Task
+# a few sections down) the lock screen all end up themed to it too, via the one real
+# code path rather than a second, parallel "first theme" implementation.
+Write-Host "`n-- First-run default theme --" -ForegroundColor Cyan
+$defaultWallpaper = Join-Path $Root 'assets\wallpapers\710Default001.png'
+$wallpaperRepoDir = Join-Path $Root 'assets\wallpapers'
+$currentWallpaper = (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue).WallPaper
+
+if ($currentWallpaper -and $currentWallpaper.StartsWith($wallpaperRepoDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+    Step-Ok "Wallpaper already set from this repo's own set ($currentWallpaper) -- leaving it as-is."
+} elseif (-not (Test-Path $defaultWallpaper)) {
+    Step-Warn "Default wallpaper not found at $defaultWallpaper -- skipping first-run theme."
+} else {
+    try {
+        if (-not ('Wallust.Native.Wallpaper' -as [type])) {
+            Add-Type -Namespace Wallust.Native -Name Wallpaper -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, string pvParam, uint fWinIni);
+'@
+        }
+        # SPI_SETDESKWALLPAPER=0x0014, SPIF_UPDATEINIFILE|SPIF_SENDCHANGE=0x03 -- writes
+        # the same HKCU\Control Panel\Desktop\WallPaper value scripts\Sync-LockScreen.ps1
+        # later reads back, and applies live with no logoff/restart needed.
+        $ok = [Wallust.Native.Wallpaper]::SystemParametersInfo(0x0014, 0, $defaultWallpaper, 0x03)
+        if (-not $ok) { throw "SystemParametersInfo returned false (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
+        Step-Ok "Desktop wallpaper set to $defaultWallpaper"
+
+        & $wallustExe run $defaultWallpaper --config-dir (Join-Path $Root 'config\wallust') 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "wallust run exited with code $LASTEXITCODE" }
+        # In-process, not a separate `pwsh -File` call -- install.ps1 itself already
+        # requires PS7 (see this file's #Requires line), so there's no PATH/process
+        # resolution to worry about; a plain call-operator invocation is simplest.
+        & (Join-Path $Root 'tools\apply-wallust-outputs.ps1')
+        Step-Ok "Default theme applied (komorebi borders, Windows accent, Windows Terminal, and the lock screen once -Activate registers its sync task)."
+    } catch {
+        Step-Warn "Could not apply the first-run default theme: $($_.Exception.Message)"
+    }
+}
+
+# --- 5. Monitor identity (display_index_preferences) ----------------------------------
 Write-Host "`n-- Monitor identity (display_index_preferences) --" -ForegroundColor Cyan
 
 function Get-MonitorDisplayIndexPreferences {
@@ -279,7 +326,7 @@ if ($displayMap) {
     Step-Info "Not written this run -- config/komorebi/komorebi.json will simply omit display_index_preferences (fine before komorebi has ever run here); re-run .\install.ps1 later to pick it up."
 }
 
-# --- 5. Windows Defender exclusions (unconditional) --------------------------------------
+# --- 6. Windows Defender exclusions (unconditional) --------------------------------------
 # Not gated behind -Activate -- matches winarchy's own install.ps1 exactly (Set-
 # WinarchyDefenderExclusions runs unconditionally there too). Needs elevation; warns and
 # skips (doesn't fail the install) if this shell isn't elevated -- see tools/lib/
@@ -287,14 +334,14 @@ if ($displayMap) {
 Write-Host "`n-- Windows Defender exclusions --" -ForegroundColor Cyan
 Set-DefenderExclusions
 
-# --- 6. Shell profile hook ($PROFILE -> config\pwsh\profile.ps1) -------------------------
+# --- 7. Shell profile hook ($PROFILE -> config\pwsh\profile.ps1) -------------------------
 # Also unconditional -- winarchy calls Install-WinarchyShellProfile in its own install.ps1
 # outside the -Activate block too. Idempotent; snapshots the previous $PROFILE to a .bak
 # alongside it before changing anything.
 Write-Host "`n-- Shell profile ($PROFILE hook) --" -ForegroundColor Cyan
 Install-ShellProfile
 
-# --- 7. Windows Terminal: default shell (PowerShell 7) -----------------------------------
+# --- 8. Windows Terminal: default shell (PowerShell 7) -----------------------------------
 # One-time preference, not a per-wallpaper concern -- deliberately NOT folded into
 # tools/apply-wallust-outputs.ps1 (which re-runs on every wallpaper change and would
 # silently re-clobber a manual change back to this every time). Looked up by `source`
@@ -327,22 +374,31 @@ if ($wtSettingsPath) {
     Step-Warn 'Windows Terminal settings.json not found -- default shell not set (install/launch Windows Terminal first).'
 }
 
-# --- 8. Flow Launcher setup (settings + Everything plugin) -------------------------------
+# --- 9. Flow Launcher setup (settings + Everything plugin) -------------------------------
 Write-Host "`n-- Flow Launcher --" -ForegroundColor Cyan
 & (Join-Path $Root 'tools\setup-flow-launcher.ps1')
 if ($LASTEXITCODE -ne 0) {
     Step-Info "Flow Launcher setup skipped this run (see message above) -- harmless if Flow hasn't been run yet; re-run .\install.ps1 after its first launch."
 }
 
-# --- 9. Recompile komorebi.json -----------------------------------------------------------
+# --- 10. Recompile komorebi.json -----------------------------------------------------------
 Write-Host "`n-- Compiling komorebi.json --" -ForegroundColor Cyan
 & (Join-Path $Root 'tools\compile-komorebi-rules.ps1')
 
-# --- 10. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ---
+# --- 11. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ---
 if ($Activate) {
     Write-Host "`n-- Activate --" -ForegroundColor Cyan
 
     Register-Autostart
+    Register-LockScreenSyncTask
+    # Fire it once right now rather than waiting for a future wallpaper change -- on a
+    # fresh install, Section 4 already set the default wallpaper/theme before this task
+    # existed to catch it, so without this the lock screen would stay unsynced until the
+    # next real wallpaper change. Best-effort: if the task didn't register above (not
+    # elevated, no pwsh), Test-Task is false and this is a silent no-op.
+    if (Test-Task -TaskName 'lock-screen-sync') {
+        & schtasks.exe /Run /TN (Get-TaskFullName -TaskName 'lock-screen-sync') *> $null
+    }
 
     try {
         if (Set-TaskbarAutoHide -Enabled $true) { Step-Ok 'Native taskbar set to auto-hide' }
@@ -408,12 +464,15 @@ if ($Activate) {
     # Migration path: if autostart was already active from a previous -Activate run,
     # re-register it so it picks up any change to how components are launched (e.g. a
     # newer launcher script) without switching modes. If it was never active
-    # (coexistence-only), nothing is touched.
+    # (coexistence-only), nothing is touched. Lock-screen sync follows the same idea,
+    # tracked separately since it isn't one of Get-AutostartStatus's 5 components.
     $autostart = Get-AutostartStatus
-    if (@($autostart.Values | Where-Object { $_ }).Count -gt 0) {
+    $lockScreenActive = Test-Task -TaskName 'lock-screen-sync'
+    if ((@($autostart.Values | Where-Object { $_ }).Count -gt 0) -or $lockScreenActive) {
         Write-Host "`n-- Activate --" -ForegroundColor Cyan
         Step-Info 'Autostart is active: re-registering to pick up any startup changes...'
         Register-Autostart
+        if ($lockScreenActive) { Register-LockScreenSyncTask }
     } else {
         Step-Info 'Not -Activate: packages/config/theming/Defender/profile/Flow are applied, but autostart, the taskbar, hardening and the Startup delay are untouched.'
         Step-Info 'Run .\install.ps1 -Activate when ready to make this repo the active shell experience.'

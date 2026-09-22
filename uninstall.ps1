@@ -154,6 +154,10 @@ Invoke-ActivationRevert 'Unregister autostart (Scheduled Tasks + Startup fallbac
     Unregister-Autostart
     Step-Ok 'Autostart unregistered'
 }
+Invoke-ActivationRevert 'Unregister lock-screen sync task' {
+    Unregister-LockScreenSyncTask
+    Step-Ok 'Lock-screen sync task unregistered (the PersonalizationCSP registry keys it already wrote are left in place -- see tools\lib\activation.ps1)'
+}
 Invoke-ActivationRevert 'Un-hide the native taskbar' {
     if (Set-TaskbarAutoHide -Enabled $false) { Step-Ok 'Native taskbar auto-hide turned off' }
     else { Step-Ok 'Native taskbar was already not set to auto-hide' }
