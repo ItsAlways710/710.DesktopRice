@@ -670,7 +670,12 @@ function New-StartupShortcut {
 function New-TaskXml {
     <# At-LogOn trigger (per-component Delay), InteractiveToken + LeastPrivilege principal
        (no elevation, interactive session only), IgnoreNew multiple-instances policy, no
-       execution time limit. Ported from New-WinarchyTaskXml. #>
+       execution time limit, Normal priority. Ported from New-WinarchyTaskXml.
+       <Priority>4</Priority> ported from winarchy 2d8c910 (v1.5.0): Task Scheduler's
+       default is 7, which starts the task's process at BelowNormal -- and Windows hands
+       BelowNormal down to child processes that don't ask for a class, so through our
+       wscript -> powershell -> launcher chain komorebi/YASB/AHK all came up BelowNormal
+       (winarchy saw delayed retiles under load from exactly this). 4 = Normal. #>
     param([Parameter(Mandatory)][object]$Component, [Parameter(Mandatory)][string]$User)
     $u = [System.Security.SecurityElement]::Escape($User)
     $cmd = [System.Security.SecurityElement]::Escape($Component.Exe)
@@ -703,6 +708,7 @@ function New-TaskXml {
     <AllowHardTerminate>false</AllowHardTerminate>
     <StartWhenAvailable>false</StartWhenAvailable>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
     <Enabled>true</Enabled>
   </Settings>
   <Actions Context="Author">
@@ -735,6 +741,14 @@ function Register-Autostart {
             & schtasks.exe /Create /TN $full /XML $xmlPath /F *> $null
             if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
         } catch {
+            # The task already exists and just couldn't be UPDATED (typically: it was
+            # created from an elevated shell and this run isn't) -- the old task still
+            # autostarts the component, so a Startup .lnk on top would launch it twice.
+            # Ported from winarchy 2d8c910 (v1.5.0).
+            if (Test-Task -TaskName $c.TaskName) {
+                Step-Warn "Autostart $($c.Key): couldn't update the existing task ($($_.Exception.Message)); keeping the old one. If it was created elevated: schtasks /Delete /TN `"$(Get-TaskFullName -TaskName $c.TaskName)`" /F (as admin), then re-run."
+                continue
+            }
             Step-Warn "Autostart $($c.Key): failed to register the task ($($_.Exception.Message)). Falling back to Startup."
             try { New-StartupShortcut -Component $c }
             catch { Step-Warn "Autostart $($c.Key): Startup fallback also failed: $($_.Exception.Message)" }
