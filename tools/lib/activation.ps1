@@ -500,19 +500,50 @@ function ConvertTo-HiddenLaunch {
        d52e515/f088211 -- that killed the child process outright when its detached host
        exited; this script doesn't host/attach the child's console at all).
 
-       Escapes the original Arguments' own embedded double-quotes (backslash-escape, same
-       convention Win32 command-line parsing already uses) so they survive the extra trip
-       through run-hidden.vbs's own command line intact -- WScript.Arguments hands them
-       back unescaped on the other side. Embedded single quotes (window-slots' own nested
-       -Command payload) need no escaping; they're never the outer parser's quote
-       character. #>
-    param([Parameter(Mandatory)][string]$Exe, [Parameter(Mandatory)][string]$Arguments)
+       Real bug found and fixed 2026-09-23: the original version tried to carry Exe/
+       Arguments on run-hidden.vbs's own command line, backslash-escaping embedded double
+       quotes ("same convention Win32 command-line parsing already uses"). That assumption
+       was never actually verified against WSH's real parser and was wrong -- confirmed
+       live via a real run-hidden.log entry plus a byte-exact `od -c` dump: WSH's
+       command-line parser does NOT support backslash-escaped quotes; `\"` comes through as
+       a literal backslash plus an ORDINARY (unescaped) quote-toggle, not a literal `"`. A
+       quoted -File path arrived at powershell.exe mangled
+       (`\C:\710.DesktopRice\...\Start-Komorebi.ps1\` -- stray leading/trailing backslashes,
+       no quotes at all), which powershell.exe can't resolve as a path -- it failed
+       silently, every time this ran for real, including the very scheduled runs this
+       feature was supposedly validated against. Task Scheduler still reported Last Result
+       0 (that's wscript.exe's own exit code, unaffected -- see run-hidden.vbs's header) and
+       the launched script never got far enough to write even its first log line, so this
+       had no visible symptom other than "komorebi just isn't running" after logon.
+
+       Fixed by not putting Exe/Arguments on run-hidden.vbs's command line at all: they're
+       written to a small two-line plain-text spec file instead (line 1 = Exe, line 2 =
+       Arguments, exactly as originally composed, no escaping needed), and only that file's
+       own path -- a plain, quote-free, backslash-free-at-the-end Windows path -- is passed
+       as run-hidden.vbs's one argument. This sidesteps WSH's command-line parsing for the
+       payload entirely; nothing about it needs to be "quoted correctly" for WSH anymore.
+       Written once here, at registration/-Activate time; read fresh by run-hidden.vbs on
+       every actual fire, including ones long after this PowerShell process has exited (a
+       reboot days later, etc.), so it has to be static/persistent, not a live variable --
+       same %LOCALAPPDATA%\710.DesktopRice\ folder every other autostart log/state file
+       already lives in. #>
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Exe,
+        [Parameter(Mandatory)][string]$Arguments
+    )
     $wscript = Join-Path $env:WINDIR 'System32\wscript.exe'
     $vbs = Join-Path $Root 'tools\lib\run-hidden.vbs'
-    $escapedArgs = $Arguments -replace '"', '\"'
+    $specDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
+    New-Item -ItemType Directory -Path $specDir -Force | Out-Null
+    $spec = Join-Path $specDir "launch-$Key.txt"
+    # ASCII, no BOM -- every value written here is a plain Windows path or powershell.exe
+    # flag, so there's nothing here that needs Unicode; a BOM would otherwise land as a
+    # stray leading character on run-hidden.vbs's own ForReading (ASCII/ANSI) ReadLine.
+    Set-Content -LiteralPath $spec -Value @($Exe, $Arguments) -Encoding ASCII
     [pscustomobject]@{
         Exe       = $wscript
-        Arguments = "//B `"$vbs`" `"$Exe`" `"$escapedArgs`""
+        Arguments = "//B `"$vbs`" `"$spec`""
     }
 }
 
@@ -533,7 +564,7 @@ function Get-AutostartComponents {
     $komorebiExe = Get-KomorebiExe
     if ($komorebiExe) {
         $launcher = Join-Path $Root 'scripts\Start-Komorebi.ps1'
-        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
+        $hidden = ConvertTo-HiddenLaunch -Key 'komorebi' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
         $items.Add([pscustomobject]@{
             Key = 'komorebi'; TaskName = 'komorebi'; LnkName = '710.DesktopRice komorebi.lnk'
             Exe = $hidden.Exe
@@ -547,7 +578,7 @@ function Get-AutostartComponents {
     if ($yasbc) {
         $launcher = Join-Path $Root 'scripts\Start-Yasb.ps1'
         $yasbHome = Join-Path $Root 'config\yasb'
-        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -YasbExe `"$yasbc`" -YasbConfigHome `"$yasbHome`""
+        $hidden = ConvertTo-HiddenLaunch -Key 'yasb' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -YasbExe `"$yasbc`" -YasbConfigHome `"$yasbHome`""
         $items.Add([pscustomobject]@{
             Key = 'yasb'; TaskName = 'yasb'; LnkName = '710.DesktopRice YASB.lnk'
             Exe = $hidden.Exe
@@ -563,7 +594,7 @@ function Get-AutostartComponents {
     if ($komorebiExe -and $pwsh) {
         $slots = Join-Path $Root 'scripts\Start-WindowSlots.ps1'
         $inner = "Start-Process -FilePath '$pwsh' -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$slots'"
-        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"$inner`""
+        $hidden = ConvertTo-HiddenLaunch -Key 'window-slots' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"$inner`""
         $items.Add([pscustomobject]@{
             Key = 'window-slots'; TaskName = 'window-slots'; LnkName = '710.DesktopRice window slots.lnk'
             Exe = $hidden.Exe
@@ -589,7 +620,7 @@ function Get-AutostartComponents {
     if ($ahkExe) {
         $launcher = Join-Path $Root 'scripts\Start-Ahk.ps1'
         $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
-        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -AhkExe `"$ahkExe`" -ScriptPath `"$ahkScript`""
+        $hidden = ConvertTo-HiddenLaunch -Key 'ahk' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -AhkExe `"$ahkExe`" -ScriptPath `"$ahkScript`""
         $items.Add([pscustomobject]@{
             Key = 'ahk'; TaskName = 'ahk'; LnkName = '710.DesktopRice hotkeys.lnk'
             Exe = $hidden.Exe

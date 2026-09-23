@@ -24,28 +24,42 @@
 ' launcher scripts, unchanged and already working; this only replaces how Task Scheduler
 ' launches those launcher scripts in the first place.
 '
-' Arguments: %1 = the target executable's full path. %2 = its argument string, exactly as
-' it would appear on that exe's own command line (quotes and all -- ConvertTo-HiddenLaunch
-' escapes them for the trip through THIS script's own command line; WScript.Arguments
-' hands them back unescaped, same as any other Windows command-line parsing).
+' Argument: %1 = path to a small two-line plain-text "launch spec" file, written by
+' tools\lib\activation.ps1's ConvertTo-HiddenLaunch. Line 1 = the target executable's full
+' path. Line 2 = its full argument string, exactly as it would appear on that exe's own
+' command line (quotes and all).
+'
+' Why a spec FILE instead of Exe/Arguments directly on this script's own command line (the
+' original design, changed 2026-09-23): the original approach backslash-escaped embedded
+' double quotes into this script's command line ("same convention Win32 command-line
+' parsing already uses"). That assumption was never actually verified and was wrong --
+' confirmed live via a real run-hidden.log entry plus a byte-exact `od -c` dump: WSH's own
+' command-line parser does NOT support backslash-escaped quotes the way
+' CommandLineToArgvW/MSVCRT does. A `\"` sequence comes through as a literal backslash plus
+' an ORDINARY (unescaped) quote-toggle, not a literal `"` -- so a quoted -File path arrived
+' at powershell.exe mangled (stray leading/trailing backslashes, no quotes at all), which
+' powershell.exe can't resolve as a real path. It failed silently every time this ran for
+' real: Task Scheduler still reported Last Result 0 (see the logging note below -- that's
+' this script's own exit code, unaffected), and the launched script never got far enough to
+' write even its own first log line. A spec file sidesteps WSH's command-line parsing for
+' the actual payload entirely -- this script's own command line now only ever contains one
+' plain, quote-free file path.
 '
 ' Logging added 2026-09-23: Task Scheduler's own "Last Result" for the calling task only
 ' reflects THIS script's (wscript.exe's) exit code, not the launched process's -- and since
 ' objShell.Run below is fire-and-forget (bWaitOnReturn=False, by design, see above), Task
 ' Scheduler reports success (0) even when the launch itself silently fails, or the launched
-' script never reaches its own first log line. Confirmed happening for real: a scheduled run
-' of the komorebi task reported Last Result 0 with zero corresponding entry in
-' komorebi-autostart.log, while every other run that same day (7+) logged normally -- this
-' class of failure is otherwise invisible. Every invocation now writes a line to
+' script never reaches its own first log line. Every invocation writes a line to
 ' run-hidden.log (shared across all four autostart components, same %LOCALAPPDATA%\
-' 710.DesktopRice\ folder the launched scripts already log to) right before calling Run, and
-' a second line if Run itself throws -- so a future occurrence shows up as either "no launch
-' line at all" (wscript.exe/Task Scheduler's own action never fired) or "launch line present,
-' target script's own log never followed" (the child process died or stalled before logging
-' anything), instead of nothing. Logging happens synchronously but cheaply (one small text
-' append) before/after the async Run call, so it does not change this script's own no-wait,
+' 710.DesktopRice\ folder the launched scripts already log to and the spec files live in)
+' right before calling Run, and a second line if Run itself throws, or if the spec file
+' itself can't be read -- so a future silent failure shows up as either "no launch line at
+' all" (this script/Task Scheduler's own action never fired) or "launch line present,
+' target script's own log never followed" (the child died/stalled before logging anything),
+' instead of nothing. Logging happens synchronously but cheaply (one small text append)
+' before/after the async Run call, so it does not change this script's own no-wait,
 ' no-console-flash behavior.
-Dim q, fso, wshShell, logDir, logPath, ts
+Dim q, fso, wshShell, logDir, logPath, ts, specPath, specFile, exePath, argString
 
 q = Chr(34)
 
@@ -72,10 +86,34 @@ Sub WriteHiddenLaunchLog(msg)
     On Error Goto 0
 End Sub
 
-WriteHiddenLaunchLog "launching: " & q & WScript.Arguments(0) & q & " " & WScript.Arguments(1)
+specPath = WScript.Arguments(0)
 
 On Error Resume Next
-wshShell.Run q & WScript.Arguments(0) & q & " " & WScript.Arguments(1), 0, False
+
+Err.Clear
+Set specFile = fso.OpenTextFile(specPath, 1, False) ' 1 = ForReading
+If Err.Number <> 0 Then
+    WriteHiddenLaunchLog "ERROR: couldn't open spec file " & q & specPath & q & ": 0x" & Hex(Err.Number) & " " & Err.Description
+    On Error Goto 0
+    WScript.Quit 1
+End If
+
+Err.Clear
+exePath = specFile.ReadLine()
+argString = specFile.ReadLine()
+specFile.Close
+If Err.Number <> 0 Then
+    WriteHiddenLaunchLog "ERROR: couldn't read spec file " & q & specPath & q & ": 0x" & Hex(Err.Number) & " " & Err.Description
+    On Error Goto 0
+    WScript.Quit 1
+End If
+
+On Error Goto 0
+
+WriteHiddenLaunchLog "launching: " & q & exePath & q & " " & argString
+
+On Error Resume Next
+wshShell.Run q & exePath & q & " " & argString, 0, False
 If Err.Number <> 0 Then
     WriteHiddenLaunchLog "ERROR: Run failed, 0x" & Hex(Err.Number) & " " & Err.Description
 End If
