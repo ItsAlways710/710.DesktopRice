@@ -518,8 +518,15 @@ function Get-TaskFullName {
 
 function Test-Task {
     param([Parameter(Mandatory)][string]$TaskName)
+    # $null = ... 2>&1 (capture-and-discard), not *> $null (redirect-and-discard): the
+    # latter doesn't fully suppress schtasks.exe's own "ERROR: ..." text for a genuinely
+    # missing task -- found live tonight when toolspply-wallust-outputs.ps1's own copy
+    # of this exact check (same *> $null) leaked that text to the console the first time
+    # all night it ever queried a task that truly didn't exist yet. Every earlier call to
+    # this function happened to query a task that already existed, so the leak was never
+    # actually exercised here until now.
     $full = Get-TaskFullName -TaskName $TaskName
-    & schtasks.exe /Query /TN $full *> $null
+    $null = & schtasks.exe /Query /TN $full 2>&1
     $LASTEXITCODE -eq 0
 }
 

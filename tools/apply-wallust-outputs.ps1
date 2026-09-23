@@ -239,7 +239,12 @@ if ($wtSettingsPath) {
 # an on-demand *elevated* task (New-OnDemandElevatedTaskXml): Task Scheduler elevates the
 # task's own run, regardless of whether this script (running as YASB's widget click) is.
 $lockScreenTask = '\710.DesktopRice\lock-screen-sync'
-& schtasks.exe /Query /TN $lockScreenTask *> $null
+# $null = ... 2>&1, not *> $null -- the latter doesn't fully suppress schtasks.exe's own
+# "ERROR: ..." text when the task genuinely doesn't exist yet (confirmed live: leaked to
+# the console during a fresh install's first-run theme, which runs before -Activate ever
+# registers this task). Same fix applied to activation.ps1's Test-Task, which has the
+# identical pattern.
+$null = & schtasks.exe /Query /TN $lockScreenTask 2>&1
 if ($LASTEXITCODE -eq 0) {
-    & schtasks.exe /Run /TN $lockScreenTask *> $null
+    $null = & schtasks.exe /Run /TN $lockScreenTask 2>&1
 }
