@@ -91,8 +91,26 @@ LaunchOnCursorMonitor(target, winCriteria) {
         Run('"' KomorebicExe '" move-to-monitor ' mon, , 'Hide')
 }
 
+; Close the window that's actually in front of you: WM_CLOSE straight to the
+; active window -- the same message clicking its X sends, so "save changes?"
+; prompts still happen. Ported from winarchy bb72240 (v1.5.0), which dropped
+; `komorebic close` for this: no komorebic.exe spawn per press, and it doesn't
+; depend on komorebi's idea of focus, which can lag behind for windows it
+; ignores or floats (games, Flow, anything in the ignore rules). Refuses the
+; desktop, both taskbars and the YASB bar, so a stray SUPER+X there is a no-op.
+CloseWindow() {
+    if !(hwnd := WinExist('A'))
+        return
+    try {
+        if WinGetClass(hwnd) ~= '^(Progman|WorkerW|Shell_TrayWnd|Shell_SecondaryTrayWnd)$'
+            || WinGetProcessName(hwnd) = 'yasb.exe'
+            return
+        PostMessage(0x0010, 0, 0, , hwnd)   ; WM_CLOSE
+    }
+}
+
 ; --- Windows -----------------------------------------------------------
-#x::Komorebic('close')                           ; close window
+#x::CloseWindow()                                ; close window
                                                   ; (moved off #w -- X reads better for close, frees W below)
 #w::Send('^!w')                                  ; open wallpaper gallery
                                                   ; (re-sends YASB's own native ctrl+alt+w hotkey,
