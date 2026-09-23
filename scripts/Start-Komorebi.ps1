@@ -48,6 +48,33 @@ function Write-Log([string]$m) {
 
 function Test-KomorebiRunning { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) }
 
+function Invoke-Komorebic {
+    <# Runs komorebic.exe with no console window and returns its stdout. Same technique
+       as tools\lib\window-slots.ps1's own Invoke-Komorebic, duplicated locally here
+       rather than dot-sourced -- this script runs under legacy Windows PowerShell 5.1
+       (see Get-AutostartComponents), and window-slots.ps1 needs PS7's ?. operator just to
+       parse, so dot-sourcing it would throw. .NET Framework's ProcessStartInfo also lacks
+       .ArgumentList (added in .NET Core 2.1), so this builds a plain .Arguments string
+       instead -- fine for every call site here (bare subcommands/digits, no spaces).
+       Without CreateNoWindow, Windows allocates a fresh, briefly-visible console per
+       invocation -- confirmed live on Dell as 2 of the "3 shells flash at boot" (the 3rd
+       is Start-Yasb.ps1's own equivalent fix). Reads $komorebic from the caller's scope,
+       same as Write-Log above reads $log. #>
+    param([Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Arguments)
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $komorebic
+    $info.Arguments = ($Arguments -join ' ')
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($info)
+    $out = $p.StandardOutput.ReadToEnd()
+    $null = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    $out
+}
+
 if (-not (Test-Path $exe)) { Write-Log "komorebi.exe not found at $exe; aborting."; exit 1 }
 if (Test-KomorebiRunning)  { Write-Log 'komorebi already running; nothing to do.'; exit 0 }
 
@@ -114,7 +141,7 @@ while ((Get-Date) -lt $overallDeadline) {
         $komorebic = Join-Path (Split-Path $exe) 'komorebic.exe'
         if (Test-Path $komorebic) {
             try {
-                & $komorebic focus-monitor-workspace 0 0 *> $null
+                $null = Invoke-Komorebic focus-monitor-workspace 0 0
                 Write-Log 'primary monitor refocused to workspace 0.'
             } catch { Write-Log "couldn't refocus workspace 0: $($_.Exception.Message)" }
 
@@ -123,7 +150,7 @@ while ((Get-Date) -lt $overallDeadline) {
             try {
                 . (Join-Path $root 'tools\lib\window-slots.ps1')
                 $games = @(Get-GameExes)
-                $stateJson = & $komorebic state 2>$null | ConvertFrom-Json
+                $stateJson = Invoke-Komorebic state | ConvertFrom-Json
                 $tiledExes = @(
                     foreach ($m in $stateJson.monitors.elements) {
                         foreach ($ws in $m.workspaces.elements) {

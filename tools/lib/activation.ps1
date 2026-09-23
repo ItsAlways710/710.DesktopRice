@@ -482,12 +482,48 @@ function Remove-StartupDelay {
 # @ 4574fc7.
 $script:TaskFolder = '710.DesktopRice'
 
+function ConvertTo-HiddenLaunch {
+    <# Rewraps an Exe/Arguments pair so the Scheduled Task launches it via
+       tools\lib\run-hidden.vbs (WScript.Shell.Run, windowStyle 0) instead of directly.
+
+       Why: Task Scheduler launching a console-subsystem host (powershell.exe) directly
+       with -WindowStyle Hidden still briefly flashes a console at every logon -- confirmed
+       live on Dell, 3-4 flashes at boot (one per powershell-hosted autostart component
+       below). Windows allocates the console as part of process creation, before
+       PowerShell's own startup code has run far enough to read -WindowStyle and hide
+       itself -- a well-documented Task Scheduler + PowerShell race, not specific to this
+       repo. wscript.exe (unlike cscript.exe) never allocates a console at all, so there's
+       nothing to flash; its WScript.Shell.Run requests the hidden window style up front,
+       as part of creating the process, not as a hide-after-the-fact race. See
+       run-hidden.vbs's own header for the full writeup, including why this is NOT the same
+       technique winarchy tried and reverted for komorebi (`conhost --headless`, git log
+       d52e515/f088211 -- that killed the child process outright when its detached host
+       exited; this script doesn't host/attach the child's console at all).
+
+       Escapes the original Arguments' own embedded double-quotes (backslash-escape, same
+       convention Win32 command-line parsing already uses) so they survive the extra trip
+       through run-hidden.vbs's own command line intact -- WScript.Arguments hands them
+       back unescaped on the other side. Embedded single quotes (window-slots' own nested
+       -Command payload) need no escaping; they're never the outer parser's quote
+       character. #>
+    param([Parameter(Mandatory)][string]$Exe, [Parameter(Mandatory)][string]$Arguments)
+    $wscript = Join-Path $env:WINDIR 'System32\wscript.exe'
+    $vbs = Join-Path $Root 'tools\lib\run-hidden.vbs'
+    $escapedArgs = $Arguments -replace '"', '\"'
+    [pscustomobject]@{
+        Exe       = $wscript
+        Arguments = "//B `"$vbs`" `"$Exe`" `"$escapedArgs`""
+    }
+}
+
 function Get-AutostartComponents {
     <# Definition of the 5 autostart components this repo actually uses (komorebi, YASB,
        window-slots, ShareX, AHK). net-icon is deliberately not ported -- see this file's
        header comment. Returns only the components whose executable is actually present.
        Each item: Key, TaskName, LnkName, Exe, Arguments, Delay (ISO-8601 duration, for the
-       LogonTrigger's Delay). #>
+       LogonTrigger's Delay). The 4 powershell-hosted components (all but ShareX, which
+       launches its own GUI exe directly and has no console to begin with) go through
+       ConvertTo-HiddenLaunch -- see that function for why. #>
     $items = [System.Collections.Generic.List[object]]::new()
     $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
@@ -497,10 +533,11 @@ function Get-AutostartComponents {
     $komorebiExe = Get-KomorebiExe
     if ($komorebiExe) {
         $launcher = Join-Path $Root 'scripts\Start-Komorebi.ps1'
+        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
         $items.Add([pscustomobject]@{
             Key = 'komorebi'; TaskName = 'komorebi'; LnkName = '710.DesktopRice komorebi.lnk'
-            Exe = $ps
-            Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
+            Exe = $hidden.Exe
+            Arguments = $hidden.Arguments
             Delay = 'PT0S'
         })
     }
@@ -510,10 +547,11 @@ function Get-AutostartComponents {
     if ($yasbc) {
         $launcher = Join-Path $Root 'scripts\Start-Yasb.ps1'
         $yasbHome = Join-Path $Root 'config\yasb'
+        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -YasbExe `"$yasbc`" -YasbConfigHome `"$yasbHome`""
         $items.Add([pscustomobject]@{
             Key = 'yasb'; TaskName = 'yasb'; LnkName = '710.DesktopRice YASB.lnk'
-            Exe = $ps
-            Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -YasbExe `"$yasbc`" -YasbConfigHome `"$yasbHome`""
+            Exe = $hidden.Exe
+            Arguments = $hidden.Arguments
             Delay = 'PT0S'
         })
     }
@@ -525,10 +563,11 @@ function Get-AutostartComponents {
     if ($komorebiExe -and $pwsh) {
         $slots = Join-Path $Root 'scripts\Start-WindowSlots.ps1'
         $inner = "Start-Process -FilePath '$pwsh' -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$slots'"
+        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"$inner`""
         $items.Add([pscustomobject]@{
             Key = 'window-slots'; TaskName = 'window-slots'; LnkName = '710.DesktopRice window slots.lnk'
-            Exe = $ps
-            Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"$inner`""
+            Exe = $hidden.Exe
+            Arguments = $hidden.Arguments
             Delay = 'PT10S'
         })
     }
@@ -550,10 +589,11 @@ function Get-AutostartComponents {
     if ($ahkExe) {
         $launcher = Join-Path $Root 'scripts\Start-Ahk.ps1'
         $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+        $hidden = ConvertTo-HiddenLaunch -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -AhkExe `"$ahkExe`" -ScriptPath `"$ahkScript`""
         $items.Add([pscustomobject]@{
             Key = 'ahk'; TaskName = 'ahk'; LnkName = '710.DesktopRice hotkeys.lnk'
-            Exe = $ps
-            Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -AhkExe `"$ahkExe`" -ScriptPath `"$ahkScript`""
+            Exe = $hidden.Exe
+            Arguments = $hidden.Arguments
             Delay = 'PT0S'
         })
     }

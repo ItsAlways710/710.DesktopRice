@@ -27,6 +27,27 @@ function Write-Log([string]$m) {
 
 function Test-YasbRunning { [bool](Get-Process yasb -ErrorAction SilentlyContinue) }
 
+function Invoke-Hidden {
+    <# Runs an exe with no console window. Same technique as Start-Komorebi.ps1's own
+       Invoke-Komorebic (see that function's docstring for the full rationale -- this
+       script runs under legacy Windows PowerShell 5.1 too, same reason). Without
+       CreateNoWindow, `& $YasbExe start` gets Windows its own fresh, briefly-visible
+       console -- confirmed live on Dell as the 3rd of the "3 shells flash at boot". #>
+    param([Parameter(Mandatory)][string]$FilePath,
+          [Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $FilePath
+    $info.Arguments = ($Arguments -join ' ')
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($info)
+    $null = $p.StandardOutput.ReadToEnd()
+    $null = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+}
+
 if (-not (Test-Path $YasbExe)) { Write-Log "yasbc.exe not found at $YasbExe; aborting."; exit 1 }
 if (Test-YasbRunning) { Write-Log 'YASB already running; nothing to do.'; exit 0 }
 
@@ -41,7 +62,7 @@ while ((Get-Date) -lt $overallDeadline) {
     while ((Get-Date) -lt $overallDeadline -and -not (Test-ForegroundReady)) { Start-Sleep -Milliseconds 500 }
 
     Write-Log "attempt ${attempt}: launching yasbc start"
-    try { & $YasbExe start }
+    try { Invoke-Hidden -FilePath $YasbExe -Arguments 'start' }
     catch {
         Write-Log "attempt ${attempt}: failed to launch: $($_.Exception.Message)"
         Start-Sleep -Seconds 2
