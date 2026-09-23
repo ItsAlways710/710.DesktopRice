@@ -80,17 +80,12 @@ if (Test-KomorebiRunning)  { Write-Log 'komorebi already running; nothing to do.
 
 Write-Log '--- startup (autostart) ---'
 
-# Clean up stale state from an unclean exit. komorebi.sock is an AF_UNIX socket; if
-# komorebi crashed, the file can be left behind and the next startup can fail to bind
-# until it's cleared (the typical cause of "offline at boot, doesn't come up on its own").
-# Safe to delete here since we've already confirmed komorebi is NOT running.
-foreach ($stale in @('komorebi.sock', 'komorebi.hwnd.json')) {
-    $f = Join-Path $logDir $stale
-    if (Test-Path $f) {
-        try { Remove-Item $f -Force -ErrorAction Stop; Write-Log "cleared stale state: $stale" }
-        catch { Write-Log "couldn't remove ${stale}: $($_.Exception.Message)" }
-    }
-}
+# (No komorebi.sock / komorebi.hwnd.json cleanup here, deliberately. Winarchy's version
+# deletes both before launching; our port pointed that loop at our own log folder, so it
+# never touched anything (the files live in %LOCALAPPDATA%\komorebi). Removed 2026-09-23
+# rather than fixed: komorebi 0.1.41 deletes a leftover socket itself right before it
+# binds (WindowManager::new: remove_file(&socket), then UnixListener::bind), also deletes
+# it on a clean `komorebic stop`, and keeps rewriting komorebi.hwnd.json while it runs.)
 
 # Game-mode state is per-session: session float rules die with komorebi. If the flag
 # survives a reboot, AHK starts up believing it's mid-game with no way to know otherwise.
@@ -173,10 +168,24 @@ while ((Get-Date) -lt $overallDeadline) {
             } else { Write-Log 'pwsh not found -- wallust border colors not re-applied.' }
 
             # Unmanage games.toml windows that komorebi already tiled on its initial scan
-            # (a retile/ignore-rule doesn't retroactively unmanage them).
+            # (a retile/ignore-rule doesn't retroactively unmanage them). Only matters when
+            # komorebi (re)starts with a game open -- SUPER+Shift+R removing a rule, or a
+            # crash -- never at a normal boot.
+            # games.toml is read right here with a 5.1-safe loop (same `exe = "..."` grammar
+            # as window-slots.ps1's Get-GameExes). Until 2026-09-23 this dot-sourced
+            # window-slots.ps1 instead, which needs PS7's ?. just to parse -- so under this
+            # script's 5.1 host the step threw on every single start and never ran once.
             try {
-                . (Join-Path $root 'tools\lib\window-slots.ps1')
-                $games = @(Get-GameExes)
+                $gamesToml = Join-Path $root 'games.toml'
+                # outer @() so 0 or 1 games still gives an array (the plan doc's
+                # collapse-to-scalar gotcha)
+                $games = @(@(
+                    if (Test-Path $gamesToml) {
+                        foreach ($line in Get-Content $gamesToml -Encoding UTF8) {
+                            if ($line -match '^\s*exe\s*=\s*"([^"]+)"') { $Matches[1] }
+                        }
+                    }
+                ) | Sort-Object -Unique)
                 $stateJson = Invoke-Komorebic state | ConvertFrom-Json
                 $tiledExes = @(
                     foreach ($m in $stateJson.monitors.elements) {
@@ -195,6 +204,8 @@ while ((Get-Date) -lt $overallDeadline) {
                 if ($toFree.Count -gt 0) {
                     & $komorebic retile *> $null
                     Write-Log "unmanaged $($toFree.Count) games.toml window(s) that were already tiled ($($toFree -join ', ')) + retile."
+                } else {
+                    Write-Log "games check: $($games.Count) games listed in games.toml, none tiled."
                 }
             } catch { Write-Log "couldn't unmanage games.toml windows post-startup: $($_.Exception.Message)" }
         }
