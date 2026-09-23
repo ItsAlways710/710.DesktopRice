@@ -719,7 +719,7 @@ SysMenuItems := [
 ; ============================================================================
 ; Flow Launcher
 ; ============================================================================
-; ToggleFlow()/ToggleFlowApps() ported from winarchy's winarchy.ahk — real
+; ToggleFlow()/ToggleFlowScoped() ported from winarchy's winarchy.ahk — real
 ; toggle logic, not a naive relaunch. Reuses Flow's own native Alt+Space
 ; show/hide for an already-running instance; only cold-launches the exe the
 ; very first time (post-logon), with a retry/focus loop for Flow's indexing
@@ -762,22 +762,24 @@ ToggleFlow() {
     return 0
 }
 
-ToggleFlowApps() {
-    ; Same as ToggleFlow(), but preloads "app " in the query box. The "app"
-    ; ActionKeyword is merged into Flow's own Settings.json by
-    ; tools/setup-flow-launcher.ps1 (scoped to Flow's built-in Program
-    ; plugin) -- real parity with Omarchy's Walker "Apps" launcher, no
-    ; hand-curated list.
+ToggleFlowScoped(prefix) {
+    ; Same as ToggleFlow(), but preloads a plugin keyword in the query box so
+    ; the search is scoped (winarchy a4dd1f7's ToggleFlowScoped). Both
+    ; keywords are set up by tools/setup-flow-launcher.ps1:
+    ;   'app ' -> Flow's built-in Program plugin: installed programs only
+    ;             (parity with Omarchy's Walker "Apps", no hand-curated list)
+    ;   'f '   -> Flow's built-in Explorer plugin's FILE search, on the
+    ;             voidtools Everything index
     if !ToggleFlow()
         return
     Sleep(50)
     Send('^a')
-    SendText('app ')
+    SendText(prefix)
 }
 
-#Space::ToggleFlow()              ; Flow Launcher
-#s::ToggleFlow()                  ; Win+S (search) -- winarchy @ 4574fc7, ported as-is
-#^Space::ToggleFlowApps()         ; Flow Launcher, apps only
+#Space::ToggleFlow()                  ; Flow Launcher (global search)
+#s::ToggleFlowScoped('f ')            ; search files (Everything)
+#^Space::ToggleFlowScoped('app ')     ; Flow Launcher, apps only
 
 ; ============================================================================
 ; Stay awake
@@ -1071,7 +1073,8 @@ TilingItems := [
 MainMenuItems() {
     global GameFlag, AwakeFlag
     return [
-        {text: 'Apps (SUPER+Ctrl+Space)', action: (*) => ToggleFlowApps()},
+        {text: 'Apps (SUPER+Ctrl+Space)', action: (*) => ToggleFlowScoped('app ')},
+        {text: 'Files (SUPER+S)',         action: (*) => ToggleFlowScoped('f ')},
         {text: 'Capture', sub: CaptureItems},
         {text: 'Tiling',  sub: TilingItems},
         {text: 'Game mode: ' (FileExist(GameFlag) ? 'ON (click to turn off)' : 'OFF (click to turn on)'),

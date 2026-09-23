@@ -1139,47 +1139,82 @@ function Restore-WindowsTerminalSettings {
 }
 
 function Restore-FlowLauncherSettings {
-    <# Reverts setup-flow-launcher.ps1's ActionKeyword merge and identity toggles back to
-       its 'flow-settings' snapshot (taken there, before either ever changes anything), and
-       removes the Everything plugin folder this repo installed (matched by its fixed
-       plugin ID, not by folder name, same as setup-flow-launcher.ps1's own idempotency
-       check). $null means setup-flow-launcher.ps1 never actually changed anything on this
-       machine (Flow's Settings.json didn't exist yet, or everything was already how this
-       repo wants it on the very first run) -- safe no-op either way. Same read-modify-
-       write-current-file approach as Restore-WindowsTerminalSettings, so anything else the
-       person changed in Flow's settings in between survives. #>
-    $snap = Get-OriginalState -Label 'flow-settings'
-    $everythingPluginId = 'D2D2C23B084D411DB66FE0C79D6C2A6E'
-    $pluginsDir = Join-Path "$env:APPDATA\FlowLauncher" 'Plugins'
+    <# Reverts setup-flow-launcher.ps1 from its two once-only snapshots:
+         'flow-settings'          Program plugin ActionKeywords + identity toggles
+         'flow-explorer-settings' Explorer plugin ActionKeywords + its FileSearchActionKeyword /
+                                  FileSearchKeywordEnabled / IndexSearchEngine fields
+       and removes the legacy standalone Everything plugin folder if one is still there
+       (matched by its fixed plugin ID, not folder name -- this repo used to install it).
+       Flow is force-stopped first and NOT relaunched, same reasons as in
+       setup-flow-launcher.ps1: a running Flow saves its in-memory settings back over the
+       files on exit and holds its plugin DLLs locked; and uninstall.ps1 runs elevated, so
+       a Flow started from here would run as admin. A missing snapshot means that part was
+       never changed on this machine -- safe no-op. Same read-modify-write-current-file
+       approach as Restore-WindowsTerminalSettings, so anything else the person changed in
+       Flow's settings in between survives. #>
+    $snap  = Get-OriginalState -Label 'flow-settings'
+    $snapE = Get-OriginalState -Label 'flow-explorer-settings'
+    $flowRoot   = Join-Path $env:APPDATA 'FlowLauncher'
+    $pluginsDir = Join-Path $flowRoot 'Plugins'
+    $legacyEverythingPluginId = 'D2D2C23B084D411DB66FE0C79D6C2A6E'
+
+    $flow = @(Get-Process -Name 'Flow.Launcher' -ErrorAction SilentlyContinue)
+    if ($flow.Count) {
+        $flow | Stop-Process -Force
+        $flow | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+    }
+
     if (Test-Path $pluginsDir) {
         Get-ChildItem $pluginsDir -Directory -ErrorAction SilentlyContinue | Where-Object {
             $manifest = Join-Path $_.FullName 'plugin.json'
-            (Test-Path $manifest) -and ((Get-Content $manifest -Raw | ConvertFrom-Json).ID -eq $everythingPluginId)
+            (Test-Path $manifest) -and ((Get-Content $manifest -Raw | ConvertFrom-Json).ID -eq $legacyEverythingPluginId)
         } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if (-not $snap) { return $false }
+    if (-not $snap -and -not $snapE) { return $false }
 
-    $settingsPath = Join-Path "$env:APPDATA\FlowLauncher" 'Settings\Settings.json'
+    $settingsPath = Join-Path $flowRoot 'Settings\Settings.json'
     if (-not (Test-Path $settingsPath)) {
         Step-Info 'Flow Launcher Settings.json not found -- nothing to restore.'
         Remove-OriginalState -Label 'flow-settings'
+        Remove-OriginalState -Label 'flow-explorer-settings'
         return $true
     }
     $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-
     $plugins = $settings['PluginSettings']['Plugins']
-    if ($plugins -and $plugins.ContainsKey($snap.ProgramPluginId)) {
-        $program = $plugins[$snap.ProgramPluginId]
-        if ($snap.ActionKeywordsExisted) { $program['ActionKeywords'] = @($snap.ActionKeywords) }
-        elseif ($program.ContainsKey('ActionKeywords')) { $program.Remove('ActionKeywords') }
+
+    if ($snap) {
+        if ($plugins -and $plugins.ContainsKey($snap.ProgramPluginId)) {
+            $program = $plugins[$snap.ProgramPluginId]
+            if ($snap.ActionKeywordsExisted) { $program['ActionKeywords'] = @($snap.ActionKeywords) }
+            elseif ($program.ContainsKey('ActionKeywords')) { $program.Remove('ActionKeywords') }
+        }
+        foreach ($k in $snap.Identity.Keys) {
+            $field = $snap.Identity[$k]
+            if ($field.Existed) { $settings[$k] = $field.Value }
+            elseif ($settings.ContainsKey($k)) { $settings.Remove($k) }
+        }
     }
-    foreach ($k in $snap.Identity.Keys) {
-        $field = $snap.Identity[$k]
-        if ($field.Existed) { $settings[$k] = $field.Value }
-        elseif ($settings.ContainsKey($k)) { $settings.Remove($k) }
+
+    if ($snapE) {
+        if ($plugins -and $plugins.ContainsKey($snapE.ExplorerPluginId)) {
+            $explorerEntry = $plugins[$snapE.ExplorerPluginId]
+            if ($snapE.ActionKeywordsExisted) { $explorerEntry['ActionKeywords'] = @($snapE.ActionKeywords) }
+            elseif ($explorerEntry.ContainsKey('ActionKeywords')) { $explorerEntry.Remove('ActionKeywords') }
+        }
+        $explorerPath = Join-Path $flowRoot 'Settings\Plugins\Flow.Launcher.Plugin.Explorer\Settings.json'
+        if ($snapE.ExplorerFileExisted -and (Test-Path $explorerPath)) {
+            $explorer = Get-Content $explorerPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+            foreach ($k in $snapE.Fields.Keys) {
+                $field = $snapE.Fields[$k]
+                if ($field.Existed) { $explorer[$k] = $field.Value }
+                elseif ($explorer.ContainsKey($k)) { $explorer.Remove($k) }
+            }
+            $explorer | ConvertTo-Json -Depth 50 | Set-Content -Path $explorerPath -Encoding UTF8
+        }
     }
 
     $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
     Remove-OriginalState -Label 'flow-settings'
+    Remove-OriginalState -Label 'flow-explorer-settings'
     return $true
 }

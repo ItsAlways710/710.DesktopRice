@@ -225,7 +225,7 @@ Invoke-ActivationRevert 'Restore original Windows Terminal colorScheme / theme /
     else { Step-Info 'Windows Terminal was never actually themed or had its default shell changed on this machine -- nothing to restore.' }
 }
 Invoke-ActivationRevert 'Restore original Flow Launcher settings + remove the Everything plugin' {
-    if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored and this repo''s Everything plugin removed' }
+    if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored (keywords, identity, Explorer file search) and any legacy Everything plugin removed' }
     else { Step-Info 'setup-flow-launcher.ps1 never actually changed anything on this machine -- nothing to restore.' }
 }
 

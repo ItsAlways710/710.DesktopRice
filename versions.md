@@ -63,12 +63,17 @@ PowerShell 7 note below.
 | zoxide | latest | winget | ajeetdsouza.zoxide | yes | 2026-09-21 |
 | eza | latest | winget | eza-community.eza | yes | 2026-09-21 |
 | bat | latest | winget | sharkdp.bat | yes | 2026-09-21 |
-| Everything | latest | winget | voidtools.Everything | yes | 2026-09-21 |
+| Everything | 1.4.1.1032 | winget | voidtools.Everything | yes | 2026-09-23 |
 | PSFzf | latest | psgallery | PSFzf | yes | 2026-09-21 |
 
 ## Notes on specific rows
 
-**Everything** — filesystem evidence gathered this session (browsing Dell's real
+**Everything** — **pinned 2026-09-23 at `1.4.1.1032`** (confirmed installed on Dell via a
+real `winget list`, and the same version winarchy pins): it's the engine behind Flow's file
+search now (SUPER+S), so it's pinned alongside Flow — updating either is a deliberate,
+tested step. Still `Pre-existing? = yes` (a general-purpose tool you'd keep; uninstall
+removes the pin, not the app, without `-Force`). Older note, kept for history: filesystem
+evidence gathered this session (browsing Dell's real
 `AppData` tree) suggests this is already installed, which would contradict an earlier
 session's note in the plan doc that it "isn't installed yet." Not independently confirmed
 against a real `winget list` run (the device bridge that reaches Dell's filesystem can't

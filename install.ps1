@@ -92,6 +92,11 @@ $CorePins = [ordered]@{
     'AmN.yasb'                    = '2.0.7'
     'AutoHotkey.AutoHotkey'       = '2.0.26'
     'Flow-Launcher.Flow-Launcher' = '2.1.3'
+    # Everything is the engine behind Flow's file search (SUPER+S: Explorer plugin on the
+    # Everything index) -- the two are one system now, so it's pinned like Flow: updating
+    # either should be a deliberate, tested step (user's call, 2026-09-23). Same versions
+    # winarchy pins for both (versions.lock.toml @ 90fbdfe).
+    'voidtools.Everything'        = '1.4.1.1032'
 }
 # Required, not pinned -- always installed at whatever winget currently offers.
 # PowerShell 7 lives here, not in $CorePins: unpinned 2026-09-23 at the user's request so
@@ -107,8 +112,7 @@ $RequiredPackages = @(
     'junegunn.fzf',
     'ajeetdsouza.zoxide',
     'eza-community.eza',
-    'sharkdp.bat',
-    'voidtools.Everything'
+    'sharkdp.bat'
 )
 # Per-package winget source override. Every package above resolves through winget's
 # default (community) source except PowerShell 7 -- Dell's own install is the Store/MSIX
