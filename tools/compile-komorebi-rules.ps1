@@ -316,8 +316,22 @@ try {
         $base.PSObject.Properties.Remove('display_index_preferences')
     }
 
-    $base | ConvertTo-Json -Depth 50 | Set-Content -Path $OutPath -Encoding UTF8
-    Write-Host "Compiled $OutPath"
+    # Only write komorebi.json when the compiled result actually differs from what's
+    # already there. komorebi watches this file and hot-reloads it on ANY write -- and
+    # that reload resets every workspace back to its config layout, wiping whatever
+    # layouts/column counts were set live (confirmed 2026-09-23: a no-op recompile via
+    # SUPER+Shift+R flipped two Scrolling workspaces back to BSP). An identical rewrite
+    # would pay that cost for nothing.
+    $json = $base | ConvertTo-Json -Depth 50
+    $existing = if (Test-Path $OutPath) { Get-Content -Path $OutPath -Raw } else { $null }
+    # Line endings normalized on both sides, so a CRLF/LF difference alone never
+    # counts as "changed".
+    if ($null -ne $existing -and ($existing -replace "`r`n", "`n").TrimEnd() -ceq ($json -replace "`r`n", "`n").TrimEnd()) {
+        Write-Host "Unchanged $OutPath (left alone -- komorebi reloads on every write)"
+    } else {
+        $json | Set-Content -Path $OutPath -Encoding UTF8
+        Write-Host "Compiled $OutPath"
+    }
     foreach ($cat in (Get-AllCategories).Values) {
         $count = @($merged[$cat]).Count
         if ($count -gt 0) { Write-Host ("  {0,-38} {1}" -f $cat, $count) }

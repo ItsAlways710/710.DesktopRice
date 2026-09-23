@@ -23,6 +23,17 @@
     Border color shading (monocle = lighter, stack = darker) also mirrors
     winarchy's own Get-WinarchyShadedHex lerp-toward-white/black approach.
 #>
+[CmdletBinding()]
+param(
+    # Re-push only the komorebi border colors from the current palette, then stop --
+    # no Windows accent, no Terminal merge, no lock-screen fire, no snapshots. For callers
+    # that just (re)started or reloaded komorebi and need its borders back, because
+    # `komorebic border-colour` is runtime-only state: every komorebi start comes up on
+    # its own default (blue) borders, and nothing in base.json can carry wallust's live
+    # palette. Callers: tools\reload-stack.ps1 (SUPER+Shift+R) and scripts\Start-Komorebi.ps1
+    # (boot). Exits 1 if komorebi isn't running, since then there was nothing to apply.
+    [switch]$BordersOnly
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -114,6 +125,13 @@ if ($komorebiRunning) {
     }
 } else {
     Write-Host "komorebi isn't running -- skipped border colors."
+}
+
+# -BordersOnly: borders were the whole job. Everything below (accent, Terminal, lock-screen
+# task) is wallpaper-change work that a plain komorebi (re)start has no reason to redo.
+if ($BordersOnly) {
+    if ($komorebiRunning) { Write-Host 'wallust borders re-applied to komorebi.'; exit 0 }
+    exit 1
 }
 
 # --- Windows accent color ----------------------------------------------------

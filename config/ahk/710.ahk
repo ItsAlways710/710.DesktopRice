@@ -103,10 +103,7 @@ LaunchOnCursorMonitor(target, winCriteria) {
 #t::Komorebic('toggle-float')                    ; float/tile
 #p::Komorebic('toggle-pause')                    ; pause tiling
 #r::Komorebic('retile')                          ; force retile
-; NOTE: winarchy's #+r ("reload whole stack") is NOT ported here -- it calls
-; winarchy's own CLI. Our equivalent (compile-komorebi-rules.ps1 + a real
-; reload) is a separate, not-yet-built task -- see the AHK section's
-; Reload-stack hotkey note in claude/winarchy-decoupling-plan.md.
+#+r::ReloadStack()                               ; reload whole stack
 #+Enter::Komorebic('promote')                    ; promote to largest tile
 #+l::Komorebic('cycle-layout next')              ; cycle to next layout
 #!l::ToggleScrolling()                           ; toggle scrolling layout - 2 cols
@@ -909,9 +906,8 @@ ToggleGameMode() {
 ; Ported from winarchy's SetupTray()/WinarchyCaptureItems()/
 ; WinarchyTilingItems(). Themes and Bar submenus are dropped (both
 ; eliminated entirely elsewhere in this repo -- see the plan doc's Palette
-; and YASB sections); Doctor and Reload-stack are left out rather than wired
-; to nothing, since neither is built yet in this repo (next up, not this
-; pass). Capture's action strings are Sharex()'s real ShareX CLI switches,
+; and YASB sections); Doctor is left out rather than wired to nothing,
+; since it isn't built yet in this repo. Capture's action strings are Sharex()'s real ShareX CLI switches,
 ; matching this file's own 8 already-wired capture hotkeys exactly (not
 ; winarchy's old Winarchy('screenshot ...') CLI pass-through, and not the 5
 ; extra ShareX actions winarchy exposes that this repo never wired a hotkey
@@ -949,6 +945,7 @@ MainMenuItems() {
             action: (*) => ToggleGameMode()},
         {text: 'Stay awake: ' (FileExist(AwakeFlag) ? 'ON (click to turn off)' : 'OFF (click to turn on)'),
             action: (*) => ToggleStayAwake()},
+        {text: 'Reload stack (SUPER+Shift+R)', action: (*) => ReloadStack()},
         {text: 'System (SUPER+Esc)', sub: SysMenuItems},
         {text: 'Quit 710sRice', action: (*) => QuitStack()} ]
 }
@@ -994,6 +991,38 @@ SetupTray() {
 SetupTray()
 
 #!Space::OpenMainMenu()             ; main menu (Apps/Capture/Tiling/Game mode/...)
+
+; SUPER+Shift+R. tools\reload-stack.ps1 does the actual stack work (compile
+; rules, keep live layouts across komorebi's reload, wallust borders -> YASB kill and
+; restart -> window-slots if it's down); this just runs it, says how it went,
+; and then restarts THIS script -- the one step the PS script can't do itself
+; without killing its own caller, and the reason AHK goes last. RunWait only
+; parks this hotkey's thread, so every other hotkey stays live meanwhile.
+; Exit codes are reload-stack.ps1's: 0 ok, 1 rules didn't compile (nothing
+; was touched, so AHK isn't restarted either), 2 partial (see the log).
+ReloadStack(*) {
+    static running := false
+    if running                  ; double-tap while the first one's mid-flight
+        return
+    running := true
+    TrayTip('Reloading stack...', '710sRice')
+    script := RepoRoot '\tools\reload-stack.ps1'
+    try {
+        code := RunWait('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' script '"', , 'Hide')
+    } catch as e {
+        running := false
+        TrayTip('Reload could not start: ' e.Message, '710sRice')
+        return
+    }
+    if (code = 1) {
+        running := false
+        TrayTip('Rules failed to compile -- nothing reloaded (see reload-stack.log)', '710sRice')
+        return
+    }
+    TrayTip(code = 0 ? 'Stack reloaded' : 'Reloaded, with errors (see reload-stack.log)', '710sRice')
+    Sleep(1500)                 ; let the toast land before this process swaps itself out
+    Reload()
+}
 
 QuitStack() {
     ; Ordered, non-elevated stop: komorebi, then the bar/capture tools, AHK last.

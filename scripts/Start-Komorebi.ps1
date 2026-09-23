@@ -145,6 +145,33 @@ while ((Get-Date) -lt $overallDeadline) {
                 Write-Log 'primary monitor refocused to workspace 0.'
             } catch { Write-Log "couldn't refocus workspace 0: $($_.Exception.Message)" }
 
+            # Put wallust's border colors back. `komorebic border-colour` is runtime-only
+            # state, so every komorebi start comes up on komorebi's own default (blue)
+            # borders until something re-pushes them -- confirmed live 2026-09-23. Done
+            # here, right after the survival check, so boots AND reload-stack.ps1's
+            # "komorebi wasn't running" path both get it. apply-wallust-outputs.ps1 needs
+            # PS7 and this script runs under 5.1, so it goes through pwsh -- with
+            # CreateNoWindow, same no-flash reasoning as Invoke-Komorebic above. Waited on
+            # (it's a handful of komorebic calls) so the result lands in this log.
+            $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+            if ($pwsh) {
+                try {
+                    $info = New-Object System.Diagnostics.ProcessStartInfo
+                    $info.FileName = $pwsh
+                    $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tools\apply-wallust-outputs.ps1') + '" -BordersOnly'
+                    $info.UseShellExecute = $false
+                    $info.CreateNoWindow = $true
+                    $info.RedirectStandardOutput = $true
+                    $info.RedirectStandardError = $true
+                    $bp = [System.Diagnostics.Process]::Start($info)
+                    $null = $bp.StandardOutput.ReadToEnd()
+                    $bErr = $bp.StandardError.ReadToEnd()
+                    $bp.WaitForExit()
+                    if ($bp.ExitCode -eq 0) { Write-Log 'wallust border colors re-applied.' }
+                    else { Write-Log "couldn't re-apply wallust border colors (exit $($bp.ExitCode)): $bErr" }
+                } catch { Write-Log "couldn't re-apply wallust border colors: $($_.Exception.Message)" }
+            } else { Write-Log 'pwsh not found -- wallust border colors not re-applied.' }
+
             # Unmanage games.toml windows that komorebi already tiled on its initial scan
             # (a retile/ignore-rule doesn't retroactively unmanage them).
             try {
