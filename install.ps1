@@ -403,6 +403,12 @@ if ($Activate) {
         & schtasks.exe /Run /TN (Get-TaskFullName -TaskName 'lock-screen-sync') *> $null
     }
 
+    # Snapshot tray-icon promotions before either kill below -- Explorer's own forced
+    # restart(s) can reset every app's "always show this icon" preference, not just this
+    # repo's own (see Backup-TrayIconPromotions in tools\lib\activation.ps1). Restored
+    # once both kills are done and Explorer's confirmed back up from the second one.
+    $trayIconBackup = Backup-TrayIconPromotions
+
     try {
         if (Set-TaskbarAutoHide -Enabled $true) { Step-Ok 'Native taskbar set to auto-hide' }
         else { Step-Ok 'Native taskbar already set to auto-hide' }
@@ -412,6 +418,9 @@ if ($Activate) {
         $n = Set-WindowsHardening
         Step-Ok "Windows hardening applied ($n setting(s) changed: no Bing search, ad suggestions, Copilot/Widgets/Task View buttons, Start recommendations)"
     } catch { Step-Warn "Could not apply Windows hardening: $($_.Exception.Message)" }
+
+    Wait-ExplorerRunning
+    Restore-TrayIconPromotions -BackupFile $trayIconBackup
 
     try {
         Set-StartupDelay

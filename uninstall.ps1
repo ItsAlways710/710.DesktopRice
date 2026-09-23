@@ -175,6 +175,12 @@ Invoke-ActivationRevert 'Restore original lock screen' {
     if (Restore-LockScreen) { Step-Ok 'Lock screen restored to whatever it was before this repo ever managed it' }
     else { Step-Info 'Lock-screen sync was never actually registered on this machine -- nothing to restore.' }
 }
+# Snapshot tray-icon promotions before either kill below -- see Backup-TrayIconPromotions
+# in tools\lib\activation.ps1 for why. Skipped under -DryRun (neither kill happens, so
+# there's nothing to protect and nothing to restore).
+$trayIconBackup = $null
+if (-not $DryRun) { $trayIconBackup = Backup-TrayIconPromotions }
+
 Invoke-ActivationRevert 'Un-hide the native taskbar' {
     if (Set-TaskbarAutoHide -Enabled $false) { Step-Ok 'Native taskbar auto-hide turned off' }
     else { Step-Ok 'Native taskbar was already not set to auto-hide' }
@@ -182,6 +188,11 @@ Invoke-ActivationRevert 'Un-hide the native taskbar' {
 Invoke-ActivationRevert 'Revert Windows hardening (HKCU)' {
     $n = Set-WindowsHardening -Revert
     Step-Ok "Windows hardening reverted ($n setting(s) removed, handed back to Windows' own defaults)"
+}
+
+if (-not $DryRun) {
+    Wait-ExplorerRunning
+    Restore-TrayIconPromotions -BackupFile $trayIconBackup
 }
 Invoke-ActivationRevert "Restore Explorer's Startup app-launch delay" {
     Remove-StartupDelay
