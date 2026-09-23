@@ -324,11 +324,38 @@ function Get-HardeningSettings {
     $settings
 }
 
+function Wait-ExplorerRunning {
+    <# Waits for explorer.exe to actually be running again before some other step force-
+       kills it a second time. Exists because Set-TaskbarAutoHide and Set-WindowsHardening
+       both restart Explorer when they change something, and both install.ps1 -Activate
+       and uninstall.ps1 call them back-to-back (taskbar, then hardening) with no gap in
+       between -- confirmed live on Dell (twice in one night) to leave the desktop,
+       taskbar and icons completely blank until a manual Explorer restart or a full
+       reboot, almost certainly because the second kill lands while Windows' own
+       auto-restart of the first is still mid-flight. Polls rather than a fixed sleep,
+       same reasoning as scripts\Start-Komorebi.ps1's own wait-with-time-budget: however
+       long Explorer actually takes to come back (which varies), never longer, never
+       less. Falls through after the timeout even if Explorer never reappears -- best-
+       effort, same posture as every other step in this file; the caller's own kill still
+       happens either way, just no longer guaranteed to land on an already-healthy shell. #>
+    param([int]$TimeoutSeconds = 10)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while (-not (Get-Process explorer -ErrorAction SilentlyContinue)) {
+        if ((Get-Date) -ge $deadline) { return }
+        Start-Sleep -Milliseconds 200
+    }
+}
+
 function Set-WindowsHardening {
     <# Applies (or, with -Revert, undoes) every setting from Get-HardeningSettings.
        Backs up each touched registry key first (Backup-RegistryKey, label 'hardening').
        Restarts explorer.exe once at the end if anything actually changed -- most of these
-       values are only read at Explorer startup. Returns the number of settings changed. #>
+       values are only read at Explorer startup. Returns the number of settings changed.
+       Waits for Explorer to actually be back up first (Wait-ExplorerRunning) before that
+       restart: this function always runs immediately after Set-TaskbarAutoHide in both
+       install.ps1 -Activate and uninstall.ps1, and firing this kill before Windows has
+       finished restarting Explorer from THAT kill left the desktop/taskbar/icons blank
+       until a manual restart or reboot -- confirmed live on Dell, twice. #>
     param([switch]$Revert)
     $changed = 0
     if (-not $Revert) {
@@ -352,7 +379,10 @@ function Set-WindowsHardening {
             $changed++
         } catch { Step-Warn "${name}: $($_.Exception.Message)" }
     }
-    if ($changed -gt 0) { Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue }
+    if ($changed -gt 0) {
+        Wait-ExplorerRunning
+        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    }
     $changed
 }
 
