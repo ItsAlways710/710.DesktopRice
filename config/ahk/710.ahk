@@ -893,6 +893,82 @@ ToggleGameMode() {
 }
 
 ; ============================================================================
+; YASB watchdog
+; ============================================================================
+; Ported from winarchy bb72240 (v1.5.0), with three changes agreed 2026-09-23:
+;  - The relaunch goes through YASB's own autostart task (schtasks /Run) -- the
+;    same door boot and SUPER+Shift+R use. That buys Start-Yasb.ps1's
+;    wait-for-desktop + retry loop, a hidden launch, and LeastPrivilege every
+;    time: the bar never comes back elevated even if AHK somehow is (the
+;    elevated-Terminal trap from the SUPER+Shift+R testing).
+;  - Armed only once yasb.exe has actually been seen running. Getting YASB up at
+;    boot is Start-Yasb.ps1's job (it retries for a full minute); this is the
+;    crash net for afterwards.
+;  - Gives up pointing at yasb-autostart.log (no doctor yet). Every relaunch and
+;    the give-up get their own line in that log, so it tells the story.
+; A 5s check only counts as a miss when yasb.exe is gone AND nothing is already
+; bringing it back: winget running (an install/upgrade), or a Start-Yasb.ps1
+; launcher still alive (boot, SUPER+Shift+R, or our own previous relaunch still
+; working). Two misses in a row (5-10s with no bar) = relaunch. Three relaunches
+; inside 5 minutes = YASB is crash-looping; stop and say so instead of thrashing.
+; The crash itself, if YASB caught it, is in config\yasb\yasb.log.
+; ============================================================================
+YasbSeen := false, YasbMisses := 0, YasbRelaunches := []
+YasbAutostartLog := EnvGet('LOCALAPPDATA') '\710.DesktopRice\yasb-autostart.log'
+SetTimer(YasbWatch, 5000)
+
+YasbWatch() {
+    global YasbSeen, YasbMisses, YasbRelaunches
+    if ProcessExist('yasb.exe') {
+        YasbSeen := true, YasbMisses := 0
+        return
+    }
+    if !YasbSeen || ProcessExist('winget.exe') || YasbLauncherRunning() {
+        YasbMisses := 0
+        return
+    }
+    if (++YasbMisses < 2)
+        return
+    YasbMisses := 0
+    while YasbRelaunches.Length && A_TickCount - YasbRelaunches[1] > 300000
+        YasbRelaunches.RemoveAt(1)
+    if (YasbRelaunches.Length >= 3) {
+        SetTimer(YasbWatch, 0)
+        YasbLog('watchdog: YASB died again after 3 relaunches in 5 min -- stopped relaunching until AHK restarts.')
+        TrayTip('The bar keeps crashing -- stopped relaunching it.`nSee %LOCALAPPDATA%\710.DesktopRice\yasb-autostart.log', '710sRice')
+        return
+    }
+    YasbRelaunches.Push(A_TickCount)
+    YasbLog('watchdog: yasb.exe gone for 2 checks -- relaunching via the autostart task (' YasbRelaunches.Length ' of 3 in 5 min).')
+    try code := RunWait('schtasks.exe /Run /TN "\710.DesktopRice\yasb"', , 'Hide')
+    catch
+        code := -1
+    if (code != 0) {
+        ; No task = autostart was never activated (or got removed) -- nothing sane to relaunch with.
+        SetTimer(YasbWatch, 0)
+        YasbLog('watchdog: schtasks /Run failed (' code ') -- is the \710.DesktopRice\yasb task registered? Watchdog off.')
+        TrayTip("Couldn't relaunch the bar (no autostart task?) -- watchdog off.`nSee %LOCALAPPDATA%\710.DesktopRice\yasb-autostart.log", '710sRice')
+    }
+}
+
+; Is a Start-Yasb.ps1 launcher already on the job? Only asked when yasb.exe is
+; missing, so the WMI query costs nothing in the normal case.
+YasbLauncherRunning() {
+    try {
+        for p in ComObjGet('winmgmts:').ExecQuery("SELECT ProcessId FROM Win32_Process WHERE (Name = 'powershell.exe' OR Name = 'pwsh.exe') AND CommandLine LIKE '%Start-Yasb.ps1%'")
+            return true
+    }
+    return false
+}
+
+; Same line format as Start-Yasb.ps1's own Write-Log. UTF-8-RAW: the file already
+; exists with its BOM (PS 5.1 Out-File), so no BOM mid-file.
+YasbLog(m) {
+    global YasbAutostartLog
+    try FileAppend(FormatTime(, 'yyyy-MM-dd HH:mm:ss') '  ' m '`n', YasbAutostartLog, 'UTF-8-RAW')
+}
+
+; ============================================================================
 ; Quick add rule (Tiling menu)
 ; ============================================================================
 ; Click-to-pick a window, choose what to match it on (exe / class / title,
