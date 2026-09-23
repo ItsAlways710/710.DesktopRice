@@ -90,7 +90,7 @@ Write-Host "`n== 710.DesktopRice install ==" -ForegroundColor Cyan
 $CorePins = [ordered]@{
     'LGUG2Z.komorebi'             = '0.1.41'
     'AmN.yasb'                    = '2.0.7'
-    'AutoHotkey.AutoHotkey'       = '2.0.26'
+    'AutoHotkey.AutoHotkey'       = '2.0.28'
     'Flow-Launcher.Flow-Launcher' = '2.1.3'
     # Everything is the engine behind Flow's file search (SUPER+S: Explorer plugin on the
     # Everything index) -- the two are one system now, so it's pinned like Flow: updating

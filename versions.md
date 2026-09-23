@@ -51,7 +51,7 @@ PowerShell 7 note below.
 |---|---|---|---|---|---|
 | komorebi | 0.1.41 | winget | LGUG2Z.komorebi | no | 2026-09-21 |
 | YASB | 2.0.7 | winget | AmN.yasb | no | 2026-09-21 |
-| AutoHotkey | 2.0.26 | winget | AutoHotkey.AutoHotkey | no | 2026-09-21 |
+| AutoHotkey | 2.0.28 | winget | AutoHotkey.AutoHotkey | no | 2026-09-23 |
 | Flow Launcher | 2.1.3 | winget | Flow-Launcher.Flow-Launcher | no | 2026-09-21 |
 | wallust | 4.1.0-alpha | github-release | explosion-mental/wallust | no | 2026-09-21 |
 | ShareX | latest | winget | ShareX.ShareX | no | 2026-09-21 |
@@ -80,9 +80,16 @@ against a real `winget list` run (the device bridge that reaches Dell's filesyst
 invoke Windows executables — see plan doc). `install.ps1`'s own idempotent winget-list
 check will tell the real story the first time it actually runs.
 
-**AutoHotkey / Flow Launcher versions** — confirmed via real directory evidence on Dell
-(`AppData\Local\Programs\AutoHotkey\v2.0.26`, `AppData\Local\FlowLauncher\app-2.1.3`), not
-guessed.
+**AutoHotkey / Flow Launcher versions** — Flow confirmed via real directory evidence on Dell
+(`AppData\Local\FlowLauncher\app-2.1.3`), not guessed. AutoHotkey is installed machine-wide
+(`C:\Program Files\AutoHotkey`); autostart launches the version-independent
+`v2\AutoHotkey64.exe` (`Get-AhkExe`), so a version bump doesn't touch the launch path. (An
+earlier version of this note placed it under a per-user `...\Programs\AutoHotkey\v2.0.26`
+folder, which doesn't exist on Dell.) Bumped 2.0.26 → 2.0.28 on 2026-09-23 after checking both
+releases' notes (GitHub releases): 2.0.27 = six bug fixes (debugger `=>` breakpoints,
+`Send "{Click X Y Count}"`, a `ComObjQuery` interface leak, getter/setter ordering, ListView
+header `ContextMenu`, self-subclassing classes); 2.0.28 = `Gui.Move` no longer DPI-scales X/Y.
+None of those APIs are used in `config\ahk` (grepped). Winarchy moved to 2.0.28 in `90fbdfe`.
 
 **YASB version** — winarchy's own `versions.lock.toml` pins `2.0.6`; this repo pins `2.0.7`
 deliberately, matching a version this project confirmed live via `yasbc update` in an
