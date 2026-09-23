@@ -92,10 +92,14 @@ $CorePins = [ordered]@{
     'AmN.yasb'                    = '2.0.7'
     'AutoHotkey.AutoHotkey'       = '2.0.26'
     'Flow-Launcher.Flow-Launcher' = '2.1.3'
-    '9MZ1SNWT0N5D'                = '7.6.6'   # PowerShell 7 -- msstore source, see $PackageSources below
 }
 # Required, not pinned -- always installed at whatever winget currently offers.
+# PowerShell 7 lives here, not in $CorePins: unpinned 2026-09-23 at the user's request so
+# it can take its own updates (every script here only needs >= 7.0, and the autostart /
+# lock-screen tasks launch it via the version-independent WindowsApps alias -- see
+# tools\lib\activation.ps1's Get-PwshPath -- so an update can't break them).
 $RequiredPackages = @(
+    '9MZ1SNWT0N5D',   # PowerShell 7 -- msstore source, see $PackageSources below
     'ShareX.ShareX',
     'Microsoft.WindowsTerminal',
     'DEVCOM.JetBrainsMonoNerdFont',

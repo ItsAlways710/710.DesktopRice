@@ -42,7 +42,10 @@ PSFzf, PowerShell 7. **Reviewed and confirmed by the user 2026-09-22** — origi
 protecting rather than silently deciding); the user reviewed the full list, confirmed these
 stay protected, and moved ShareX from protected to removable-by-default. PowerShell 7 was
 added the same session, at the user's explicit request, as a new pinned `-Force`-protected
-row (not part of the original review — decided directly, not guessed).
+row (not part of the original review — decided directly, not guessed). **Unpinned
+2026-09-23** at the user's request ("I want to be able to update my PS7"): still required
+(every script `#Requires -Version 7.0`), still `-Force`-protected, but `latest` — see the
+PowerShell 7 note below.
 
 | Component | Version | Source | Install ID | Pre-existing? | Last touched |
 |---|---|---|---|---|---|
@@ -53,7 +56,7 @@ row (not part of the original review — decided directly, not guessed).
 | wallust | 4.1.0-alpha | github-release | explosion-mental/wallust | no | 2026-09-21 |
 | ShareX | latest | winget | ShareX.ShareX | no | 2026-09-21 |
 | Windows Terminal | latest | winget | Microsoft.WindowsTerminal | yes | 2026-09-21 |
-| PowerShell 7 | 7.6.6 | winget | 9MZ1SNWT0N5D | yes | 2026-09-22 |
+| PowerShell 7 | latest | winget | 9MZ1SNWT0N5D | yes | 2026-09-23 |
 | JetBrainsMono Nerd Font | latest | winget | DEVCOM.JetBrainsMonoNerdFont | yes | 2026-09-21 |
 | Starship | latest | winget | Starship.Starship | yes | 2026-09-21 |
 | fzf | latest | winget | junegunn.fzf | yes | 2026-09-21 |
@@ -84,7 +87,13 @@ earlier session. A real, intentional deviation from winarchy's pin, not a typo.
 from its pinned Codeberg release, SHA256-verified. See that script and the Palette section
 of the plan doc.
 
-**PowerShell 7** — Dell's existing install is the Microsoft Store/MSIX build
+**PowerShell 7** — **unpinned since 2026-09-23** (was pinned at `7.6.6`; winget's catalog
+reported it as `7.6.6.0`). Persisted launch paths (autostart spec files, the lock-screen
+task) use the version-independent `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe` alias
+(`Get-PwshPath`), so Store updates can't strand them; the one versioned path left is the
+Defender exclusion, which matches the real image path — re-run `install.ps1` elevated after
+a PowerShell update to refresh it. Original notes follow. Dell's existing install is the
+Microsoft Store/MSIX build
 (`AppData\Local\Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe`), not
 the traditional MSI package, confirmed via Windows Terminal's dynamic-profile `commandline`
 field (that path itself can't be browsed directly — `AppData\...\WindowsApps` is a

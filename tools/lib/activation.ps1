@@ -239,6 +239,24 @@ function Get-ShareXExe {
 }
 
 # --- Windows Defender exclusions (unconditional -- not gated behind -Activate) ------
+function Get-PwshPath {
+    <# pwsh.exe path for anything that gets PERSISTED -- a Scheduled Task action or a
+       run-hidden launch spec -- and must keep working after PowerShell updates itself.
+       For the Store/MSIX build (Dell's), `Get-Command pwsh` in an elevated shell resolves
+       to the versioned package folder (...\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__
+       8wekyb3d8bbwe\pwsh.exe, seen live 2026-09-23 after re-registering autostart from an
+       admin shell), which disappears on the next Store update and would silently stop
+       window-slots / lock-screen sync from launching. The per-user App Execution Alias
+       under %LOCALAPPDATA%\Microsoft\WindowsApps is what the Store keeps pointed at the
+       current version, whatever shell registered the task -- prefer it. MSI installs
+       (Program Files\PowerShell\7\pwsh.exe, not versioned) have no alias there and fall
+       through to Get-Command. NOT for Get-DefenderExclusionPaths: Defender matches the
+       real image path, which IS the versioned folder. #>
+    $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
+    if (Test-Path $alias) { return $alias }
+    (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
+}
+
 function Get-DefenderExclusionPaths {
     <# Ported from winarchy's Get-WinarchyDefenderExclusionPaths. Covers the same two lag
        sources: frequent I/O from ShareX/Everything, and Defender scanning komorebic.exe /
@@ -590,7 +608,7 @@ function Get-AutostartComponents {
     # window-slots reconciler: same hidden-host pattern as komorebi, but the daemon itself
     # needs pwsh (PowerShell 7 syntax), so the hidden powershell.exe host just launches pwsh
     # hidden in turn. 10s delay -- give komorebi itself a head start.
-    $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
+    $pwsh = Get-PwshPath
     if ($komorebiExe -and $pwsh) {
         $slots = Join-Path $Root 'scripts\Start-WindowSlots.ps1'
         $inner = "Start-Process -FilePath '$pwsh' -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$slots'"
@@ -844,7 +862,7 @@ function Register-LockScreenSyncTask {
         Step-Warn 'Lock-screen sync needs an elevated shell to register -- re-run install.ps1 from an admin PowerShell to enable it.'
         return
     }
-    $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
+    $pwsh = Get-PwshPath
     if (-not $pwsh) {
         Step-Warn 'Lock-screen sync: pwsh.exe not found on PATH -- skipping (install PowerShell 7 first).'
         return
