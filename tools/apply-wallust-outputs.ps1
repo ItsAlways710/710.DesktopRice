@@ -222,3 +222,24 @@ if ($wtSettingsPath) {
 } else {
     Write-Host "Windows Terminal settings.json not found -- skipped."
 }
+
+# --- Fire the lock-screen-sync task -------------------------------------------------
+# tools\lib\activation.ps1's Register-LockScreenSyncTask docstring promises this script
+# fires the task "every time the wallpaper (and so the wallust palette) changes" -- it
+# never actually did. Confirmed by testing: border colors/accent/Terminal colorscheme all
+# updated correctly on a real wallpaper change, but the lock screen didn't budge. The one
+# time it ever fired was install.ps1 -Activate's own one-time kickstart call (Section 11).
+# Same Test-Task/schtasks pattern as that call, just inlined -- this script stays
+# dependency-free by design (same reasoning as Save-OriginalStateOnce above; doesn't
+# dot-source activation.ps1), so the task's full path is hardcoded rather than resolved
+# via Get-TaskFullName. Best-effort: if the task was never registered (install.ps1 never
+# run elevated, or without PS7 present), the /Query probe fails and this is a silent
+# no-op, same as everywhere else in this repo that checks Test-Task first. Firing it from
+# here doesn't need elevation itself -- that's the whole point of it being registered as
+# an on-demand *elevated* task (New-OnDemandElevatedTaskXml): Task Scheduler elevates the
+# task's own run, regardless of whether this script (running as YASB's widget click) is.
+$lockScreenTask = '\710.DesktopRice\lock-screen-sync'
+& schtasks.exe /Query /TN $lockScreenTask *> $null
+if ($LASTEXITCODE -eq 0) {
+    & schtasks.exe /Run /TN $lockScreenTask *> $null
+}
