@@ -279,27 +279,41 @@ LaunchClaudeDesktop() {
 #+a::LaunchClaudeDesktop()                        ; Claude Desktop (SUPER+Shift+A)
 
 ; ============================================================================
-; Menu theming (wallust-driven, ported from winarchy's own GUI menu system)
+; Palette -- the one themed, searchable popup behind every 710sRice menu
 ; ============================================================================
-; The owner-drawn native Menu() approach tried first left an unfixable plain
-; white 1px border around the popup (two different fixes -- DWM border-color
-; and stripping WS_BORDER/WS_DLGFRAME -- both had zero effect). Turns out
-; winarchy's own themed menus were never native Menu() objects at all --
-; ShowSystemMenu()/RenderMenu() in winarchy.ahk build a plain AHK Gui() with
-; -Caption (no title bar or system border to fight), draw the rows and
-; selection bar by hand, and round the corners via DWM -- which DOES work,
-; because DWM's frame attributes apply to real top-level windows like a Gui,
-; just not to the internal #32768 popup-menu class the first attempt used.
-; This is that same mechanism, ported and re-pointed at wallust's colors
-; instead of winarchy's theme.ini.
+; SUPER+Alt+Space (main menu), SUPER+Esc (system), SUPER+K (keybindings) and
+; Quick add rule's "Match on" step all open this one list. Ported from
+; winarchy bb72240 (v1.5.0, "searchable palette for the Winarchy menus"),
+; re-pointed at wallust's colors (RefreshMenuColors below) instead of his
+; theme.ini. It replaced two engines of ours -- the ShowThemedGuiMenu() menu
+; and the 4-column SUPER+K overlay -- agreed 2026-09-23 ("easier to maintain
+; is better").
 ;
-; To theme a future menu (the tray Apps/Capture/Tiling/Game Mode menu): build
-; its items as an array of {text, action} (or {text, sub: [...]} for a
-; submenu -- same shape SysMenuItems below uses, back-nav via Backspace comes
-; free) and call ShowThemedGuiMenu(items, 'Title').
+; How it works (same as winarchy's):
+;  - A hand-built Gui (-Caption, DWM-rounded corners), NOT a native Menu():
+;    the first native attempt here wore a white border DWM can't touch on the
+;    #32768 popup class. (The tray icon's right-click is still native --
+;    Windows draws that one; see BuildNativeMenu.)
+;  - The search box has focus from the start. Words match in any order; in
+;    the menus the search reaches into submenus and lists the leaves as
+;    "Capture > Region".
+;  - Items are {text, action} or {text, sub: [...]}, plus an optional
+;    hint: 'SUPER+...' shown right-aligned (submenus show a chevron instead).
+;  - Up/Down, Tab, PgUp/PgDn and the wheel move; hover highlights; click or
+;    Enter picks. Esc clears the search, then backs out a level, then closes;
+;    Backspace backs out a level only while the search box is empty.
+;  - Hover and clicks arrive as WM_MOUSEMOVE / WM_LBUTTONUP on the Gui itself
+;    (the row Text controls have no SS_NOTIFY, so the mouse goes straight
+;    through them) -- this retired our old 50ms hover-polling timer.
+;  - Closes itself when it loses focus; opens centred on the monitor under
+;    the mouse (DPI-correct, which our old menus weren't quite).
+; Ours on top: SUPER+K is sized to ~80% of that monitor's height (agreed
+; 2026-09-23) instead of winarchy's fixed 18 rows, to soften losing the old
+; everything-at-once column view.
 ;
-; Sensible dark-theme fallbacks are used if the CSS doesn't exist yet (fresh
-; checkout, before the first wallpaper switch has ever run wallust).
+; Colors: sensible dark fallbacks are used until wallust has written its CSS
+; (fresh checkout, before the first wallpaper switch).
+; ============================================================================
 WallustCss := RepoRoot "\config\yasb\wallust_colors.css"
 MenuBgHex := '2B2B2B', MenuFgHex := 'E0E0E0', MenuAccentHex := '5C41A5', MenuAccentTextHex := 'FAF1FD'
 MenuMutedHex := '9A9A9A'   ; secondary/hint text -- used by the key overlay's description column
@@ -321,50 +335,332 @@ RefreshMenuColors() {
         MenuMutedHex := m[1]
 }
 
-ThemedMenuGui := '', ThemedMenuStack := [], ThemedMenuItems := [], ThemedMenuSel := 1
-ThemedMenuRows := [], ThemedMenuTitle := '', ThemedMenuSelBar := ''
+Pal := ''
 
-ShowThemedGuiMenu(items, title) {
-    global ThemedMenuGui, ThemedMenuItems, ThemedMenuSel, ThemedMenuRows, ThemedMenuTitle, ThemedMenuSelBar
-    global MenuBgHex, MenuFgHex, MenuAccentHex, MenuAccentTextHex
-    SetTimer(ThemedMenuWatch, 0)
-    SetTimer(ThemedMenuHoverWatch, 0)
-    if (ThemedMenuGui != '') {
-        try ThemedMenuGui.Destroy()
-        ThemedMenuGui := ''
-    }
-    ThemedMenuItems := items, ThemedMenuSel := 1, ThemedMenuRows := [], ThemedMenuTitle := title
-    bg := MenuBgHex, fg := MenuFgHex, ac := MenuAccentHex
+PalColors() {
+    global MenuBgHex, MenuFgHex, MenuAccentHex, MenuMutedHex
+    RefreshMenuColors()       ; re-read on every open -- a wallpaper change recolors the next menu, no reload
+    return {bg: MenuBgHex, fg: MenuFgHex, ac: MenuAccentHex, mut: MenuMutedHex}
+}
 
-    g := Gui('-Caption +AlwaysOnTop +ToolWindow', '710sRiceMenu')
-    g.BackColor := bg
+; Closes any open palette; true when it was showing `mode` -- so each hotkey
+; toggles its own palette, and pressing a different one swaps.
+PalClosed(mode) {
+    global Pal
+    if !IsObject(Pal)
+        return false
+    same := (Pal.mode = mode)
+    PalClose()
+    return same
+}
+
+PalOpen(mode, items, title) {
+    global Pal
+    PalClose()
+    c := PalColors()
+    keys := (mode = 'keys')
+    pad := 20, rowH := keys ? 24 : 32
+    labelW := keys ? 250 : 330, hintW := keys ? 470 : 190
+    w := pad * 2 + labelW + hintW
+    y0 := pad + 80                         ; rows start under the crumb + search box
+    WorkAreaUnderMouse(&wl, &wt, &wr, &wb)
+    dpi := A_ScreenDPI / 96                ; Gui units are 96-dpi; the work area is real pixels
+    if keys                                ; ~80% of the screen, minus the chrome around the rows
+        n := Max(8, Floor(((wb - wt) / dpi * 0.8 - (y0 + 46)) / rowH))
+    else
+        n := Min(Max(items.Length, 8), 14)
+
+    g := Gui('-Caption +AlwaysOnTop +ToolWindow', '710sRicePalette')
+    g.BackColor := c.bg
     g.MarginX := 0, g.MarginY := 0
 
-    pad := 16, rowH := 30, titleH := 32, labelW := 220
-    w := pad * 2 + labelW
+    PalSetFont(g, 's10 bold')
+    crumb := g.Add('Text', Format('x{} y{} w{} h20 c{} 0x4200', pad, pad, w - pad * 2, c.ac), '')
+    PalSetFont(g, 's12 norm')
+    g.Add('Text', Format('x{} y{} w24 h30 c{} 0x200', pad, pad + 30, c.mut), Chr(0xF002))   ; Nerd Font search glyph
+    ed := g.Add('Edit', Format('x{} y{} w{} h30 -E0x200 -Multi Background{} c{}', pad + 28, pad + 34, w - pad * 2 - 28, c.bg, c.fg))
+    SendMessage(0x1501, 1, StrPtr(keys ? 'Filter by key or action' : 'Search'), ed)   ; EM_SETCUEBANNER
+    g.Add('Text', Format('x{} y{} w{} h1 Background{}', pad, pad + 68, w - pad * 2, c.mut))
 
-    ; JetBrainsMono Nerd Font, not Segoe UI: install.ps1 installs it unconditionally
-    ; (DEVCOM.JetBrainsMonoNerdFont), so there's no silent-fallback risk to hedge against
-    ; here -- matches winarchy's own themed system menu, which relies on the same font.
-    g.SetFont('s12 bold', 'JetBrainsMono Nerd Font')
-    g.Add('Text', Format('x{} y{} w{} c{}', pad, pad, labelW, ac), title)
-
-    g.SetFont('s11 norm', 'JetBrainsMono Nerd Font')
-    y0 := pad + titleH
-    ; selection bar added first so it sits behind the (BackgroundTrans) row
-    ; text, then gets moved onto the active row by SetThemedMenuSel().
-    ThemedMenuSelBar := g.Add('Text', Format('x{} y{} w{} h{} Background{}', pad - 6, y0, labelW + 12, rowH, ac), '')
-    for i, it in items {
-        y := y0 + (i - 1) * rowH
-        lbl := g.Add('Text', Format('x{} y{} w{} h{} c{} BackgroundTrans', pad, y + 4, labelW, rowH, (i = 1) ? bg : fg), it.text)
-        lbl.OnEvent('Click', ThemedMenuClick.Bind(i))
-        ThemedMenuRows.Push({label: lbl, y: y})
+    PalSetFont(g, keys ? 's10 norm' : 's11 norm')
+    rows := []
+    loop n {
+        y := y0 + (A_Index - 1) * rowH
+        ; 0x4200 = SS_CENTERIMAGE | SS_ENDELLIPSIS: vertically centred, and anything too
+        ; long for its column ends in "..." instead of wrapping into the next row.
+        lbl := g.Add('Text', Format('x{} y{} w{} h{} c{} Background{} 0x4200', pad - 8, y, labelW + 8, rowH, c.fg, c.bg), '')
+        hnt := g.Add('Text', Format('x{} y{} w{} h{} c{} Background{} 0x4200 {}', pad + labelW, y, hintW + 8, rowH, c.mut, c.bg, keys ? '' : 'Right'), '')
+        rows.Push({label: lbl, hint: hnt, y: y, on: false})
     }
-    h := y0 + items.Length * rowH + pad
+    fy := y0 + n * rowH + 10
+    PalSetFont(g, 's9 norm')
+    arrows := Chr(0x2191) Chr(0x2193)
+    help := keys ? arrows ' scroll    esc close' : arrows ' move    ' Chr(0x21B5) ' select    esc back'
+    g.Add('Text', Format('x{} y{} w{} h20 c{}', pad, fy, labelW, c.mut), help)
+    count := g.Add('Text', Format('x{} y{} w{} h20 c{} Right', pad + labelW, fy, hintW, c.mut), '')
+    h := fy + 20 + pad - 4
 
-    ; centered on whichever monitor the mouse is on -- plain Win32, no
-    ; komorebi dependency, so the menu always lands where you're looking
-    ; regardless of komorebi's own focus state.
+    Pal := {gui: g, mode: mode, colors: c, items: items, title: title, stack: [], list: [],
+        sel: 0, top: 1, rows: rows, rowH: rowH, y0: y0, x0: pad - 8, x1: pad + labelW + hintW + 8,
+        edit: ed, crumb: crumb, count: count, mouse: '', pressed: 0}
+    ed.OnEvent('Change', (*) => PalRefresh())
+    g.OnEvent('Close', (*) => PalClose())
+    PalRefresh()
+
+    g.Show(Format('x{} y{} w{} h{}', wl + (wr - wl - Round(w * dpi)) // 2, wt + (wb - wt - Round(h * dpi)) // 2, w, h))
+    DllCall('dwmapi\DwmSetWindowAttribute', 'ptr', g.Hwnd, 'int', 33, 'int*', 2, 'int', 4)  ; DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND
+    ed.Focus()
+    OnMessage(0x200, PalMouseMove)       ; WM_MOUSEMOVE
+    OnMessage(0x201, PalPress)           ; WM_LBUTTONDOWN
+    OnMessage(0x202, PalClick)           ; WM_LBUTTONUP
+    OnMessage(0x20A, PalWheel)           ; WM_MOUSEWHEEL
+    SetTimer(PalWatch, 250)              ; closes when it loses focus
+}
+
+; JetBrainsMono under its Nerd Fonts v3 or v2 family name (install.ps1 installs
+; DEVCOM.JetBrainsMonoNerdFont; whichever name exists wins, the other is a no-op).
+PalSetFont(g, opts) {
+    g.SetFont(opts, 'JetBrainsMono Nerd Font')
+    g.SetFont(opts, 'JetBrainsMono NF')
+}
+
+PalClose() {
+    global Pal
+    SetTimer(PalWatch, 0)
+    OnMessage(0x200, PalMouseMove, 0)
+    OnMessage(0x201, PalPress, 0)
+    OnMessage(0x202, PalClick, 0)
+    OnMessage(0x20A, PalWheel, 0)
+    if IsObject(Pal)
+        try Pal.gui.Destroy()
+    Pal := ''
+}
+
+PalWatch() {
+    try {
+        if IsObject(Pal) && !WinActive('ahk_id ' Pal.gui.Hwnd)
+            PalClose()
+    } catch
+        PalClose()
+}
+
+PalActive() => IsObject(Pal) && WinActive('ahk_id ' Pal.gui.Hwnd)
+
+; Every typed word must appear somewhere (any order, case-insensitive).
+PalMatch(q, hay) {
+    for word in StrSplit(q, ' ')
+        if (word != '' && !InStr(hay, word))
+            return false
+    return true
+}
+
+PalHint(it) => it.HasOwnProp('sub') ? Chr(0x203A) : (it.HasOwnProp('hint') ? it.hint : '')
+
+; Leaves of the tree whose path matches, e.g. "Capture > Region".
+PalFlatten(items, path, q, list) {
+    for it in items {
+        name := (path = '') ? it.text : path ' ' Chr(0x203A) ' ' it.text
+        if it.HasOwnProp('sub')
+            PalFlatten(it.sub, name, q, list)
+        else if PalMatch(q, name ' ' PalHint(it))
+            list.Push({text: name, hint: PalHint(it), item: it})
+    }
+}
+
+PalRefresh(sel := 0) {
+    q := Trim(Pal.edit.Value)
+    list := []
+    if (Pal.mode = 'keys') {
+        for s in Pal.items {
+            hits := []
+            for it in s.items
+                if PalMatch(q, it.keys ' ' it.desc ' ' s.title)
+                    hits.Push({text: it.keys, hint: it.desc})
+            if hits.Length {
+                list.Push({text: StrUpper(s.title), hint: '', header: true})
+                for e in hits
+                    list.Push(e)
+            }
+        }
+    } else if (q = '') {
+        for it in Pal.items
+            list.Push({text: it.text, hint: PalHint(it), item: it})
+    } else
+        PalFlatten(Pal.items, '', q, list)
+    Pal.list := list
+    Pal.top := 1
+    Pal.sel := 0
+    for i, e in list
+        if !e.HasOwnProp('header') && (!Pal.sel || i = sel) {
+            Pal.sel := i
+            if !sel
+                break
+        }
+    crumb := StrUpper(Pal.title)
+    for lvl in Pal.stack
+        crumb := StrUpper(lvl.title) ' ' Chr(0x203A) ' ' crumb
+    Pal.crumb.Text := crumb
+    found := 0
+    for e in list
+        found += !e.HasOwnProp('header')
+    Pal.count.Text := (Pal.mode = 'keys') ? found ' bindings' : (q = '' ? '' : found ' results')
+    PalDraw()
+}
+
+PalDraw() {
+    c := Pal.colors, n := Pal.rows.Length, len := Pal.list.Length
+    if Pal.sel {
+        if (Pal.sel < Pal.top)
+            Pal.top := Pal.sel
+        else if (Pal.sel > Pal.top + n - 1)
+            Pal.top := Pal.sel - n + 1
+        if (Pal.top = Pal.sel && Pal.sel > 1 && Pal.list[Pal.sel - 1].HasOwnProp('header'))
+            Pal.top -= 1                 ; keep the section title above its first row
+    }
+    Pal.top := Max(1, Min(Pal.top, len - n + 1))
+    for k, r in Pal.rows {
+        i := Pal.top + k - 1
+        e := (i <= len) ? Pal.list[i] : {text: (k = 1 && !len) ? 'No matches' : '', hint: '', empty: true}
+        head := e.HasOwnProp('header'), on := (i = Pal.sel)
+        if (on != r.on) {
+            r.on := on
+            r.label.Opt('Background' (on ? c.ac : c.bg))
+            r.hint.Opt('Background' (on ? c.ac : c.bg))
+        }
+        ; selected row: background color as text on the accent bar -- same as our old menus
+        r.label.SetFont((head ? 'bold' : 'norm') ' c' (on ? c.bg : head ? c.ac : e.HasOwnProp('empty') ? c.mut : c.fg))
+        r.hint.SetFont('c' (on ? c.bg : Pal.mode = 'keys' ? c.fg : c.mut))
+        r.label.Text := ' ' e.text
+        r.hint.Text := e.hint ' '
+    }
+}
+
+PalMove(d) {
+    if !Pal.sel
+        return
+    len := Pal.list.Length, i := Pal.sel, step := (d > 0) ? 1 : -1
+    loop Abs(d) {
+        j := i
+        loop {
+            j += step
+            if (j < 1 || j > len) {
+                if (Abs(d) > 1)          ; page / wheel: stop at the ends
+                    break 2
+                j := (j < 1) ? len : 1   ; single step: wrap around
+            }
+            if !Pal.list[j].HasOwnProp('header')
+                break
+        }
+        i := j
+    }
+    Pal.sel := i
+    PalDraw()
+}
+
+PalEnter() {
+    if !Pal.sel || !Pal.list[Pal.sel].HasOwnProp('item')
+        return                           ; SUPER+K rows are information, not actions
+    it := Pal.list[Pal.sel].item
+    if it.HasOwnProp('sub') {
+        Pal.stack.Push({items: Pal.items, title: Pal.title, sel: Pal.sel})
+        Pal.items := it.sub, Pal.title := it.text
+        Pal.edit.Value := ''
+        PalRefresh()
+        return
+    }
+    PalClose()
+    it.action.Call()
+}
+
+PalBack() {
+    if !Pal.stack.Length
+        return
+    prev := Pal.stack.Pop()
+    Pal.items := prev.items, Pal.title := prev.title
+    PalRefresh(prev.sel)
+}
+
+PalEscape() {
+    if (Pal.edit.Value != '') {
+        Pal.edit.Value := ''
+        PalRefresh()
+    } else if Pal.stack.Length
+        PalBack()
+    else
+        PalClose()
+}
+
+; List index under the cursor, or 0.
+PalIndexAtCursor(hwnd) {
+    if !IsObject(Pal) || DllCall('GetAncestor', 'ptr', hwnd, 'uint', 2, 'ptr') != Pal.gui.Hwnd
+        return 0
+    pt := Buffer(8)
+    DllCall('GetCursorPos', 'ptr', pt)
+    DllCall('ScreenToClient', 'ptr', Pal.gui.Hwnd, 'ptr', pt)
+    x := NumGet(pt, 0, 'int') * 96 / A_ScreenDPI, y := NumGet(pt, 4, 'int') * 96 / A_ScreenDPI
+    k := Floor((y - Pal.y0) / Pal.rowH) + 1
+    if (x < Pal.x0 || x > Pal.x1 || k < 1 || k > Pal.rows.Length)
+        return 0
+    i := Pal.top + k - 1
+    return (i <= Pal.list.Length && !Pal.list[i].HasOwnProp('header')) ? i : 0
+}
+
+PalMouseMove(wParam, lParam, msg, hwnd) {
+    if !IsObject(Pal) || (lParam = Pal.mouse)    ; ignore synthetic moves after a redraw
+        return
+    Pal.mouse := lParam
+    if (i := PalIndexAtCursor(hwnd)) && (i != Pal.sel) {
+        Pal.sel := i
+        PalDraw()
+    }
+}
+
+; A click only counts when the button went down AND up on the same row. Ours, not
+; winarchy's: Quick add rule opens its palette straight from a mouse click, and
+; that click's button-up could otherwise land on whatever row appeared under the
+; cursor and pick it.
+PalPress(wParam, lParam, msg, hwnd) {
+    if IsObject(Pal)
+        Pal.pressed := PalIndexAtCursor(hwnd)
+}
+
+PalClick(wParam, lParam, msg, hwnd) {
+    if !IsObject(Pal)
+        return
+    pressed := Pal.pressed, Pal.pressed := 0
+    if (i := PalIndexAtCursor(hwnd)) && (i = pressed) {
+        Pal.sel := i
+        PalDraw()
+        PalEnter()
+    }
+}
+
+PalWheel(wParam, lParam, msg, hwnd) {
+    if !IsObject(Pal) || DllCall('GetAncestor', 'ptr', hwnd, 'uint', 2, 'ptr') != Pal.gui.Hwnd
+        return
+    delta := (wParam >> 16) & 0xFFFF
+    PalMove(delta > 0x7FFF ? 3 : -3)
+    return 0
+}
+
+; Keyboard, only while a palette is the active window.
+#HotIf PalActive()
+Up::PalMove(-1)
+Down::PalMove(1)
+Tab::PalMove(1)
++Tab::PalMove(-1)
+PgUp::PalMove(-Pal.rows.Length)
+PgDn::PalMove(Pal.rows.Length)
+Enter::PalEnter()
+NumpadEnter::PalEnter()
+Esc::PalEscape()
+#HotIf PalActive() && Pal.edit.Value = ''
+Backspace::PalBack()
+#HotIf
+
+; Work area (minus taskbar) of the monitor under the mouse -- plain Win32, no
+; komorebi dependency, so a palette lands where you're looking.
+WorkAreaUnderMouse(&wl, &wt, &wr, &wb) {
     CoordMode('Mouse', 'Screen')
     MouseGetPos(&mx, &my)
     wl := 0, wt := 0, wr := A_ScreenWidth, wb := A_ScreenHeight
@@ -372,124 +668,14 @@ ShowThemedGuiMenu(items, title) {
         MonitorGet(A_Index, &l, &t, &r, &b)
         if (mx >= l && mx < r && my >= t && my < b) {
             MonitorGetWorkArea(A_Index, &wl, &wt, &wr, &wb)
-            break
-        }
-    }
-    g.OnEvent('Escape', (*) => ThemedMenuBack())
-    g.OnEvent('Close', (*) => CloseThemedMenu())
-    ThemedMenuGui := g
-    g.Show(Format('x{} y{} w{} h{}', wl + (wr - wl - w) // 2, wt + (wb - wt - h) // 2, w, h))
-    DllCall('dwmapi\DwmSetWindowAttribute', 'Ptr', g.Hwnd, 'Int', 33, 'Int*', 2, 'Int', 4)   ; DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND
-    SetTimer(ThemedMenuWatch, 250)   ; auto-close on focus loss
-    SetTimer(ThemedMenuHoverWatch, 50)   ; move the selection bar to whatever row the mouse is over
-}
-
-SetThemedMenuSel(n) {
-    global ThemedMenuRows, ThemedMenuItems, ThemedMenuSel, ThemedMenuSelBar
-    global MenuBgHex, MenuFgHex
-    n := Mod(n - 1 + ThemedMenuItems.Length, ThemedMenuItems.Length) + 1   ; wrap circular, 1-based
-    old := ThemedMenuRows[ThemedMenuSel]
-    old.label.SetFont('c' MenuFgHex)
-    cur := ThemedMenuRows[n]
-    cur.label.SetFont('c' MenuBgHex)   ; sits on the accent bar -- background color reads as text there
-    try ThemedMenuSelBar.Move(, cur.y)
-    ThemedMenuSel := n
-}
-
-ThemedMenuNav(dir) {
-    global ThemedMenuSel
-    SetThemedMenuSel(ThemedMenuSel + dir)
-}
-
-ThemedMenuActivate() {
-    global ThemedMenuItems, ThemedMenuSel
-    ThemedMenuInvoke(ThemedMenuItems[ThemedMenuSel])
-}
-
-ThemedMenuClick(i, *) {
-    global ThemedMenuItems
-    SetThemedMenuSel(i)
-    ThemedMenuInvoke(ThemedMenuItems[i])
-}
-
-ThemedMenuInvoke(it) {
-    global ThemedMenuStack, ThemedMenuItems, ThemedMenuTitle, ThemedMenuSel
-    if it.HasOwnProp('sub') {
-        ThemedMenuStack.Push({items: ThemedMenuItems, title: ThemedMenuTitle, sel: ThemedMenuSel})
-        ShowThemedGuiMenu(it.sub, it.text)
-        return
-    }
-    CloseThemedMenu()
-    it.action.Call()
-}
-
-ThemedMenuBack() {
-    global ThemedMenuStack
-    if ThemedMenuStack.Length {
-        prev := ThemedMenuStack.Pop()
-        ShowThemedGuiMenu(prev.items, prev.title)
-        SetThemedMenuSel(prev.sel)
-        return
-    }
-    CloseThemedMenu()
-}
-
-CloseThemedMenu() {
-    global ThemedMenuGui, ThemedMenuStack
-    SetTimer(ThemedMenuWatch, 0)
-    SetTimer(ThemedMenuHoverWatch, 0)
-    if (ThemedMenuGui != '') {
-        try ThemedMenuGui.Destroy()
-        ThemedMenuGui := ''
-    }
-    ThemedMenuStack := []
-}
-
-ThemedMenuWatch() {
-    global ThemedMenuGui
-    try {
-        if (ThemedMenuGui != '') && !WinActive('ahk_id ' ThemedMenuGui.Hwnd)
-            CloseThemedMenu()
-    } catch {
-        CloseThemedMenu()
-    }
-}
-
-; Mouse-follows-selection -- polled rather than hooked off WM_MOUSEMOVE
-; (Text controls don't reliably forward that to a single handler the way a
-; Gui's own client area does), matched by comparing the hovered control's
-; hwnd against each row's own -- AHK Gui controls expose .Hwnd natively, no
-; extra bookkeeping needed at row-creation time.
-ThemedMenuHoverWatch() {
-    global ThemedMenuGui, ThemedMenuRows, ThemedMenuSel
-    if (ThemedMenuGui = '')
-        return
-    MouseGetPos(, , , &ctrlHwnd, 2)   ; flag 2 -> ctrlHwnd is an HWND, not a ClassNN string
-    for i, row in ThemedMenuRows {
-        if (row.label.Hwnd = ctrlHwnd) && (i != ThemedMenuSel) {
-            SetThemedMenuSel(i)
-            break
+            return
         }
     }
 }
-
-; Keyboard nav, only while a themed menu is actually open.
-#HotIf WinActive('710sRiceMenu ahk_class AutoHotkeyGUI')
-Up::ThemedMenuNav(-1)
-Down::ThemedMenuNav(1)
-Enter::ThemedMenuActivate()
-Backspace::ThemedMenuBack()
-#HotIf
 
 OpenSysMenu(*) {
-    global ThemedMenuGui, ThemedMenuStack
-    if (ThemedMenuGui != '') {          ; already open -- toggle closes
-        CloseThemedMenu()
-        return
-    }
-    RefreshMenuColors()
-    ThemedMenuStack := []
-    ShowThemedGuiMenu(SysMenuItems, 'System')
+    if !PalClosed('system')
+        PalOpen('system', SysMenuItems, 'System')
 }
 
 ; ============================================================================
@@ -497,10 +683,11 @@ OpenSysMenu(*) {
 ; ============================================================================
 ; SUPER+K, ported from winarchy's ToggleKeyOverlay()/ParseKeymap(). Parses
 ; this very script's own source (+ user.ahk) for hotkey lines and their
-; trailing "; comment" description, groups them under whichever section header
-; precedes them, and lays the result out in balanced columns -- so the overlay
-; can never drift out of sync with the actual bindings, because it reads them
-; straight from the file instead of being a separately hand-maintained list.
+; trailing "; comment" description, grouped under whichever section header
+; precedes them -- so the list can never drift out of sync with the actual
+; bindings. Shown in the palette above (searchable, one scrolling list with
+; section headers) since 2026-09-23; before that it was our own 4-column
+; overlay.
 ;
 ; ParseKeymap recognizes both of this file's section-header styles: the
 ; three-line "; ====.../ ; Title / ; ====..." banner used for the big
@@ -509,9 +696,7 @@ OpenSysMenu(*) {
 ; INSIDE some of those bigger sections (e.g. "komorebi" contains its own
 ; Windows/Focus/Move window/Stacks/Resize/Workspaces/Monitors dividers) --
 ; without both, the "komorebi" section alone would dump 78 hotkeys under one
-; heading, wildly outweighing every other column and running off-screen.
-KeyOverlayGui := ''
-
+; heading. Sections with no hotkeys (like the Palette one) just don't show.
 ParseKeymap(path, defaultTitle := '') {
     sections := []
     cur := ''
@@ -554,133 +739,22 @@ ParseKeymap(path, defaultTitle := '') {
             key := Chr(0x2190) '/' Chr(0x2192) '/' Chr(0x2191) '/' Chr(0x2193)
         desc := RegExMatch(rest, ';\s*(.+)$', &md) ? Trim(md[1]) : Trim(rest)
         disp := 'SUPER+' (InStr(mods, '+') ? 'Shift+' : '') (InStr(mods, '^') ? 'Ctrl+' : '') (InStr(mods, '!') ? 'Alt+' : '') key
-        cur.items.Push({keys: disp, desc: desc})
+        cur.items.Push({keys: disp, desc: StrUpper(SubStr(desc, 1, 1)) SubStr(desc, 2)})
     }
     return sections
 }
 
-ToggleKeyOverlay() {
-    global KeyOverlayGui, MenuBgHex, MenuFgHex, MenuAccentHex, MenuMutedHex
-    if (KeyOverlayGui != '') {
-        CloseKeyOverlay()
+ToggleKeyOverlay(*) {
+    if PalClosed('keys')
         return
-    }
-    RefreshMenuColors()
-    bg := MenuBgHex, fg := MenuFgHex, ac := MenuAccentHex, mut := MenuMutedHex
-
     sections := ParseKeymap(A_ScriptFullPath)
     if FileExist(A_ScriptDir '\user.ahk')
         for s in ParseKeymap(A_ScriptDir '\user.ahk', 'User')
             sections.Push(s)
-    visible := []
-    total := 0
-    for s in sections {
-        if !s.items.Length
-            continue
-        visible.Push(s)
-        total += s.items.Length + 2          ; header + one blank row
-    }
-    if !visible.Length
-        return
-
-    g := Gui('-Caption +AlwaysOnTop +ToolWindow', '710sRice Keybindings')
-    g.BackColor := bg
-    g.MarginX := 0, g.MarginY := 0
-
-    rowH := 24, keyW := 150, descW := 250, gap := 12, pad := 30
-    colW := keyW + gap + descW + 28
-    cols := total > 70 ? 4 : total > 34 ? 3 : 2
-
-    ; Balanced column split -- recalculated only when actually moving to a new
-    ; column (not per item, which would shrink the target as each column
-    ; fills and hand off too early), so one long section doesn't dump
-    ; everything after it into the last column unbounded.
-    colOf := Map(), colRows := []
-    loop cols
-        colRows.Push(0)
-    remaining := total, remainingCols := cols, c := 0, i := 0
-    target := Ceil(remaining / remainingCols)
-    for s in visible {
-        i += 1
-        blk := s.items.Length + 2
-        if (c < cols - 1 && colRows[c + 1] > 0 && colRows[c + 1] + blk > target) {
-            c += 1
-            remainingCols -= 1
-            target := Ceil(remaining / remainingCols)
-        }
-        colOf[i] := c
-        colRows[c + 1] += blk
-        remaining -= blk
-    }
-    usedRows := 0
-    for r in colRows
-        if (r > usedRows)
-            usedRows := r
-    col := 0, row := 0, i := 0
-    for s in visible {
-        i += 1
-        blk := s.items.Length + 2
-        if (colOf[i] != col)
-            col := colOf[i], row := 0
-        x := pad + col * colW
-        ; JetBrainsMono Nerd Font here too, matching winarchy's key overlay -- see the
-        ; themed-system-menu comment above for why this isn't a silent-fallback risk.
-        g.SetFont('s10 bold', 'JetBrainsMono Nerd Font')
-        g.Add('Text', Format('x{} y{} w{} c{} +0x0C', x, pad + row * rowH, keyW + gap + descW, ac), StrUpper(s.title))
-        row += 1
-        g.SetFont('s10 norm', 'JetBrainsMono Nerd Font')
-        for it in s.items {
-            y := pad + row * rowH
-            g.Add('Text', Format('x{} y{} w{} c{} +0x0C', x, y, keyW, fg), it.keys)
-            g.Add('Text', Format('x{} y{} w{} c{} +0x0C', x + keyW + gap, y, descW, mut), it.desc)
-            row += 1
-        }
-        row += 1
-        if (row > usedRows)
-            usedRows := row
-    }
-    w := pad * 2 + cols * colW - 28
-    h := pad * 2 + (usedRows - 1) * rowH
-
-    ; centered on whichever monitor the mouse is on, same as the themed menu
-    CoordMode('Mouse', 'Screen')
-    MouseGetPos(&mx, &my)
-    wl := 0, wt := 0, wr := A_ScreenWidth, wb := A_ScreenHeight
-    loop MonitorGetCount() {
-        MonitorGet(A_Index, &l, &t, &r, &b)
-        if (mx >= l && mx < r && my >= t && my < b) {
-            MonitorGetWorkArea(A_Index, &wl, &wt, &wr, &wb)
-            break
-        }
-    }
-    g.OnEvent('Escape', (*) => CloseKeyOverlay())
-    g.OnEvent('Close', (*) => CloseKeyOverlay())
-    KeyOverlayGui := g
-    g.Show(Format('x{} y{} w{} h{}', wl + (wr - wl - w) // 2, wt + (wb - wt - h) // 2, w, h))
-    DllCall('dwmapi\DwmSetWindowAttribute', 'Ptr', g.Hwnd, 'Int', 33, 'Int*', 2, 'Int', 4)   ; DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND
-    SetTimer(KeyOverlayWatch, 300)   ; auto-close on focus loss
+    PalOpen('keys', sections, 'Keybindings')
 }
 
-CloseKeyOverlay() {
-    global KeyOverlayGui
-    SetTimer(KeyOverlayWatch, 0)
-    if (KeyOverlayGui != '') {
-        try KeyOverlayGui.Destroy()
-        KeyOverlayGui := ''
-    }
-}
-
-KeyOverlayWatch() {
-    global KeyOverlayGui
-    try {
-        if (KeyOverlayGui != '') && !WinActive('ahk_id ' KeyOverlayGui.Hwnd)
-            CloseKeyOverlay()
-    } catch {
-        CloseKeyOverlay()
-    }
-}
-
-#k::ToggleKeyOverlay()                             ; this keybindings overlay
+#k::ToggleKeyOverlay()                             ; this keybindings list
 
 ; ============================================================================
 ; Power / system menu
@@ -997,8 +1071,8 @@ YasbLog(m) {
 ; away, because komorebi only applies rules to windows opened AFTER them (the
 ; 2026-09-23 Notepad test); then SUPER+Shift+R's reload makes it stick for
 ; every future window. A rule addition always rides komorebi's fast hot-reload
-; path, so layouts survive. Every menu here is ShowThemedGuiMenu -- same look
-; and Backspace back-nav as SUPER+Esc / SUPER+Alt+Space.
+; path, so layouts survive. Every menu here is the palette -- same look,
+; search and back-nav as SUPER+Esc / SUPER+Alt+Space.
 ;
 ; Picking is a tooltip + a temporary blocking *LButton hotkey, NOT a swapped
 ; system crosshair cursor: if anything died mid-pick, a changed system cursor
@@ -1043,7 +1117,7 @@ QuickPickTimeout() {
 }
 
 QuickPickClick(*) {
-    global QuickTarget, ThemedMenuStack
+    global QuickTarget
     QuickPickEnd()
     CoordMode('Mouse', 'Screen')
     MouseGetPos(, , &hwnd)
@@ -1065,20 +1139,15 @@ QuickPickClick(*) {
         return
     }
     QuickTarget := {hwnd: root}
-    ; exe first so Enter takes the common case. Values trimmed to fit the menu's
-    ; fixed 220px rows (the real, untrimmed value is what gets written).
+    ; exe first so Enter takes the common case. Full values: the palette's label
+    ; column ends anything too long in "..." on its own (and search still sees
+    ; the whole value).
     items := [
-        {text: 'exe: '   QuickTrunc(exe, 19), sub: QuickRuleItems('exe', exe)},
-        {text: 'class: ' QuickTrunc(cls, 17), sub: QuickRuleItems('class', cls)} ]
+        {text: 'exe: '   exe, sub: QuickRuleItems('exe', exe)},
+        {text: 'class: ' cls, sub: QuickRuleItems('class', cls)} ]
     if (title != '')
-        items.Push({text: 'title: ' QuickTrunc(title, 17), sub: QuickRuleItems('title', title)})
-    RefreshMenuColors()
-    ThemedMenuStack := []
-    ShowThemedGuiMenu(items, 'Match on')
-}
-
-QuickTrunc(s, n) {
-    return (StrLen(s) > n) ? SubStr(s, 1, n - 1) '…' : s
+        items.Push({text: 'title: ' title, sub: QuickRuleItems('title', title)})
+    PalOpen('quick', items, 'Match on')
 }
 
 QuickRuleItems(field, value) {
@@ -1122,15 +1191,16 @@ QuickApplyRule(cat, field, value) {
 ; Tray + main menu (Apps / Capture / Tiling / Game mode)
 ; ============================================================================
 ; Shared {text, action} / {text, sub:[...]} item structure (same shape
-; SysMenuItems above already uses -- ShowThemedGuiMenu()'s back-stack drills
-; into a `sub` array and Backspace returns, arbitrarily deep, for free; see
-; ThemedMenuInvoke()/ThemedMenuBack()). Fed to TWO different renderers:
+; SysMenuItems above already uses, plus an optional hint -- the palette drills
+; into a `sub` array and Esc/Backspace come back, arbitrarily deep). Fed to
+; TWO different renderers:
 ;   - the real tray icon's right-click, via native A_TrayMenu -- Windows
 ;     draws that menu itself and it can't be themed; winarchy's own comment
 ;     on this exact point: "the tray's right-click still uses native
 ;     A_TrayMenu... equally functional fallback." Unavoidable, not a gap.
-;   - SUPER+Alt+Space, via ShowThemedGuiMenu() -- the wallust-themed popup,
-;     consistent with the System menu (SUPER+Esc) and Key overlay (SUPER+K).
+;   - SUPER+Alt+Space, via the palette -- the wallust-themed, searchable
+;     popup shared with SUPER+Esc and SUPER+K. Key hints show right-aligned
+;     in both (the tray through NativeMenuName's tab).
 ; Ported from winarchy's SetupTray()/WinarchyCaptureItems()/
 ; WinarchyTilingItems(). Themes and Bar submenus are dropped (both
 ; eliminated entirely elsewhere in this repo -- see the plan doc's Palette
@@ -1143,52 +1213,48 @@ QuickApplyRule(cat, field, value) {
 ; as still owed ("Capture menu items -- small consistency fix while
 ; rewriting").
 CaptureItems := [
-    {text: 'Region (SUPER+Shift+S)',                action: (*) => Sharex('RectangleRegion')},
-    {text: 'Active window (SUPER+Shift+W)',         action: (*) => Sharex('ActiveWindow')},
-    {text: 'Full screen (SUPER+Shift+P)',           action: (*) => Sharex('PrintScreen')},
-    {text: 'Record (SUPER+Shift+V)',                action: (*) => Sharex('ScreenRecorder')},
-    {text: 'Stop recording (SUPER+Ctrl+V)',         action: (*) => Sharex('StopScreenRecording')},
-    {text: 'Record as GIF (SUPER+Shift+G)',         action: (*) => Sharex('ScreenRecorderGIF')},
-    {text: 'Text from screen -- OCR (SUPER+Ctrl+O)', action: (*) => Sharex('OCR')},
-    {text: 'Scan QR (SUPER+Ctrl+Q)',                action: (*) => Sharex('QRCodeScanRegion')} ]
+    {text: 'Region',                 hint: 'SUPER+Shift+S', action: (*) => Sharex('RectangleRegion')},
+    {text: 'Active window',          hint: 'SUPER+Shift+W', action: (*) => Sharex('ActiveWindow')},
+    {text: 'Full screen',            hint: 'SUPER+Shift+P', action: (*) => Sharex('PrintScreen')},
+    {text: 'Record',                 hint: 'SUPER+Shift+V', action: (*) => Sharex('ScreenRecorder')},
+    {text: 'Stop recording',         hint: 'SUPER+Ctrl+V',  action: (*) => Sharex('StopScreenRecording')},
+    {text: 'Record as GIF',          hint: 'SUPER+Shift+G', action: (*) => Sharex('ScreenRecorderGIF')},
+    {text: 'Text from screen (OCR)', hint: 'SUPER+Ctrl+O',  action: (*) => Sharex('OCR')},
+    {text: 'Scan QR code',           hint: 'SUPER+Ctrl+Q',  action: (*) => Sharex('QRCodeScanRegion')} ]
 
 TilingItems := [
     {text: 'Quick add rule...',                          action: (*) => QuickAddRule()},
     {text: 'Manage this window',                         action: (*) => Komorebic('manage')},
     {text: 'Unmanage this window',                        action: (*) => Komorebic('unmanage')},
-    {text: 'Stop tiling this workspace (SUPER+Shift+Z)',  action: (*) => Komorebic('toggle-tiling')},
+    {text: 'Stop tiling this workspace', hint: 'SUPER+Shift+Z', action: (*) => Komorebic('toggle-tiling')},
     {text: 'New windows: stack / tile',                   action: (*) => Komorebic('toggle-window-container-behaviour')},
     {text: 'Title bars',                                  action: (*) => Komorebic('toggle-title-bars')},
     {text: 'Mouse follows focus',                         action: (*) => Komorebic('toggle-mouse-follows-focus')},
     {text: 'Restore hidden windows',                      action: (*) => Komorebic('restore-windows')} ]
 
 ; Built fresh each open (not a static array) so Game mode / Stay awake show
-; their CURRENT state -- matches winarchy's own dynamic hint text for these.
+; their CURRENT state ("Game mode . on") -- winarchy's OnOff() wording, short
+; enough to leave room for the key hint column.
+OnOff(flag) => Chr(0xB7) ' ' (FileExist(flag) ? 'on' : 'off')
+
 MainMenuItems() {
     global GameFlag, AwakeFlag
     return [
-        {text: 'Apps (SUPER+Ctrl+Space)', action: (*) => ToggleFlowScoped('app ')},
-        {text: 'Files (SUPER+S)',         action: (*) => ToggleFlowScoped('f ')},
-        {text: 'Capture', sub: CaptureItems},
-        {text: 'Tiling',  sub: TilingItems},
-        {text: 'Game mode: ' (FileExist(GameFlag) ? 'ON (click to turn off)' : 'OFF (click to turn on)'),
-            action: (*) => ToggleGameMode()},
-        {text: 'Stay awake: ' (FileExist(AwakeFlag) ? 'ON (click to turn off)' : 'OFF (click to turn on)'),
-            action: (*) => ToggleStayAwake()},
-        {text: 'Reload stack (SUPER+Shift+R)', action: (*) => ReloadStack()},
-        {text: 'System (SUPER+Esc)', sub: SysMenuItems},
-        {text: 'Quit 710sRice', action: (*) => QuitStack()} ]
+        {text: 'Apps',                     hint: 'SUPER+Ctrl+Space', action: (*) => ToggleFlowScoped('app ')},
+        {text: 'Files',                    hint: 'SUPER+S',          action: (*) => ToggleFlowScoped('f ')},
+        {text: 'Capture',                                            sub: CaptureItems},
+        {text: 'Tiling',                                             sub: TilingItems},
+        {text: 'Keybindings',              hint: 'SUPER+K',          action: (*) => ToggleKeyOverlay()},
+        {text: 'Game mode ' OnOff(GameFlag),                         action: (*) => ToggleGameMode()},
+        {text: 'Stay awake ' OnOff(AwakeFlag), hint: 'SUPER+Ctrl+W', action: (*) => ToggleStayAwake()},
+        {text: 'Reload stack',             hint: 'SUPER+Shift+R',    action: (*) => ReloadStack()},
+        {text: 'System',                   hint: 'SUPER+Esc',        sub: SysMenuItems},
+        {text: 'Quit 710sRice',                                      action: (*) => QuitStack()} ]
 }
 
 OpenMainMenu(*) {
-    global ThemedMenuGui, ThemedMenuStack
-    if (ThemedMenuGui != '') {          ; already open -- toggle closes
-        CloseThemedMenu()
-        return
-    }
-    RefreshMenuColors()
-    ThemedMenuStack := []
-    ShowThemedGuiMenu(MainMenuItems(), '710sRice')
+    if !PalClosed('menu')
+        PalOpen('menu', MainMenuItems(), '710sRice')
 }
 
 ; Builds a native Menu() tree from the shared {text, action}/{text, sub}
@@ -1199,12 +1265,17 @@ BuildNativeMenu(menuObj, items) {
         if item.HasOwnProp('sub') {
             childMenu := Menu()
             BuildNativeMenu(childMenu, item.sub)
-            menuObj.Add(item.text, childMenu)
+            menuObj.Add(NativeMenuName(item), childMenu)
         } else {
-            menuObj.Add(item.text, item.action)
+            menuObj.Add(NativeMenuName(item), item.action)
         }
     }
 }
+
+; A tab in a native menu item's name puts what follows in Windows' own
+; right-aligned accelerator column -- so the tray shows the same key hints as
+; the palette.
+NativeMenuName(item) => item.text (item.HasOwnProp('hint') ? '`t' item.hint : '')
 
 SetupTray() {
     ico := RepoRoot "\assets\logo\710rice.ico"
@@ -1215,7 +1286,7 @@ SetupTray() {
     tray := A_TrayMenu
     tray.Delete()               ; drop AHK's default Pause/Suspend/Reload/Edit menu
     BuildNativeMenu(tray, MainMenuItems())
-    tray.Default := 'Apps (SUPER+Ctrl+Space)'
+    try tray.Default := NativeMenuName(MainMenuItems()[1])   ; Apps -- try: a name mismatch must never stop AHK loading
     tray.ClickCount := 1        ; single left-click runs Default, matching winarchy
 }
 SetupTray()
