@@ -891,6 +891,138 @@ ToggleGameMode() {
 }
 
 ; ============================================================================
+; Quick add rule (Tiling menu)
+; ============================================================================
+; Click-to-pick a window, choose what to match it on (exe / class / title,
+; showing that window's real values) and which rule (Float / Ignore / Manage),
+; and it lands in config\komorebi\rules.toml via tools\add-rule.ps1 (ported
+; from winarchy's Add-WinarchyUserRule -- winarchy only ever had a CLI for
+; this, no UI). add-rule.ps1 also applies the rule to the picked window right
+; away, because komorebi only applies rules to windows opened AFTER them (the
+; 2026-09-23 Notepad test); then SUPER+Shift+R's reload makes it stick for
+; every future window. A rule addition always rides komorebi's fast hot-reload
+; path, so layouts survive. Every menu here is ShowThemedGuiMenu -- same look
+; and Backspace back-nav as SUPER+Esc / SUPER+Alt+Space.
+;
+; Picking is a tooltip + a temporary blocking *LButton hotkey, NOT a swapped
+; system crosshair cursor: if anything died mid-pick, a changed system cursor
+; would stay changed; a tooltip and a hook hotkey just go away with it.
+QuickPickActive := false, QuickTarget := ''
+
+QuickAddRule(*) {
+    global QuickPickActive
+    if QuickPickActive
+        return
+    QuickPickActive := true
+    HotIf()                                   ; the two temp hotkeys live in the plain global context
+    Hotkey('*LButton', QuickPickClick, 'On')  ; blocking: the pick-click never reaches the window
+    Hotkey('*Esc', QuickPickCancel, 'On')
+    SetTimer(QuickPickTip, 50)
+    SetTimer(QuickPickTimeout, -15000)        ; walked away mid-pick? give the mouse back
+}
+
+QuickPickTip() {
+    ToolTip('Click the window to add a rule for   (Esc cancels)')
+}
+
+QuickPickEnd() {
+    global QuickPickActive
+    QuickPickActive := false
+    SetTimer(QuickPickTip, 0)
+    SetTimer(QuickPickTimeout, 0)
+    ToolTip()
+    try Hotkey('*LButton', 'Off')
+    try Hotkey('*Esc', 'Off')
+}
+
+QuickPickCancel(*) {
+    QuickPickEnd()
+    TrayTip('Quick add rule cancelled', '710sRice')
+}
+
+QuickPickTimeout() {
+    global QuickPickActive
+    if QuickPickActive
+        QuickPickCancel()
+}
+
+QuickPickClick(*) {
+    global QuickTarget, ThemedMenuStack
+    QuickPickEnd()
+    CoordMode('Mouse', 'Screen')
+    MouseGetPos(, , &hwnd)
+    root := DllCall('GetAncestor', 'Ptr', hwnd, 'UInt', 2, 'Ptr')   ; GA_ROOT: the top-level window, never a child control
+    try {
+        exe   := WinGetProcessName('ahk_id ' root)
+        cls   := WinGetClass('ahk_id ' root)
+        title := WinGetTitle('ahk_id ' root)
+        pid   := WinGetPID('ahk_id ' root)
+    } catch {
+        ; typically an elevated window -- which non-elevated komorebi can't manage anyway
+        TrayTip("Couldn't read that window (an admin window?) -- quick add cancelled", '710sRice')
+        return
+    }
+    ; Not app windows: the desktop, the taskbars, the YASB bar, and this script's own GUIs.
+    if (cls ~= '^(Progman|WorkerW|Shell_TrayWnd|Shell_SecondaryTrayWnd)$')
+        || (StrLower(exe) = 'yasb.exe') || (pid = DllCall('GetCurrentProcessId')) {
+        TrayTip("That's not an app window -- quick add cancelled", '710sRice')
+        return
+    }
+    QuickTarget := {hwnd: root}
+    ; exe first so Enter takes the common case. Values trimmed to fit the menu's
+    ; fixed 220px rows (the real, untrimmed value is what gets written).
+    items := [
+        {text: 'exe: '   QuickTrunc(exe, 19), sub: QuickRuleItems('exe', exe)},
+        {text: 'class: ' QuickTrunc(cls, 17), sub: QuickRuleItems('class', cls)} ]
+    if (title != '')
+        items.Push({text: 'title: ' QuickTrunc(title, 17), sub: QuickRuleItems('title', title)})
+    RefreshMenuColors()
+    ThemedMenuStack := []
+    ShowThemedGuiMenu(items, 'Match on')
+}
+
+QuickTrunc(s, n) {
+    return (StrLen(s) > n) ? SubStr(s, 1, n - 1) '…' : s
+}
+
+QuickRuleItems(field, value) {
+    return [
+        {text: 'Float (never tile)',  action: (*) => QuickApplyRule('floating', field, value)},
+        {text: 'Ignore (hands off)',  action: (*) => QuickApplyRule('ignore', field, value)},
+        {text: 'Manage (force tile)', action: (*) => QuickApplyRule('manage', field, value)} ]
+}
+
+QuickApplyRule(cat, field, value) {
+    global QuickTarget, RepoRoot
+    hwnd := QuickTarget.hwnd
+    if !WinExist('ahk_id ' hwnd) {
+        TrayTip('That window closed -- quick add cancelled', '710sRice')
+        return
+    }
+    ; add-rule.ps1's apply-now komorebic calls act on the FOCUSED window
+    try WinActivate('ahk_id ' hwnd)
+    WinWaitActive('ahk_id ' hwnd, , 1)
+    ; The value rides in the environment, never quoted onto a command line --
+    ; window titles can hold anything. Cleared again straight after.
+    EnvSet('QUICKADD_VALUE', value)
+    try {
+        code := RunWait('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' RepoRoot '\tools\add-rule.ps1" -Category ' cat ' -Field ' field ' -Hwnd ' hwnd, , 'Hide')
+    } catch as e {
+        EnvSet('QUICKADD_VALUE')
+        TrayTip('Quick add could not start: ' e.Message, '710sRice')
+        return
+    }
+    EnvSet('QUICKADD_VALUE')
+    label := Map('floating', 'Float', 'ignore', 'Ignore', 'manage', 'Manage')[cat]
+    switch code {
+        case 0: ReloadStack(label ' rule added (' field ' ' value ')')
+        case 2: ReloadStack(label ' rule added, not applied to that window (see add-rule.log)')
+        case 3: TrayTip('Already in rules.toml (' label ' ' field ' ' value ') -- applied to that window', '710sRice')
+        default: TrayTip('Rule not added (see add-rule.log)', '710sRice')
+    }
+}
+
+; ============================================================================
 ; Tray + main menu (Apps / Capture / Tiling / Game mode)
 ; ============================================================================
 ; Shared {text, action} / {text, sub:[...]} item structure (same shape
@@ -925,6 +1057,7 @@ CaptureItems := [
     {text: 'Scan QR (SUPER+Ctrl+Q)',                action: (*) => Sharex('QRCodeScanRegion')} ]
 
 TilingItems := [
+    {text: 'Quick add rule...',                          action: (*) => QuickAddRule()},
     {text: 'Manage this window',                         action: (*) => Komorebic('manage')},
     {text: 'Unmanage this window',                        action: (*) => Komorebic('unmanage')},
     {text: 'Stop tiling this workspace (SUPER+Shift+Z)',  action: (*) => Komorebic('toggle-tiling')},
@@ -1000,7 +1133,7 @@ SetupTray()
 ; parks this hotkey's thread, so every other hotkey stays live meanwhile.
 ; Exit codes are reload-stack.ps1's: 0 ok, 1 rules didn't compile (nothing
 ; was touched, so AHK isn't restarted either), 2 partial (see the log).
-ReloadStack(*) {
+ReloadStack(note := '', *) {
     static running := false
     if running                  ; double-tap while the first one's mid-flight
         return
@@ -1016,10 +1149,11 @@ ReloadStack(*) {
     }
     if (code = 1) {
         running := false
-        TrayTip('Rules failed to compile -- nothing reloaded (see reload-stack.log)', '710sRice')
+        TrayTip((note != '' ? note ', but ' : '') 'rules failed to compile -- nothing reloaded (see reload-stack.log)', '710sRice')
         return
     }
-    TrayTip(code = 0 ? 'Stack reloaded' : 'Reloaded, with errors (see reload-stack.log)', '710sRice')
+    ; `note` lets a caller (Quick add rule) say what just changed; empty for a plain SUPER+Shift+R
+    TrayTip((note != '' ? note '. ' : '') (code = 0 ? 'Stack reloaded' : 'Reloaded, with errors (see reload-stack.log)'), '710sRice')
     Sleep(1500)                 ; let the toast land before this process swaps itself out
     Reload()
 }
