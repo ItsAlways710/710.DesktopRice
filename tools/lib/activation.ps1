@@ -782,7 +782,7 @@ function Register-LockScreenSyncTask {
     $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) '710-task-lock-screen-sync.xml'
     try {
         $xml = New-OnDemandElevatedTaskXml -Description '710.DesktopRice: syncs the lock screen image to the current wallpaper (on-demand, fired by apply-wallust-outputs.ps1)' `
-            -Command $pwsh -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$script`"" -User $user
+            -Command $pwsh -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`"" -User $user
         Set-Content -Path $xmlPath -Value $xml -Encoding Unicode
         $full = Get-TaskFullName -TaskName 'lock-screen-sync'
         & schtasks.exe /Create /TN $full /XML $xmlPath /F *> $null
