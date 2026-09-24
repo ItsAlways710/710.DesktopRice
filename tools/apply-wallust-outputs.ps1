@@ -156,11 +156,13 @@ Set-ItemProperty -Path $personalize -Name 'SystemUsesLightTheme' -Value 0 -Type 
 Set-ItemProperty -Path $personalize -Name 'ColorPrevalence' -Value 1 -Type DWord
 Set-ItemProperty -Path $dwm -Name 'ColorPrevalence' -Value 1 -Type DWord
 
+$accentApplied = $false
 try {
     $accentRgb = ConvertTo-Rgb -Hex $accent
     $abgr = (0xFF -shl 24) -bor ($accentRgb.B -shl 16) -bor ($accentRgb.G -shl 8) -bor $accentRgb.R
     Set-ItemProperty -Path $dwm -Name 'AccentColor' -Value $abgr -Type DWord
     Set-ItemProperty -Path $dwm -Name 'ColorizationColor' -Value $abgr -Type DWord
+    $accentApplied = $true
 }
 catch {
     Write-Warning "Windows accent not applied: $($_.Exception.Message)"
@@ -176,7 +178,13 @@ $result = [UIntPtr]::Zero
 # HWND_BROADCAST, WM_SETTINGCHANGE, SMTO_ABORTIFHUNG -- makes it apply live, no logoff/restart
 [Wallust.Native.SettingChange]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'ImmersiveColorSet', 2, 1000, [ref]$result) | Out-Null
 
-Write-Host "wallust outputs applied: komorebi borders + Windows accent ($accent)"
+# Only name the legs that actually ran -- this used to claim komorebi borders even right
+# after printing "komorebi isn't running -- skipped border colors."
+$applied = @()
+if ($komorebiRunning) { $applied += 'komorebi borders' }
+if ($accentApplied)   { $applied += "Windows accent ($accent)" }
+if ($applied.Count) { Write-Host ('wallust outputs applied: ' + ($applied -join ' + ')) }
+else { Write-Host 'wallust outputs: neither komorebi borders nor Windows accent applied (see above).' }
 
 # --- Windows Terminal: color scheme selection + tab-row theme ---------------
 # wallust already writes/updates a "wallust" entry in schemes[] on every run --

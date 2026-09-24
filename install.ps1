@@ -387,6 +387,10 @@ if ($wtSettingsPath) {
 
 # --- 9. Flow Launcher setup (settings + Everything plugin) -------------------------------
 Write-Host "`n-- Flow Launcher --" -ForegroundColor Cyan
+# Reset first: $LASTEXITCODE only changes when a native exe runs or a script calls `exit`,
+# so without this the check below could read a failure left over from an earlier,
+# unrelated step (a failed `komorebic monitor-information`) and print a false "skipped".
+$global:LASTEXITCODE = 0
 & (Join-Path $Root 'tools\setup-flow-launcher.ps1')
 if ($LASTEXITCODE -ne 0) {
     Step-Info "Flow Launcher setup skipped this run (see message above) -- harmless if Flow hasn't been run yet; re-run .\install.ps1 after its first launch."
