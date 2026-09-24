@@ -260,26 +260,21 @@ if ($wallustUpToDate) {
 if ($LASTEXITCODE -ne 0) { Step-Warn 'wallust.toml not written (see message above) -- wallpaper theming will fail until it is.' }
 else { Step-Ok 'wallust.toml current' }
 
-# --- 4. First-run default theme (wallpaper + lock screen) -----------------------------
-# Only on a genuine first run: if the current desktop wallpaper is already one of this
-# repo's own (assets\wallpapers\*), a previous install.ps1 run -- or the person themselves,
-# picking a different one from that same folder -- already themed this machine; leave it
-# alone rather than stomping a deliberate choice on every re-run. Otherwise, set
-# assets\wallpapers\710Default001.png as the desktop wallpaper and run the exact same
+# --- 4. Default theme (wallpaper + everything themed from it) -------------------------
+# EVERY run, no "already themed?" check (user's call, 2026-09-23 -- the old check skipped
+# this whenever the current wallpaper came from assets\wallpapers, which could leave e.g.
+# Windows Terminal on whatever uninstall had restored it to). Sets
+# assets\wallpapers\710Default001.png as the desktop wallpaper and runs the exact same
 # wallust + apply-wallust-outputs.ps1 pipeline YASB's Wallpapers widget runs on every real
 # wallpaper change (see config\yasb\config.yaml's run_after) -- so komorebi borders, the
 # Windows accent color, Windows Terminal, and (once -Activate registers its Scheduled Task
 # a few sections down) the lock screen all end up themed to it too, via the one real
 # code path rather than a second, parallel "first theme" implementation.
-Write-Host "`n-- First-run default theme --" -ForegroundColor Cyan
+Write-Host "`n-- Default theme --" -ForegroundColor Cyan
 $defaultWallpaper = Join-Path $Root 'assets\wallpapers\710Default001.png'
-$wallpaperRepoDir = Join-Path $Root 'assets\wallpapers'
-$currentWallpaper = (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue).WallPaper
 
-if ($currentWallpaper -and $currentWallpaper.StartsWith($wallpaperRepoDir, [System.StringComparison]::OrdinalIgnoreCase)) {
-    Step-Ok "Wallpaper already set from this repo's own set ($currentWallpaper) -- leaving it as-is."
-} elseif (-not (Test-Path $defaultWallpaper)) {
-    Step-Warn "Default wallpaper not found at $defaultWallpaper -- skipping first-run theme."
+if (-not (Test-Path $defaultWallpaper)) {
+    Step-Warn "Default wallpaper not found at $defaultWallpaper -- skipping the default theme."
 } else {
     try {
         # One-time snapshot of whatever wallpaper was here before -- Set-DesktopWallpaper
@@ -296,9 +291,11 @@ if ($currentWallpaper -and $currentWallpaper.StartsWith($wallpaperRepoDir, [Syst
         # requires PS7 (see this file's #Requires line), so there's no PATH/process
         # resolution to worry about; a plain call-operator invocation is simplest.
         & (Join-Path $Root 'tools\apply-wallust-outputs.ps1')
-        Step-Ok "Default theme applied (komorebi borders, Windows accent, Windows Terminal, and the lock screen once -Activate registers its sync task)."
+        # apply-wallust-outputs.ps1 prints exactly which legs ran (komorebi borders only if
+        # komorebi is up); the lock screen follows once -Activate registers its sync task.
+        Step-Ok "Default theme applied (details above)."
     } catch {
-        Step-Warn "Could not apply the first-run default theme: $($_.Exception.Message)"
+        Step-Warn "Could not apply the default theme: $($_.Exception.Message)"
     }
 }
 
