@@ -269,11 +269,21 @@ WebApp(url) {
 ; is. Standard install location for this kind of app on Windows; if it's
 ; wrong the TrayTip below will say so rather than silently doing nothing.
 LaunchClaudeDesktop() {
-    exe := EnvGet('LOCALAPPDATA') '\Claude\Claude.exe'
-    if FileExist(exe)
-        Run('"' exe '"')
-    else
-        TrayTip('Claude Desktop not found at ' exe, '710sRice')
+    ; The Claude desktop app is a packaged (MSIX) app: its exe sits in a
+    ; versioned folder under Program Files\WindowsApps that changes with every
+    ; update, so it's launched by its app ID, the way the Start menu does it.
+    ; (The old guess, %LOCALAPPDATA%\Claude\Claude.exe, is only the app's data
+    ; folder -- plan item 26.) App ID from
+    ; `Get-StartApps | Where-Object Name -like '*Claude*'` (2026-09-24). The
+    ; package's own folder under %LOCALAPPDATA%\Packages exists once it's
+    ; installed, so that's the "is it installed" check.
+    if !DirExist(EnvGet('LOCALAPPDATA') '\Packages\Claude_pzs8sxrjxfjjc') {
+        TrayTip('The Claude desktop app is not installed', '710sRice')
+        return
+    }
+    try Run('shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude')
+    catch as e
+        TrayTip("Couldn't start the Claude desktop app: " e.Message, '710sRice')
 }
 
 #+a::LaunchClaudeDesktop()                        ; Claude Desktop (SUPER+Shift+A)
