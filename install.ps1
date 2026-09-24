@@ -13,12 +13,12 @@
     run sees them too. DESKTOPRICE_HOME (the repo root) is what config\yasb\config.yaml's
     own paths are built from ($env:DESKTOPRICE_HOME), so the repo can live anywhere.
   - Installs wallust (tools/install-wallust.ps1) if it's missing or behind its pin.
-  - Runs `komorebic.exe monitor-information` and writes this machine's real monitor
-    identity to config/komorebi/display-index.local.json (gitignored, machine-local) --
-    see that file's consumer, tools/compile-komorebi-rules.ps1, for why this can never be
-    a tracked file. Safe to skip (a fresh install before komorebi has ever run on this
-    machine simply won't have this yet; re-run install.ps1 once komorebi is up to pick it
-    up, or run tools/compile-komorebi-rules.ps1 -Force... see NOTES).
+  - Refreshes this machine's real monitor identity in
+    config/komorebi/display-index.local.json (gitignored, machine-local) via
+    tools/write-display-index.ps1 -- only possible while komorebi is running. On a fresh
+    install it isn't yet, and scripts/Start-Komorebi.ps1 writes the file itself the first
+    time komorebi starts (see tools/compile-komorebi-rules.ps1 for why it can never be a
+    tracked file).
   - Runs tools/setup-flow-launcher.ps1 (only meaningful once Flow Launcher has been run at
     least once; that script warns and no-ops cleanly if it hasn't).
   - Regenerates config/komorebi/komorebi.json (tools/compile-komorebi-rules.ps1) so a
@@ -56,9 +56,8 @@
   first-ever install) won't be found by Get-Command in *this* process until PATH is
   re-read from the registry -- `setx`/winget only affect newly opened processes, a lesson
   this project already paid for once (see plan doc's KOMOREBI_CONFIG_HOME section). This
-  script re-reads Machine+User PATH into $env:Path after the package loop specifically so
-  monitor-information (below) can find a just-installed komorebic.exe without requiring a
-  second run.
+  script re-reads Machine+User PATH into $env:Path after the package loop so later steps
+  can find just-installed exes without requiring a second run.
 
 .EXAMPLE
   .\install.ps1                # install/update everything this repo owns
@@ -300,74 +299,17 @@ if (-not (Test-Path $defaultWallpaper)) {
 }
 
 # --- 5. Monitor identity (display_index_preferences) ----------------------------------
+# komorebic can only report monitors while komorebi is running, so on a fresh install
+# (komorebi never started yet) this can't work -- scripts\Start-Komorebi.ps1 writes the
+# file itself the first time komorebi comes up and it's missing. Here it's a refresh:
+# re-running install.ps1 while komorebi is up picks up a monitor change.
 Write-Host "`n-- Monitor identity (display_index_preferences) --" -ForegroundColor Cyan
-
-function Get-MonitorDisplayIndexPreferences {
-    # Runs `komorebic.exe monitor-information` and builds a display_index_preferences map
-    # (array-index -> serial_number_id) from the real, live result on THIS machine. Never
-    # writes a guessed or partial map: returns $null (and warns) if komorebic isn't found,
-    # the call fails, the output can't be parsed, or no monitor has a usable
-    # serial_number_id -- compile-komorebi-rules.ps1 simply omits the key in that case and
-    # komorebi falls back to Windows' own enumeration order for that session.
-    #
-    # Deliberately invoked directly (not via Get-Command komorebic.exe first) and the
-    # CommandNotFoundException caught instead: Get-Command's Application-type resolution
-    # proved unreliable for finding a freshly-PATH'd .exe when this script was built and
-    # tested (see the local pwsh sandbox notes in the plan doc) -- direct invocation with
-    # a catch is both simpler and the more portable way to ask "is this on PATH".
-    try {
-        $raw = & 'komorebic.exe' monitor-information 2>$null
-    } catch [System.Management.Automation.CommandNotFoundException] {
-        Step-Warn "komorebic.exe not found on PATH -- skipping display_index_preferences (install komorebi first, or open a new terminal / re-run install.ps1 so PATH picks it up)."
-        return $null
-    } catch {
-        Step-Warn "komorebic.exe monitor-information failed: $($_.Exception.Message) -- skipping display_index_preferences."
-        return $null
-    }
-    if (-not $raw) {
-        Step-Warn "komorebic.exe monitor-information returned no output -- skipping display_index_preferences."
-        return $null
-    }
-    try {
-        $parsed = ($raw -join "`n") | ConvertFrom-Json
-    } catch {
-        $dumpPath = Join-Path $env:TEMP 'monitor-information.raw.txt'
-        ($raw -join "`n") | Set-Content -Path $dumpPath -Encoding UTF8
-        Step-Warn "Could not parse komorebic.exe monitor-information output as JSON -- skipping display_index_preferences. Raw output saved to $dumpPath for inspection."
-        return $null
-    }
-    $monitors = @($parsed)
-    if ($monitors.Count -eq 0) {
-        Step-Warn "komorebic.exe monitor-information reported zero monitors -- skipping display_index_preferences."
-        return $null
-    }
-    if ($monitors.Count -gt 4) {
-        Step-Warn "$($monitors.Count) monitors detected; this repo's design supports 4, using the first 4 in reported order."
-        $monitors = $monitors[0..3]
-    }
-    $map = [ordered]@{}
-    for ($i = 0; $i -lt $monitors.Count; $i++) {
-        $serial = $monitors[$i].serial_number_id
-        if ([string]::IsNullOrWhiteSpace($serial)) {
-            Step-Warn "Monitor index $i has no serial_number_id in komorebic's output -- leaving it out (display_index_preferences will be incomplete for this monitor)."
-            continue
-        }
-        $map["$i"] = "$serial"
-    }
-    if ($map.Count -eq 0) {
-        Step-Warn "No monitor had a usable serial_number_id -- skipping display_index_preferences entirely."
-        return $null
-    }
-    $map
-}
-
-$displayIndexPath = Join-Path $Root 'config\komorebi\display-index.local.json'
-$displayMap = Get-MonitorDisplayIndexPreferences
-if ($displayMap) {
-    $displayMap | ConvertTo-Json | Set-Content -Path $displayIndexPath -Encoding UTF8
-    Step-Ok "Wrote $($displayMap.Count) monitor(s) to $displayIndexPath"
-} else {
-    Step-Info "Not written this run -- config/komorebi/komorebi.json will simply omit display_index_preferences (fine before komorebi has ever run here); re-run .\install.ps1 later to pick it up."
+try { & (Join-Path $Root 'tools\write-display-index.ps1') }
+catch { Write-Warning $_.Exception.Message; $global:LASTEXITCODE = 1 }
+switch ($LASTEXITCODE) {
+    0       { Step-Ok 'Monitor order pinned (display-index.local.json)' }
+    2       { Step-Info "komorebi isn't running yet -- it writes this itself the first time it starts." }
+    default { Step-Warn "Monitor order not written (see above) -- komorebi.json will omit display_index_preferences; komorebi falls back to Windows' own monitor order." }
 }
 
 # --- 6. Windows Defender exclusions (unconditional) --------------------------------------
@@ -430,7 +372,8 @@ if ($wtSettingsPath) {
 Write-Host "`n-- Flow Launcher --" -ForegroundColor Cyan
 # Reset first: $LASTEXITCODE only changes when a native exe runs or a script calls `exit`,
 # so without this the check below could read a failure left over from an earlier,
-# unrelated step (a failed `komorebic monitor-information`) and print a false "skipped".
+# unrelated step (e.g. write-display-index.ps1's exit 2 when komorebi isn't running yet)
+# and print a false "skipped".
 $global:LASTEXITCODE = 0
 & (Join-Path $Root 'tools\setup-flow-launcher.ps1')
 if ($LASTEXITCODE -ne 0) {

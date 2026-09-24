@@ -79,6 +79,37 @@ function Invoke-Komorebic {
     $out
 }
 
+function Invoke-PwshScript {
+    <# Runs one of this repo's PS7 scripts (tools\<name>) under pwsh -- this script itself
+       runs under 5.1 -- with CreateNoWindow (same no-flash reasoning as Invoke-Komorebic),
+       waits for it, and returns @{ ExitCode; Out; Err }. Reads $pwsh from the caller's
+       scope. #>
+    param([Parameter(Mandatory)][string]$Script, [string]$Arguments = '')
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $pwsh
+    $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $root "tools\$Script") + '" ' + $Arguments
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($info)
+    $out = $p.StandardOutput.ReadToEnd()
+    $err = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    [pscustomobject]@{ ExitCode = $p.ExitCode; Out = $out; Err = $err }
+}
+
+function Get-StaticReloadCount {
+    # How many ReloadStaticConfiguration commands komorebi has logged as processed --
+    # same check as tools\reload-stack.ps1. $outLog is komorebi's own stdout (redirected
+    # below), fresh on every start. -1 if it can't be read.
+    try {
+        if (-not (Test-Path $outLog)) { return -1 }
+        @(Select-String -Path $outLog -SimpleMatch 'ReloadStaticConfiguration' |
+            Where-Object { $_.Line -like '*processed*' }).Count
+    } catch { -1 }
+}
+
 if (-not (Test-Path $exe)) { Write-Log "komorebi.exe not found at $exe; aborting."; exit 1 }
 if (Test-KomorebiRunning)  { Write-Log 'komorebi already running; nothing to do.'; exit 0 }
 
@@ -138,7 +169,40 @@ while ((Get-Date) -lt $overallDeadline) {
         # monitor's workspace 0 only on a fresh startup. Needs the socket already bound,
         # hence after the survival check.
         $komorebic = Join-Path (Split-Path $exe) 'komorebic.exe'
+        $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
         if (Test-Path $komorebic) {
+            # First start after an install (or uninstall): pin the monitor order. komorebic
+            # can only report monitors once komorebi is running, so install.ps1 can't do
+            # this on a fresh machine -- tools\write-display-index.ps1 writes
+            # display-index.local.json and recompiles komorebi.json, and komorebi
+            # hot-reloads it. Done first, and waited for, because that reload resets the
+            # workspace focus and border colors set just below. Only when the file is
+            # missing -- a changed monitor setup is picked up by re-running install.ps1.
+            $displayIndex = Join-Path $root 'config\komorebi\display-index.local.json'
+            if (-not (Test-Path $displayIndex)) {
+                if ($pwsh) {
+                    try {
+                        $reloadsBefore = Get-StaticReloadCount
+                        $r = Invoke-PwshScript -Script 'write-display-index.ps1' -Arguments '-Compile'
+                        foreach ($ln in (($r.Out + $r.Err) -split "`r?`n" | Where-Object { $_.Trim() })) { Write-Log "    | $ln" }
+                        if ($r.ExitCode -eq 0) {
+                            Write-Log 'monitor order written (display-index.local.json) and komorebi.json recompiled.'
+                            if ($reloadsBefore -lt 0) {
+                                Write-Log "can't read komorebi.out.log to see komorebi's reload -- waiting 4s instead."
+                                Start-Sleep -Seconds 4
+                            } else {
+                                $deadline = (Get-Date).AddSeconds(10)
+                                while ((Get-StaticReloadCount) -le $reloadsBefore -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+                                if ((Get-StaticReloadCount) -gt $reloadsBefore) { Write-Log 'komorebi reloaded komorebi.json.' }
+                                else { Write-Log "didn't see komorebi reload komorebi.json within 10s -- the monitor order applies from its next start." }
+                            }
+                        } else {
+                            Write-Log "couldn't write the monitor order (write-display-index.ps1 exit $($r.ExitCode)); re-run .\install.ps1 while komorebi is running."
+                        }
+                    } catch { Write-Log "couldn't write the monitor order: $($_.Exception.Message)" }
+                } else { Write-Log 'pwsh not found -- monitor order (display-index.local.json) not written.' }
+            }
+
             try {
                 $null = Invoke-Komorebic focus-monitor-workspace 0 0
                 Write-Log 'primary monitor refocused to workspace 0.'
@@ -152,22 +216,11 @@ while ((Get-Date) -lt $overallDeadline) {
             # PS7 and this script runs under 5.1, so it goes through pwsh -- with
             # CreateNoWindow, same no-flash reasoning as Invoke-Komorebic above. Waited on
             # (it's a handful of komorebic calls) so the result lands in this log.
-            $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
             if ($pwsh) {
                 try {
-                    $info = New-Object System.Diagnostics.ProcessStartInfo
-                    $info.FileName = $pwsh
-                    $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tools\apply-wallust-outputs.ps1') + '" -BordersOnly'
-                    $info.UseShellExecute = $false
-                    $info.CreateNoWindow = $true
-                    $info.RedirectStandardOutput = $true
-                    $info.RedirectStandardError = $true
-                    $bp = [System.Diagnostics.Process]::Start($info)
-                    $null = $bp.StandardOutput.ReadToEnd()
-                    $bErr = $bp.StandardError.ReadToEnd()
-                    $bp.WaitForExit()
-                    if ($bp.ExitCode -eq 0) { Write-Log 'wallust border colors re-applied.' }
-                    else { Write-Log "couldn't re-apply wallust border colors (exit $($bp.ExitCode)): $bErr" }
+                    $r = Invoke-PwshScript -Script 'apply-wallust-outputs.ps1' -Arguments '-BordersOnly'
+                    if ($r.ExitCode -eq 0) { Write-Log 'wallust border colors re-applied.' }
+                    else { Write-Log "couldn't re-apply wallust border colors (exit $($r.ExitCode)): $($r.Err)" }
                 } catch { Write-Log "couldn't re-apply wallust border colors: $($_.Exception.Message)" }
             } else { Write-Log 'pwsh not found -- wallust border colors not re-applied.' }
 
