@@ -505,12 +505,9 @@ if ($Activate) {
 # --- Done -----------------------------------------------------------------------------
 Write-Host "`n== Install complete ==" -ForegroundColor Cyan
 if (-not $Activate) {
-    Write-Host "This run did not start or restart komorebi/YASB/AHK, or touch autostart/taskbar/hardening."
-    Write-Host "To load this repo's config into a running komorebi by hand, in a NEW terminal (so it sees"
-    Write-Host "the env vars just registered):"
+    Write-Host "This run didn't start the stack or touch autostart/taskbar/hardening. To run it now (on demand):"
     Write-Host ""
-    Write-Host "    komorebic.exe stop" -ForegroundColor DarkGray
-    Write-Host "    Start-Process komorebi.exe -WindowStyle Hidden -ArgumentList '--config',`"$Root\config\komorebi\komorebi.json`"" -ForegroundColor DarkGray
+    Write-Host "    .\scripts\Start-All.ps1     # from a normal (not admin) PowerShell window" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "Or re-run with -Activate to have this script do all of that (plus autostart) for you."
+    Write-Host "Or re-run with -Activate to start it at every sign-in."
 }

@@ -29,7 +29,7 @@
   to turn it on (the stack is built around a hidden taskbar). Stop-All.ps1 reminds you to
   turn it back off. Neither script changes it.
 
-  Then one short wait-and-check pass reports what came up. A [!!] isn't necessarily a
+  Then it checks what came up, for up to 20 seconds. A [!!] isn't necessarily a
   failure -- the launchers (scripts\Start-Komorebi.ps1 etc.) keep retrying for their own
   budget (up to 5 minutes for komorebi) and log to %LOCALAPPDATA%\710.DesktopRice\. Re-run
   this, or check those logs, if something's still settling. A component that's already
@@ -91,28 +91,33 @@ if ($viaTasks) {
     }
 }
 
-Write-Host "`n-- Checking what came up (short wait; see the header if something's still settling) --" -ForegroundColor Cyan
-Start-Sleep -Seconds 5
-
-if ($components.Key -contains 'komorebi') {
-    if (Get-Process komorebi -ErrorAction SilentlyContinue) { Step-Ok 'komorebi running' }
-    else { Step-Warn 'komorebi not running yet -- check %LOCALAPPDATA%\710.DesktopRice\komorebi-autostart.log' }
+Write-Host "`n-- Checking what came up (up to 20s; see the header if something's still settling) --" -ForegroundColor Cyan
+# One check per component, polled once a second until all pass or 20s is up. A fixed
+# 5s wait reported window-slots "not running yet" on every run (2026-09-24): its pipe
+# only opens once komorebi is up, and komorebi's launcher takes ~10s (it waits for the
+# desktop, then checks komorebi survives 8s).
+$checks = [ordered]@{
+    'komorebi'     = @{ Name = 'komorebi';     Test = { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) };     Log = 'komorebi-autostart.log' }
+    'yasb'         = @{ Name = 'YASB';         Test = { [bool](Get-Process yasb -ErrorAction SilentlyContinue) };         Log = 'yasb-autostart.log' }
+    'window-slots' = @{ Name = 'window-slots'; Test = { Test-WindowSlotsRunning };                                        Log = 'window-slots.log' }
+    'sharex'       = @{ Name = 'ShareX';       Test = { [bool](Get-Process ShareX -ErrorAction SilentlyContinue) };       Log = $null }
+    'ahk'          = @{ Name = '710.ahk';      Test = { [bool](Get-Process AutoHotkey64 -ErrorAction SilentlyContinue) }; Log = 'ahk-autostart.log' }
 }
-if ($components.Key -contains 'yasb') {
-    if (Get-Process yasb -ErrorAction SilentlyContinue) { Step-Ok 'YASB running' }
-    else { Step-Warn 'YASB not running yet -- check %LOCALAPPDATA%\710.DesktopRice\yasb-autostart.log' }
+$pending = [System.Collections.Generic.List[string]]::new()
+foreach ($k in $checks.Keys) { if ($components.Key -contains $k) { $pending.Add($k) } }
+$deadline = (Get-Date).AddSeconds(20)
+while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 1
+    foreach ($k in @($pending)) { if (& $checks[$k].Test) { [void]$pending.Remove($k) } }
 }
-if ($components.Key -contains 'window-slots') {
-    if (Test-WindowSlotsRunning) { Step-Ok 'window-slots running' }
-    else { Step-Warn 'window-slots not running yet -- check %LOCALAPPDATA%\710.DesktopRice\window-slots.log' }
-}
-if ($components.Key -contains 'sharex') {
-    if (Get-Process ShareX -ErrorAction SilentlyContinue) { Step-Ok 'ShareX running' }
-    else { Step-Warn 'ShareX not running yet' }
-}
-if ($components.Key -contains 'ahk') {
-    if (Get-Process AutoHotkey64 -ErrorAction SilentlyContinue) { Step-Ok '710.ahk running (an AutoHotkey64 process -- see NOTES)' }
-    else { Step-Warn '710.ahk not running yet -- check %LOCALAPPDATA%\710.DesktopRice\ahk-autostart.log' }
+foreach ($k in $checks.Keys) {
+    if ($components.Key -notcontains $k) { continue }
+    $c = $checks[$k]
+    if ($pending -notcontains $k) {
+        Step-Ok ("$($c.Name) running" + $(if ($k -eq 'ahk') { ' (an AutoHotkey64 process -- see NOTES)' }))
+    } else {
+        Step-Warn ("$($c.Name) not running after 20s" + $(if ($c.Log) { " -- check %LOCALAPPDATA%\710.DesktopRice\$($c.Log)" } else { '' }))
+    }
 }
 
 try {
