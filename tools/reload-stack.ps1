@@ -3,7 +3,7 @@
 .SYNOPSIS
   SUPER+Shift+R: make every config edit take effect without a logoff -- recompile the
   komorebi rules (komorebi picks them up), keep your live workspace layouts, put the
-  wallust borders back, kill+restart YASB, and make sure the window-slots daemon is up.
+  wallust borders back, and kill+restart YASB.
   AHK restarts itself afterwards (710.ahk's ReloadStack()), which is why AHK isn't
   touched here.
 
@@ -40,7 +40,6 @@
     3. YASB: kill + restart, never `yasbc reload` -- its hot reload re-subscribes the
        komorebi widgets to the named pipe without closing the old subscription (watch_config
        stays off for the same reason).
-    4. window-slots: started only if its pipe isn't there.
 
   Starting things goes through the registered autostart Scheduled Tasks
   (`schtasks /Run \710.DesktopRice\<name>`) -- the exact wscript/run-hidden.vbs path boot
@@ -375,16 +374,6 @@ if (Get-Process yasb -ErrorAction SilentlyContinue) {
 }
 if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
     if (-not (Start-AutostartTask 'yasb')) { $failed = $true }
-}
-
-# --- 4. window-slots: only if it's down -----------------------------------------------------
-# Same liveness test as tools\lib\window-slots.ps1's Test-WindowSlotsRunning: the named
-# pipe only exists while the daemon is alive and subscribed.
-if (Test-Path '\\.\pipe\710-window-slots') {
-    Write-Log '4. window-slots already running.'
-} else {
-    Write-Log "4. window-slots wasn't running -- starting it."
-    if (-not (Start-AutostartTask 'window-slots')) { $failed = $true }
 }
 
 if ($failed) { Write-Log 'done, with failures (see above).'; exit 2 }

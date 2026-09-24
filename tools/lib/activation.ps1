@@ -20,7 +20,7 @@
   hidden there's currently no network status shown either way regardless of which we'd pick.
 
   display_index_preferences: winarchy's own newest window-slots refinement (see
-  tools/lib/window-slots.ps1) writes a LIVE, device_id-keyed copy of this key into
+  extras/window-slots/window-slots.ps1) writes a LIVE, device_id-keyed copy of this key into
   komorebi.json every time window placement rules are re-applied. This repo already has its
   own, older, INSTALL-TIME mechanism for the same key (install.ps1 Section 4, serial_number_id
   -keyed, via `komorebic monitor-information`) -- kept deliberately instead of winarchy's,
@@ -246,7 +246,7 @@ function Get-PwshPath {
        to the versioned package folder (...\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__
        8wekyb3d8bbwe\pwsh.exe, seen live 2026-09-23 after re-registering autostart from an
        admin shell), which disappears on the next Store update and would silently stop
-       window-slots / lock-screen sync from launching. The per-user App Execution Alias
+       lock-screen sync from launching. The per-user App Execution Alias
        under %LOCALAPPDATA%\Microsoft\WindowsApps is what the Store keeps pointed at the
        current version, whatever shell registered the task -- prefer it. MSI installs
        (Program Files\PowerShell\7\pwsh.exe, not versioned) have no alias there and fall
@@ -675,11 +675,12 @@ function ConvertTo-HiddenLaunch {
 }
 
 function Get-AutostartComponents {
-    <# Definition of the 5 autostart components this repo actually uses (komorebi, YASB,
-       window-slots, ShareX, AHK). net-icon is deliberately not ported -- see this file's
-       header comment. Returns only the components whose executable is actually present.
+    <# Definition of the 4 autostart components this repo actually uses (komorebi, YASB,
+       ShareX, AHK). net-icon is deliberately not ported -- see this file's header comment;
+       window-slots was unwired 2026-09-24 (see Remove-RetiredAutostart). Returns only the
+       components whose executable is actually present.
        Each item: Key, TaskName, LnkName, Exe, Arguments, Delay (ISO-8601 duration, for the
-       LogonTrigger's Delay). The 4 powershell-hosted components (all but ShareX, which
+       LogonTrigger's Delay). The 3 powershell-hosted components (all but ShareX, which
        launches its own GUI exe directly and has no console to begin with) go through
        ConvertTo-HiddenLaunch -- see that function for why. #>
     $items = [System.Collections.Generic.List[object]]::new()
@@ -711,22 +712,6 @@ function Get-AutostartComponents {
             Exe = $hidden.Exe
             Arguments = $hidden.Arguments
             Delay = 'PT0S'
-        })
-    }
-
-    # window-slots reconciler: same hidden-host pattern as komorebi, but the daemon itself
-    # needs pwsh (PowerShell 7 syntax), so the hidden powershell.exe host just launches pwsh
-    # hidden in turn. 10s delay -- give komorebi itself a head start.
-    $pwsh = Get-PwshPath
-    if ($komorebiExe -and $pwsh) {
-        $slots = Join-Path $Root 'scripts\Start-WindowSlots.ps1'
-        $inner = "Start-Process -FilePath '$pwsh' -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$slots'"
-        $hidden = ConvertTo-HiddenLaunch -Key 'window-slots' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"$inner`""
-        $items.Add([pscustomobject]@{
-            Key = 'window-slots'; TaskName = 'window-slots'; LnkName = '710.DesktopRice window slots.lnk'
-            Exe = $hidden.Exe
-            Arguments = $hidden.Arguments
-            Delay = 'PT10S'
         })
     }
 
@@ -852,8 +837,9 @@ function Register-Autostart {
     <# Registers every present component as an At-LogOn Scheduled Task, delay 0 (or per-
        component), unelevated, interactive-session-only. Deletes legacy .lnk files first
        (migration). Idempotent. Falls back to a Startup .lnk for any component whose task
-       registration fails. #>
+       registration fails. Also removes retired components (Remove-RetiredAutostart). #>
     Remove-StartupShortcuts
+    Remove-RetiredAutostart
     $user = "$env:USERDOMAIN\$env:USERNAME"
     $components = Get-AutostartComponents
     if ($components.Count -eq 0) {
@@ -892,6 +878,37 @@ function Unregister-Autostart {
         & schtasks.exe /Delete /TN $full /F *> $null
     }
     Remove-StartupShortcuts
+    Remove-RetiredAutostart
+}
+
+function Remove-RetiredAutostart {
+    <# Cleans autostart components this repo no longer runs off a machine that still has
+       them: the sign-in task, its launch spec file, and a copy still running. Called by
+       Register-Autostart (install -Activate) and Unregister-Autostart (uninstall). A
+       leftover Startup .lnk is already covered by Remove-StartupShortcuts' wildcard.
+         window-slots -- unwired 2026-09-24 (the user never pinned an app, so the daemon
+                         sat idle); the code is kept under extras\window-slots\ as a
+                         possible future feature (plan doc item 2). #>
+    foreach ($name in @('window-slots')) {
+        if (Test-Task -TaskName $name) {
+            $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName $name) /F 2>&1
+            Step-Info "Removed the retired '$name' sign-in task."
+        }
+        Remove-Item (Join-Path $env:LOCALAPPDATA "710.DesktopRice\launch-$name.txt") -Force -ErrorAction SilentlyContinue
+    }
+    Stop-RetiredWindowSlots
+}
+
+function Stop-RetiredWindowSlots {
+    <# Stops a still-running window-slots daemon (retired 2026-09-24): the pwsh running
+       Start-WindowSlots.ps1, and the powershell.exe that launched it, matched by command
+       line so no other PowerShell is touched -- the same match its own
+       Stop-WindowSlotsDaemon used. A no-op on a machine that never ran it. #>
+    try {
+        Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe' OR Name = 'powershell.exe'" -ErrorAction Stop |
+            Where-Object { $_.CommandLine -and $_.CommandLine.Contains('Start-WindowSlots.ps1') } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch { }
 }
 
 function Get-AutostartStatus {
@@ -1058,14 +1075,8 @@ function Stop-RunningComponents {
        and best-effort (one failing to stop doesn't block the rest of the uninstall), and
        nothing here touches a process this repo didn't start -- see the AHK note below. #>
 
-    # window-slots daemon first: it reacts to komorebi's socket/pipe going away, so
-    # stopping it before komorebi avoids a burst of reconcile attempts against a dying
-    # event stream. Dot-sourced lazily (only when actually stopping something) so
-    # install.ps1's -Activate path, which never calls this function, doesn't pay for it.
-    try {
-        . (Join-Path $Root 'tools\lib\window-slots.ps1')
-        if (Test-WindowSlotsRunning) { Stop-WindowSlotsDaemon }
-    } catch { Step-Warn "window-slots daemon: $($_.Exception.Message)" }
+    # A window-slots daemon still running from before it was unwired (2026-09-24).
+    Stop-RetiredWindowSlots
 
     # komorebi: try its own graceful `stop` first (releases window-management hooks,
     # restores window styles/borders) before a hard kill, so a stray leftover style isn't

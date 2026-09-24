@@ -1,8 +1,8 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Stops every process 710.DesktopRice's stack may have started (komorebi, YASB,
-  window-slots, ShareX, AHK) -- the other half of Start-All.ps1's "on demand" use.
+  Stops every process 710.DesktopRice's stack may have started (komorebi, YASB, ShareX,
+  AHK) -- the other half of Start-All.ps1's "on demand" use.
 
 .DESCRIPTION
   A thin wrapper around tools\lib\activation.ps1's Stop-RunningComponents -- the same

@@ -54,7 +54,7 @@ function Test-KomorebiRunning { [bool](Get-Process komorebi -ErrorAction Silentl
 
 function Invoke-Komorebic {
     <# Runs komorebic.exe with no console window and returns its stdout. Same technique
-       as tools\lib\window-slots.ps1's own Invoke-Komorebic, duplicated locally here
+       as extras\window-slots\window-slots.ps1's own Invoke-Komorebic, duplicated locally here
        rather than dot-sourced -- this script runs under legacy Windows PowerShell 5.1
        (see Get-AutostartComponents), and window-slots.ps1 needs PS7's ?. operator just to
        parse, so dot-sourcing it would throw. .NET Framework's ProcessStartInfo also lacks

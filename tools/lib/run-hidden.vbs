@@ -2,7 +2,7 @@
 '
 ' Used by tools\lib\activation.ps1's Get-AutostartComponents (via ConvertTo-HiddenLaunch)
 ' as the Scheduled Task's own Action for the powershell-hosted autostart components
-' (komorebi/yasb/window-slots/ahk). WHY: Task Scheduler launching powershell.exe directly
+' (komorebi/yasb/ahk). WHY: Task Scheduler launching powershell.exe directly
 ' with -WindowStyle Hidden still shows a brief console flash at every logon -- confirmed
 ' live on Dell, 3-4 flashes at every boot (one per powershell-hosted component). Windows
 ' allocates the console as part of process creation, before PowerShell's own startup code
@@ -19,7 +19,7 @@
 ' 0). This script does not host or attach the child's console at all -- WScript.Shell.Run
 ' is an ordinary top-level launch, same as double-clicking the exe, so the child's lifetime
 ' never depends on this script (or wscript.exe) still running. It also doesn't touch how
-' the real long-running daemons (komorebi.exe, the window-slots pwsh host) themselves get
+' the real long-running processes (komorebi.exe and the others) themselves get
 ' launched -- those are still Start-Process -WindowStyle Hidden calls made from inside the
 ' launcher scripts, unchanged and already working; this only replaces how Task Scheduler
 ' launches those launcher scripts in the first place.

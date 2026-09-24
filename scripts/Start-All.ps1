@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Starts 710.DesktopRice's whole stack now (komorebi, YASB, window-slots, ShareX, AHK) --
+  Starts 710.DesktopRice's whole stack now (komorebi, YASB, ShareX, AHK) --
   the "on demand" way to run it, for a machine installed WITHOUT -Activate.
 
 .DESCRIPTION
@@ -54,14 +54,12 @@ function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -Foreg
 # Step-Ok/Info/Warn must be defined before this dot-source -- activation.ps1 uses ours
 # rather than its own copies (see that file's header).
 . (Join-Path $Root 'tools\lib\activation.ps1')
-# For the final Test-WindowSlotsRunning check. PS7-only syntax inside, hence #Requires.
-. (Join-Path $Root 'tools\lib\window-slots.ps1')
 
 Write-Host "`n== 710.DesktopRice: start all ==" -ForegroundColor Cyan
 
 $components = @(Get-AutostartComponents)
 if ($components.Count -eq 0) {
-    Step-Warn "No components found installed (komorebi/YASB/window-slots/ShareX/AHK all missing?) -- run .\install.ps1 first."
+    Step-Warn "No components found installed (komorebi/YASB/ShareX/AHK all missing?) -- run .\install.ps1 first."
     exit 1
 }
 
@@ -80,7 +78,7 @@ if ($viaTasks) {
         exit 1
     }
     # No sign-in delays here: those space things out at logon; by hand they'd just be
-    # waiting (window-slots' was 10s).
+    # waiting.
     foreach ($c in $components) {
         try {
             Start-Process -FilePath $c.Exe -ArgumentList $c.Arguments -WindowStyle Hidden
@@ -92,14 +90,12 @@ if ($viaTasks) {
 }
 
 Write-Host "`n-- Checking what came up (up to 20s; see the header if something's still settling) --" -ForegroundColor Cyan
-# One check per component, polled once a second until all pass or 20s is up. A fixed
-# 5s wait reported window-slots "not running yet" on every run (2026-09-24): its pipe
-# only opens once komorebi is up, and komorebi's launcher takes ~10s (it waits for the
-# desktop, then checks komorebi survives 8s).
+# One check per component, polled once a second until all pass or 20s is up --
+# komorebi's launcher alone takes ~10s (it waits for the desktop, then checks komorebi
+# survives 8s), so a single fixed wait either wastes time or reports too early.
 $checks = [ordered]@{
     'komorebi'     = @{ Name = 'komorebi';     Test = { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) };     Log = 'komorebi-autostart.log' }
     'yasb'         = @{ Name = 'YASB';         Test = { [bool](Get-Process yasb -ErrorAction SilentlyContinue) };         Log = 'yasb-autostart.log' }
-    'window-slots' = @{ Name = 'window-slots'; Test = { Test-WindowSlotsRunning };                                        Log = 'window-slots.log' }
     'sharex'       = @{ Name = 'ShareX';       Test = { [bool](Get-Process ShareX -ErrorAction SilentlyContinue) };       Log = $null }
     'ahk'          = @{ Name = '710.ahk';      Test = { [bool](Get-Process AutoHotkey64 -ErrorAction SilentlyContinue) }; Log = 'ahk-autostart.log' }
 }

@@ -1,7 +1,7 @@
 # Start-WindowSlots.ps1 -- keeps every PINNED window in the slot the user gave it.
 #
-# Launched hidden by the At-LogOn Scheduled Task (tools/lib/activation.ps1's
-# Get-AutostartComponents). Subscribes to komorebi's events over a named pipe and reacts
+# NOT WIRED IN (unwired 2026-09-24) -- see README.md in this folder. It used to be launched
+# hidden by an At-LogOn Scheduled Task (tools/lib/activation.ps1's Get-AutostartComponents). Subscribes to komorebi's events over a named pipe and reacts
 # based on who moved the window:
 #   - a window appeared (or left)  -> reconcile against config/windows.toml's pinned slots.
 #   - the user moved it            -> learn: the saved slot becomes wherever it is now.
@@ -31,8 +31,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$Root = Split-Path -Parent $PSScriptRoot
-. (Join-Path $Root 'tools\lib\window-slots.ps1')
+$Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # extras\window-slots\.. \.. = repo root
+. (Join-Path $PSScriptRoot 'window-slots.ps1')
 
 $logDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null

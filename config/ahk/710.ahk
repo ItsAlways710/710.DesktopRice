@@ -1310,7 +1310,7 @@ SetupTray()
 
 ; SUPER+Shift+R. tools\reload-stack.ps1 does the actual stack work (compile
 ; rules, keep live layouts across komorebi's reload, wallust borders -> YASB kill and
-; restart -> window-slots if it's down); this just runs it, says how it went,
+; restart); this just runs it, says how it went,
 ; and then restarts THIS script -- the one step the PS script can't do itself
 ; without killing its own caller, and the reason AHK goes last. RunWait only
 ; parks this hotkey's thread, so every other hotkey stays live meanwhile.
@@ -1342,19 +1342,10 @@ ReloadStack(note := '', *) {
 }
 
 QuitStack() {
-    ; Ordered, non-elevated stop -- the same set, in the same order, as
-    ; scripts\Stop-All.ps1 (Stop-RunningComponents in tools\lib\activation.ps1):
-    ; window-slots daemon, komorebi, the bar/capture tools, AHK last.
-    ; window-slots goes first because it reacts to komorebi's event stream going
-    ; away; matched by command line like Stop-WindowSlotsDaemon (the pwsh daemon
-    ; and the powershell.exe that launched it), so no other PowerShell is touched.
-    ; (Until 2026-09-24 it was left running here, so the tray Quit and Stop-All
-    ; didn't agree.) Flow Launcher isn't touched -- it's not one of this repo's
-    ; autostart components and manages its own lifecycle.
-    try {
-        for p in ComObjGet('winmgmts:').ExecQuery("SELECT ProcessId FROM Win32_Process WHERE (Name = 'pwsh.exe' OR Name = 'powershell.exe') AND CommandLine LIKE '%Start-WindowSlots.ps1%'")
-            ProcessClose(p.ProcessId)
-    }
+    ; Ordered, non-elevated stop -- the same set as scripts\Stop-All.ps1
+    ; (Stop-RunningComponents in tools\lib\activation.ps1): komorebi, the
+    ; bar/capture tools, AHK last. Flow Launcher isn't touched -- it's not one of
+    ; this repo's autostart components and manages its own lifecycle.
     try Komorebic('stop')
     try RunWait('taskkill /IM yasb.exe /F', , 'Hide')
     try RunWait('taskkill /IM ShareX.exe /F', , 'Hide')

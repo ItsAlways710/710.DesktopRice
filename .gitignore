@@ -56,8 +56,8 @@
 
 # Window placement preferences for THIS machine -- `monitor` is keyed by the same
 # machine-local serial_number_id as display-index.local.json above, so this can't be
-# shared across machines either. Captured with tools/save-window-layout.ps1; see
-# config/windows.toml.example (tracked) for the format.
+# shared across machines either. Captured with extras/window-slots/save-window-layout.ps1; see
+# extras/window-slots/windows.toml.example (tracked) for the format.
 /config/windows.toml
 
 # wallust-generated starship prompt config (see config/wallust/wallust.toml's

@@ -32,8 +32,8 @@
   plugin are applied unconditionally on every run (matching winarchy's own install.ps1 @
   4574fc7, tag v1.4.0 -- none of these are gated behind -Activate upstream either).
 
-  -Activate registers autostart (Scheduled Tasks At-LogOn: komorebi, YASB, window-slots,
-  ShareX, AHK), hides the native taskbar, applies HKCU-only Windows hardening (no Bing
+  -Activate registers autostart (Scheduled Tasks At-LogOn: komorebi, YASB, ShareX, AHK),
+  hides the native taskbar, applies HKCU-only Windows hardening (no Bing
   search / ad suggestions / Copilot-Widgets-TaskView buttons / Start recommendations),
   zeroes Explorer's Startup app-launch delay, and starts everything right away. Without
   -Activate, none of that happens -- packages, config, theming, Defender exclusions, the

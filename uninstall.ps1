@@ -4,8 +4,9 @@
   Clean uninstall of 710.DesktopRice.
 
 .DESCRIPTION
-  Stops every process 710.DesktopRice may have started (komorebi, YASB, the window-slots
-  daemon, ShareX, AHK) regardless of whether -Activate was ever used, then reverts
+  Stops every process 710.DesktopRice may have started (komorebi, YASB, ShareX, AHK, and a
+  retired window-slots daemon if one is still running) regardless of whether -Activate was
+  ever used, then reverts
   everything install.ps1 -Activate touches (autostart Scheduled Tasks, native-taskbar
   auto-hide, HKCU registry hardening, Explorer's Startup-delay, the lock-screen sync task
   and the lock-screen image itself), everything install.ps1 applies unconditionally (the
@@ -199,11 +200,11 @@ function Invoke-WingetAsUser {
 # --- 1. Stop any running 710.DesktopRice processes -----------------------------------
 # Unconditional -- regardless of whether -Activate/autostart was ever used on this
 # machine, install.ps1 -Activate's own "start now" step (or a person starting things by
-# hand) can leave komorebi/YASB/window-slots/ShareX/AHK running. Stopped first, before any
+# hand) can leave komorebi/YASB/ShareX/AHK running. Stopped first, before any
 # of the registry/task reverts below, so nothing is still actively re-asserting a setting
 # (e.g. komorebi re-hiding a taskbar border) while it's being undone.
 Write-Host "`n-- Stop running processes --" -ForegroundColor Cyan
-Invoke-ActivationRevert "Stop any running 710.DesktopRice processes (komorebi, YASB, window-slots, ShareX, AHK)" {
+Invoke-ActivationRevert "Stop any running 710.DesktopRice processes (komorebi, YASB, ShareX, AHK)" {
     Stop-RunningComponents
     Step-Ok 'Running processes stopped (best-effort; a component that was never running is a no-op)'
 }

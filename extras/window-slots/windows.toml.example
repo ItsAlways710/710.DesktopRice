@@ -4,9 +4,9 @@
 # config/komorebi/display-index.local.json.
 #
 # Don't hand-write config/windows.toml from scratch: arrange your windows the way you
-# want them, then run tools\save-window-layout.ps1 -- it captures monitor/workspace/slot
+# want them, then run extras\window-slots\save-window-layout.ps1 -- it captures monitor/workspace/slot
 # for every managed window automatically. Come back and add `pin = true` to any entry you
-# want the autostart daemon (scripts\Start-WindowSlots.ps1) to actively keep in place;
+# want the daemon (extras\window-slots\Start-WindowSlots.ps1) to actively keep in place;
 # without `pin`, an app is only ever placed once, when it opens.
 
 [[windows]]

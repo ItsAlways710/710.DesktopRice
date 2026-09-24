@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
   Window-slots: keeps each pinned window in the tile position the user gave it.
-  Dot-sourced by scripts/Start-WindowSlots.ps1 (the autostart daemon) and
-  tools/save-window-layout.ps1 (captures the current arrangement into config/windows.toml).
+  Dot-sourced by Start-WindowSlots.ps1 (the daemon) and save-window-layout.ps1 (captures
+  the current arrangement into config/windows.toml), both in this folder.
+  NOT WIRED IN (unwired 2026-09-24) -- see README.md in this folder.
 
 .DESCRIPTION
   Ported from winarchy (module/Winarchy/Private/WindowSlots.ps1, WindowPlacement.ps1,
