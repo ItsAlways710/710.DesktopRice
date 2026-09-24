@@ -186,6 +186,71 @@ if ($accentApplied)   { $applied += "Windows accent ($accent)" }
 if ($applied.Count) { Write-Host ('wallust outputs applied: ' + ($applied -join ' + ')) }
 else { Write-Host 'wallust outputs: neither komorebi borders nor Windows accent applied (see above).' }
 
+# --- Terminal readability: WCAG contrast + hue-preserving lightening --------
+# wallust fills Terminal's 16 ANSI slots straight from the wallpaper's own colors, so a
+# dark wallpaper can hand PowerShell near-black text on a near-black background -- e.g.
+# brightBlack #1C1C1C (PSReadLine's "DarkGray": -Parameters, operators) and green #191034
+# (PSReadLine's "Green": $variables) on #010102. Found 2026-09-23 from the user's
+# screenshot. Fix, agreed with the user: only for Terminal's copy of the scheme, raise any
+# slot below a readable contrast against the background by lifting its HSL lightness --
+# hue and saturation kept, so a too-dark purple becomes a readable purple, not gray.
+# Background, black and foreground are never touched, and nothing else (YASB, borders,
+# accent) sees this. Revert = revert the commit that added this block.
+$TerminalMinContrast       = 4.5   # WCAG AA for normal text
+$TerminalMinContrastDimmed = 3.0   # brightBlack + cursor: meant to stay dimmer than real text
+
+function Get-RelLuminance([string]$Hex) {
+    $c = ConvertTo-Rgb -Hex $Hex
+    $lin = foreach ($v in $c.R, $c.G, $c.B) {
+        $x = $v / 255.0
+        if ($x -le 0.03928) { $x / 12.92 } else { [Math]::Pow(($x + 0.055) / 1.055, 2.4) }
+    }
+    0.2126 * $lin[0] + 0.7152 * $lin[1] + 0.0722 * $lin[2]
+}
+
+function Get-Contrast([string]$A, [string]$B) {
+    $la = Get-RelLuminance $A; $lb = Get-RelLuminance $B
+    ([Math]::Max($la, $lb) + 0.05) / ([Math]::Min($la, $lb) + 0.05)
+}
+
+function Get-ReadableHex([string]$Hex, [string]$Background, [double]$Min) {
+    if ((Get-Contrast $Hex $Background) -ge $Min) { return $Hex }
+    $c = ConvertTo-Rgb -Hex $Hex
+    $r = $c.R / 255.0; $g = $c.G / 255.0; $b = $c.B / 255.0
+    # NB: not $max/$min -- PowerShell names are case-insensitive, and $min would silently
+    # overwrite the $Min threshold parameter (caught in the sandbox, 2026-09-23).
+    $chHi = [Math]::Max($r, [Math]::Max($g, $b)); $chLo = [Math]::Min($r, [Math]::Min($g, $b))
+    $l = ($chHi + $chLo) / 2; $h = 0.0; $s = 0.0
+    if ($chHi -ne $chLo) {
+        $d = $chHi - $chLo
+        $s = if ($l -gt 0.5) { $d / (2 - $chHi - $chLo) } else { $d / ($chHi + $chLo) }
+        $h = if ($chHi -eq $r) { (($g - $b) / $d) + $(if ($g -lt $b) { 6 } else { 0 }) }
+             elseif ($chHi -eq $g) { (($b - $r) / $d) + 2 }
+             else { (($r - $g) / $d) + 4 }
+        $h /= 6
+    }
+    $toRgb = {
+        param($p, $q, $t)
+        if ($t -lt 0) { $t += 1 }; if ($t -gt 1) { $t -= 1 }
+        if ($t -lt 1/6) { return $p + ($q - $p) * 6 * $t }
+        if ($t -lt 1/2) { return $q }
+        if ($t -lt 2/3) { return $p + ($q - $p) * (2/3 - $t) * 6 }
+        $p
+    }
+    for ($L = $l; $L -le 1.0001; $L += 0.01) {
+        $LL = [Math]::Min($L, 1.0)
+        if ($s -eq 0) { $nr = $ng = $nb = $LL }
+        else {
+            $q = if ($LL -lt 0.5) { $LL * (1 + $s) } else { $LL + $s - $LL * $s }
+            $p = 2 * $LL - $q
+            $nr = & $toRgb $p $q ($h + 1/3); $ng = & $toRgb $p $q $h; $nb = & $toRgb $p $q ($h - 1/3)
+        }
+        $cand = '#{0:X2}{1:X2}{2:X2}' -f [int][Math]::Round($nr * 255), [int][Math]::Round($ng * 255), [int][Math]::Round($nb * 255)
+        if ((Get-Contrast $cand $Background) -ge $Min) { return $cand }
+    }
+    '#FFFFFF'
+}
+
 # --- Windows Terminal: color scheme selection + tab-row theme ---------------
 # wallust already writes/updates a "wallust" entry in schemes[] on every run --
 # that's built-in wallust behavior (confirmed against its own docs), no
@@ -234,6 +299,21 @@ if ($wtSettingsPath) {
     }
     $wt['profiles']['defaults']['colorScheme'] = 'wallust'
 
+    # Readability pass over wallust's own scheme entry (see the helper block above).
+    $raised = @()
+    $scheme = @($wt['schemes']) | Where-Object { $_ -is [hashtable] -and $_['name'] -eq 'wallust' } | Select-Object -First 1
+    if ($scheme -and $scheme['background']) {
+        $slots = 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white',
+                 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightPurple', 'brightCyan', 'brightWhite',
+                 'brightBlack', 'cursorColor'
+        foreach ($slot in $slots) {
+            if (-not $scheme[$slot]) { continue }
+            $need = if ($slot -in 'brightBlack', 'cursorColor') { $TerminalMinContrastDimmed } else { $TerminalMinContrast }
+            $fixed = Get-ReadableHex -Hex $scheme[$slot] -Background $scheme['background'] -Min $need
+            if ($fixed -ne $scheme[$slot]) { $raised += "$slot $($scheme[$slot])->$fixed"; $scheme[$slot] = $fixed }
+        }
+    }
+
     $wtTheme = @{
         name   = 'wallust'
         tabRow = @{ background = $bg; unfocusedBackground = $bg }
@@ -245,6 +325,7 @@ if ($wtSettingsPath) {
 
     $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8
     Write-Host "Windows Terminal: colorScheme + theme set to 'wallust'."
+    if ($raised.Count) { Write-Host "Windows Terminal: raised contrast on $($raised.Count) color(s): $($raised -join ', ')" }
 } else {
     Write-Host "Windows Terminal settings.json not found -- skipped."
 }
