@@ -462,17 +462,24 @@ if ($Activate) {
     # once both kills are done and Explorer's confirmed back up from the second one.
     $trayIconBackup = Backup-TrayIconPromotions
 
+    # Both only change settings; Explorer is restarted ONCE below if either did (see
+    # Restart-Explorer -- two back-to-back restarts left the desktop blank, 2026-09-24).
+    $needExplorerRestart = $false
     try {
-        if (Set-TaskbarAutoHide -Enabled $true) { Step-Ok 'Native taskbar set to auto-hide' }
+        if (Set-TaskbarAutoHide -Enabled $true) { Step-Ok 'Native taskbar set to auto-hide'; $needExplorerRestart = $true }
         else { Step-Ok 'Native taskbar already set to auto-hide' }
     } catch { Step-Warn "Could not set the taskbar to auto-hide: $($_.Exception.Message)" }
 
     try {
         $n = Set-WindowsHardening
         Step-Ok "Windows hardening applied ($n setting(s) changed: no Bing search, ad suggestions, Copilot/Widgets/Task View buttons, Start recommendations)"
+        if ($n -gt 0) { $needExplorerRestart = $true }
     } catch { Step-Warn "Could not apply Windows hardening: $($_.Exception.Message)" }
 
-    Wait-ExplorerRunning
+    if ($needExplorerRestart) {
+        if (Restart-Explorer) { Step-Ok 'Explorer restarted once to apply the taskbar/hardening changes' }
+        else { Step-Warn "Explorer didn't come back after its restart -- sign out and back in (Ctrl+Alt+Del) to get the desktop back." }
+    }
     Restore-TrayIconPromotions -BackupFile $trayIconBackup
 
     try {

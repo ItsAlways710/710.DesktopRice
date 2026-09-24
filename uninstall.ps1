@@ -181,17 +181,25 @@ Invoke-ActivationRevert 'Restore original lock screen' {
 $trayIconBackup = $null
 if (-not $DryRun) { $trayIconBackup = Backup-TrayIconPromotions }
 
+# Both only change settings; Explorer is restarted ONCE below if either did (see
+# Restart-Explorer in tools\lib\activation.ps1 -- two back-to-back restarts left the
+# desktop blank). $script: because Invoke-ActivationRevert runs these in a child scope.
+$script:needExplorerRestart = $false
 Invoke-ActivationRevert 'Un-hide the native taskbar' {
-    if (Set-TaskbarAutoHide -Enabled $false) { Step-Ok 'Native taskbar auto-hide turned off' }
+    if (Set-TaskbarAutoHide -Enabled $false) { Step-Ok 'Native taskbar auto-hide turned off'; $script:needExplorerRestart = $true }
     else { Step-Ok 'Native taskbar was already not set to auto-hide' }
 }
 Invoke-ActivationRevert 'Revert Windows hardening (HKCU)' {
     $n = Set-WindowsHardening -Revert
     Step-Ok "Windows hardening reverted ($n setting(s) removed, handed back to Windows' own defaults)"
+    if ($n -gt 0) { $script:needExplorerRestart = $true }
 }
 
 if (-not $DryRun) {
-    Wait-ExplorerRunning
+    if ($script:needExplorerRestart) {
+        if (Restart-Explorer) { Step-Ok 'Explorer restarted once to apply the taskbar/hardening changes' }
+        else { Step-Warn "Explorer didn't come back after its restart -- sign out and back in (Ctrl+Alt+Del) to get the desktop back." }
+    }
     Restore-TrayIconPromotions -BackupFile $trayIconBackup
 }
 Invoke-ActivationRevert "Restore Explorer's Startup app-launch delay" {

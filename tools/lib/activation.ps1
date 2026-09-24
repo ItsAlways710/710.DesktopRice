@@ -414,16 +414,51 @@ function Wait-ExplorerRunning {
     }
 }
 
+function Test-ExplorerShell {
+    # True once Explorer's real shell (the taskbar window) exists -- see Wait-ExplorerRunning.
+    if (-not ('Win32Shell.NativeMethods' -as [type])) {
+        Add-Type -Namespace Win32Shell -Name NativeMethods -MemberDefinition @'
+            [DllImport("user32.dll", CharSet = CharSet.Auto)]
+            public static extern System.IntPtr FindWindow(string lpClassName, string lpWindowName);
+'@
+    }
+    [Win32Shell.NativeMethods]::FindWindow('Shell_TrayWnd', $null) -ne [IntPtr]::Zero
+}
+
+function Restart-Explorer {
+    <# The ONE Explorer restart for install -Activate / uninstall (taskbar auto-hide +
+       hardening both need it; callers run this once if either changed something). Kills
+       Explorer, then waits for Windows (Winlogon's AutoRestartShell) to bring the shell
+       back. If it hasn't within the wait, starts it -- through a one-shot LeastPrivilege
+       scheduled task, never straight from this shell: install/uninstall run elevated, and
+       an Explorer started from an elevated process can come up elevated, which would make
+       everything launched from Start/the taskbar elevated (same trap as the admin-AHK
+       incident). Returns $true if the shell is back. Added 2026-09-24 after the full
+       reinstall test left the desktop blank: Winlogon had restarted the shell after the
+       first of two back-to-back kills and didn't after the second. #>
+    param([int]$WaitSeconds = 15)
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+    Wait-ExplorerRunning -TimeoutSeconds $WaitSeconds
+    if (Test-ExplorerShell) { return $true }
+
+    $task = Get-TaskFullName -TaskName 'restart-explorer'
+    $null = & schtasks.exe /Create /TN $task /TR "$env:WINDIR\explorer.exe" /SC ONCE /ST 23:59 /RL LIMITED /F 2>&1
+    $null = & schtasks.exe /Run /TN $task 2>&1
+    Wait-ExplorerRunning -TimeoutSeconds $WaitSeconds
+    $null = & schtasks.exe /Delete /TN $task /F 2>&1
+    Test-ExplorerShell
+}
+
 function Set-WindowsHardening {
     <# Applies (or, with -Revert, undoes) every setting from Get-HardeningSettings.
        Backs up each touched registry key first (Backup-RegistryKey, label 'hardening').
-       Restarts explorer.exe once at the end if anything actually changed -- most of these
-       values are only read at Explorer startup. Returns the number of settings changed.
-       Waits for Explorer to actually be back up first (Wait-ExplorerRunning) before that
-       restart: this function always runs immediately after Set-TaskbarAutoHide in both
-       install.ps1 -Activate and uninstall.ps1, and firing this kill before Windows has
-       finished restarting Explorer from THAT kill left the desktop/taskbar/icons blank
-       until a manual restart or reboot -- confirmed live on Dell, twice. #>
+       Returns the number of settings changed. Does NOT restart Explorer itself (most of
+       these values are only read at Explorer startup): the caller runs Restart-Explorer
+       once, after this AND Set-TaskbarAutoHide, if either changed anything. Two separate
+       restarts back to back left the desktop blank -- three times live on Dell, the last
+       on 2026-09-24 even with a wait in between (Winlogon restarted the shell once after
+       the first kill, and doesn't retry after a second). #>
     param([switch]$Revert)
     $changed = 0
     if (-not $Revert) {
@@ -447,10 +482,6 @@ function Set-WindowsHardening {
             $changed++
         } catch { Step-Warn "${name}: $($_.Exception.Message)" }
     }
-    if ($changed -gt 0) {
-        Wait-ExplorerRunning
-        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-    }
     $changed
 }
 
@@ -460,9 +491,10 @@ function Set-TaskbarAutoHide {
        flips bit 0x01 of StuckRects3's Settings byte array (byte 8), the same bit Windows'
        own "Automatically hide the taskbar" checkbox flips. Idempotent -- returns $false
        and does nothing if the flag already matches $Enabled, so a re-run of install.ps1
-       doesn't restart explorer.exe for no reason. Backs up StuckRects3 before changing it,
-       and restarts explorer.exe (required for the change to take effect) only when it
-       actually changed something. #>
+       doesn't restart explorer.exe for no reason. Backs up StuckRects3 before changing it.
+       Returns $true when it changed something -- the caller then runs Restart-Explorer
+       (required for the change to take effect), once, together with any hardening
+       change; see Set-WindowsHardening for why it's never two restarts. #>
     param([Parameter(Mandatory)][bool]$Enabled)
     $stuck = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
     $val = (Get-ItemProperty -Path $stuck -Name Settings).Settings
@@ -471,7 +503,6 @@ function Set-TaskbarAutoHide {
     $null = Backup-RegistryKey -Key 'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' -Label 'taskbar'
     $val[8] = $flags
     Set-ItemProperty -Path $stuck -Name Settings -Value $val
-    Stop-Process -Name explorer -Force
     $true
 }
 
