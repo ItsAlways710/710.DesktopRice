@@ -1,8 +1,0 @@
-# Your own komorebi rule overrides -- highest priority layer, above games.toml and
-# the vendored community ASC rules. Compiled into komorebi.json by
-# tools\compile-komorebi-rules.ps1 (run by SUPER+Shift+R). Tracked in git on
-# purpose, so rules follow you to every machine. Sections: [[floating]],
-# [[ignore]], [[manage]], ... with one of exe / class / title per entry.
-
-[[manage]]
-exe = "claude.exe"
