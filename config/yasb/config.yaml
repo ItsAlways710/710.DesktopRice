@@ -70,7 +70,24 @@ widgets:
     type: yasb.home.HomeWidget
     options:
       label: "<span>家</span>"
+      # system_menu is off and its three items (About this PC / System Settings / Task
+      # Manager) are rebuilt here with YASB's own actions (winver, ms-settings:, taskmgr),
+      # because YASB always draws the system section ABOVE menu_list -- and "Main Menu"
+      # goes first. Main Menu = the SUPER+Alt+Space palette: YASB runs
+      # config\ahk\open-main-menu.ahk, which asks the running 710.ahk to open it.
       menu_list:
+      - title: Main Menu
+        command: 'C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe'
+        args: ['$env:DESKTOPRICE_HOME\config\ahk\open-main-menu.ahk']
+      - { separator: true }
+      - title: About this PC
+        command: winver
+      - { separator: true }
+      - title: System Settings
+        uri: 'ms-settings:'
+      - title: Task Manager
+        command: taskmgr
+      - { separator: true }
       - title: User Home
         path: '~'
       - title: Download
@@ -81,7 +98,7 @@ widgets:
         path: ~\Pictures
       - title: Wallpapers
         path: $env:DESKTOPRICE_HOME\assets\wallpapers
-      system_menu: true
+      system_menu: false
       power_menu: false
       blur: false
       round_corners: true

@@ -1267,6 +1267,11 @@ OpenMainMenu(*) {
         PalOpen('menu', MainMenuItems(), '710sRice')
 }
 
+; YASB's home widget "Main Menu" entry runs config\ahk\open-main-menu.ahk, which
+; posts this registered message to our hidden window (YASB can only launch
+; programs). Opened on a new thread so the message handler returns at once.
+OnMessage(DllCall('RegisterWindowMessage', 'Str', '710sRice.OpenMainMenu', 'UInt'), (*) => SetTimer(OpenMainMenu, -1))
+
 ; Builds a native Menu() tree from the shared {text, action}/{text, sub}
 ; structure -- recursive so Capture/Tiling/System (all one level deep today)
 ; and any deeper nesting later both just work.
