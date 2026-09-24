@@ -233,7 +233,7 @@ Invoke-ActivationRevert 'Restore original Flow Launcher settings + remove the Ev
 Write-Host "`n-- Config environment variables --" -ForegroundColor Cyan
 $komorebiConfigHome = Join-Path $Root 'config\komorebi'
 $yasbConfigHome     = Join-Path $Root 'config\yasb'
-Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME (User scope, only where still pointing at this repo)" {
+Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (User scope, only where still pointing at this repo)" {
     # Only clear a var if it's still pointing at THIS repo -- if something else (a
     # newer winarchy run, a manual edit) already moved it elsewhere, that's not this
     # script's to touch. Matches the "last write wins, don't clobber a later write"
@@ -243,6 +243,9 @@ Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME (User scope, only wh
     }
     if ([Environment]::GetEnvironmentVariable('YASB_CONFIG_HOME', 'User') -eq $yasbConfigHome) {
         [Environment]::SetEnvironmentVariable('YASB_CONFIG_HOME', $null, 'User')
+    }
+    if ([Environment]::GetEnvironmentVariable('DESKTOPRICE_HOME', 'User') -eq $Root) {
+        [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $null, 'User')
     }
 } 'Env vars reverted'
 
@@ -305,9 +308,10 @@ if ($Keep -contains 'PSFzf') {
 # Gitignored, machine-local, always regenerable by install.ps1 -- safe to remove
 # unconditionally, no Pre-existing? question applies (nothing here existed before this
 # repo did, and it's config data, not a package).
-Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json)" {
+Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json, wallust.toml)" {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\display-index.local.json')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\komorebi.json')
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\wallust\wallust.toml')
 } 'Machine-local generated files removed'
 
 # --- 10. Original-state snapshot folder --------------------------------------------------

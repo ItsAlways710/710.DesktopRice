@@ -1,6 +1,12 @@
 # wallust config — drives komorebi border colors, YASB colors, Windows Terminal
 # scheme, and the Windows accent color, all from whichever wallpaper is active.
 #
+# THIS IS THE TEMPLATE. tools\write-wallust-config.ps1 (run by install.ps1) writes the
+# real config\wallust\wallust.toml from it, with {{DESKTOPRICE_HOME}} replaced by wherever
+# this repo actually lives -- wallust's [templates] targets need absolute paths, and the
+# repo can be cloned anywhere (same idea as komorebi.json being compiled from base.json).
+# The generated wallust.toml is gitignored. Edit this file, then re-run that script.
+#
 # Invoked via YASB's Wallpapers widget `run_after` (see config/yasb/config.yaml):
 #   wallust run {image} --config-dir config\wallust
 #   pwsh -NoProfile -File tools\apply-wallust-outputs.ps1
@@ -12,9 +18,9 @@
 palette = "kmeans"
 
 [templates]
-yasb-colors = { template = 'yasb-colors.css.tpl', target = 'C:\710.DesktopRice\config\yasb\wallust_colors.css' }
-raw-colors = { template = 'colors.json.tpl', target = 'C:\710.DesktopRice\config\wallust\generated\colors.json' }
-starship = { template = 'starship.toml.tpl', target = 'C:\710.DesktopRice\config\pwsh\starship.toml' }
+yasb-colors = { template = 'yasb-colors.css.tpl', target = '{{DESKTOPRICE_HOME}}\config\yasb\wallust_colors.css' }
+raw-colors = { template = 'colors.json.tpl', target = '{{DESKTOPRICE_HOME}}\config\wallust\generated\colors.json' }
+starship = { template = 'starship.toml.tpl', target = '{{DESKTOPRICE_HOME}}\config\pwsh\starship.toml' }
 
 # [hooks] is NOT used -- confirmed broken on this pinned 4.1.0-alpha build on
 # Windows: it tries to execute the hook's own KEY NAME as a literal program
@@ -27,4 +33,4 @@ starship = { template = 'starship.toml.tpl', target = 'C:\710.DesktopRice\config
 # this (bump the pin, see tools/install-wallust.ps1).
 #
 # [hooks]
-# apply = 'pwsh -NoProfile -File C:\710.DesktopRice\tools\apply-wallust-outputs.ps1'
+# apply = 'pwsh -NoProfile -File {{DESKTOPRICE_HOME}}\tools\apply-wallust-outputs.ps1'

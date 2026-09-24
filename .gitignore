@@ -18,6 +18,11 @@
 # every time wallust runs (see config/wallust/wallust.toml). Never commit.
 /config/yasb/wallust_colors.css
 
+# wallust's real config -- written by tools/write-wallust-config.ps1 (run by install.ps1)
+# from the tracked config/wallust/wallust.template.toml with this repo's actual location
+# filled in. Machine-local; never commit.
+/config/wallust/wallust.toml
+
 # wallust-generated raw color data, consumed by tools/apply-wallust-outputs.ps1.
 # Regenerated every wallust run alongside the YASB CSS above. Never commit.
 /config/wallust/generated/

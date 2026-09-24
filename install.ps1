@@ -8,8 +8,10 @@
     Flow Launcher) are pinned to the versions in versions.md and winget-pinned so a general
     `winget upgrade --all` elsewhere on the machine can't silently move them out from under
     this repo's tested config.
-  - Registers KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME (User scope) pointing at this repo,
-    and mirrors them into the current process so the rest of this run sees them too.
+  - Registers KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (User scope)
+    pointing at this repo, and mirrors them into the current process so the rest of this
+    run sees them too. DESKTOPRICE_HOME (the repo root) is what config\yasb\config.yaml's
+    own paths are built from ($env:DESKTOPRICE_HOME), so the repo can live anywhere.
   - Installs wallust (tools/install-wallust.ps1) if it's missing or behind its pin.
   - Runs `komorebic.exe monitor-information` and writes this machine's real monitor
     identity to config/komorebi/display-index.local.json (gitignored, machine-local) --
@@ -188,10 +190,16 @@ $komorebiConfigHome = Join-Path $Root 'config\komorebi'
 $yasbConfigHome     = Join-Path $Root 'config\yasb'
 [Environment]::SetEnvironmentVariable('KOMOREBI_CONFIG_HOME', $komorebiConfigHome, 'User')
 [Environment]::SetEnvironmentVariable('YASB_CONFIG_HOME', $yasbConfigHome, 'User')
+# The repo root. config\yasb\config.yaml builds every path it needs from this through
+# YASB's own $env: expansion (the wallpaper folder, the wallust/apply-outputs commands, the
+# home menu entry) instead of hard-coding C:\710.DesktopRice -- clone the repo anywhere.
+[Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $Root, 'User')
 $env:KOMOREBI_CONFIG_HOME = $komorebiConfigHome
 $env:YASB_CONFIG_HOME     = $yasbConfigHome
+$env:DESKTOPRICE_HOME     = $Root
 Step-Ok "KOMOREBI_CONFIG_HOME = $komorebiConfigHome"
 Step-Ok "YASB_CONFIG_HOME     = $yasbConfigHome"
+Step-Ok "DESKTOPRICE_HOME     = $Root"
 
 # --- 3. wallust -----------------------------------------------------------------------
 Write-Host "`n-- wallust --" -ForegroundColor Cyan
@@ -215,6 +223,12 @@ if ($wallustUpToDate) {
         Step-Warn "wallust install failed: $($_.Exception.Message) -- continuing without it. Re-run install.ps1, or tools\install-wallust.ps1 directly, once network access allows it."
     }
 }
+
+# wallust.toml is generated from a tracked template with this repo's real location filled
+# in (wallust's template targets must be absolute paths). Before section 4's `wallust run`.
+& (Join-Path $Root 'tools\write-wallust-config.ps1')
+if ($LASTEXITCODE -ne 0) { Step-Warn 'wallust.toml not written (see message above) -- wallpaper theming will fail until it is.' }
+else { Step-Ok 'wallust.toml current' }
 
 # --- 4. First-run default theme (wallpaper + lock screen) -----------------------------
 # Only on a genuine first run: if the current desktop wallpaper is already one of this

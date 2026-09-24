@@ -80,7 +80,7 @@ widgets:
       - title: Pictures
         path: ~\Pictures
       - title: Wallpapers
-        path: C:\710.DesktopRice\assets\wallpapers
+        path: $env:DESKTOPRICE_HOME\assets\wallpapers
       system_menu: true
       power_menu: false
       blur: false
@@ -281,12 +281,14 @@ widgets:
     # Scans both folders (and their subfolders) for wallpapers: the repo's own
     # small tracked default set, and a separate, untracked personal collection
     # that never touches git -- see claude/winarchy-decoupling-plan.md,
-    # Wallpapers section. The personal folder goes through YASB's own $env:
-    # expansion (applied to every config string before validation), so this
-    # file never names a real Windows account -- it's a public repo.
+    # Wallpapers section. Both go through YASB's own $env: expansion (applied to
+    # every config string before validation): DESKTOPRICE_HOME is the repo root,
+    # set by install.ps1, so the repo can be cloned anywhere; YASB_WALLPAPER_PATH
+    # is yours to set (`setx YASB_WALLPAPER_PATH "D:\wherever"`) -- if it's
+    # unset it expands to "" and YASB silently skips it, nothing breaks.
       image_path:
-        - "C:\\710.DesktopRice\\assets\\wallpapers"
-        - "$env:USERPROFILE\\Pictures\\wallpapers"
+        - "$env:DESKTOPRICE_HOME\\assets\\wallpapers"
+        - "$env:YASB_WALLPAPER_PATH"
       engine:
         # Disabled -- YASB's WallpaperEngine crossfade transition has a real,
         # reproducible bug: it crashes the whole YASB process some time after
@@ -323,8 +325,10 @@ widgets:
       # wallust.toml), so the apply script is chained here directly instead of
       # relying on wallust to call it.
       run_after:
-        - "C:\\710.DesktopRice\\tools\\bin\\wallust\\wallust.exe run {image} --config-dir C:\\710.DesktopRice\\config\\wallust"
-        - "pwsh -NoProfile -File C:\\710.DesktopRice\\tools\\apply-wallust-outputs.ps1"
+      # Run through cmd (YASB: subprocess shell=True, {image} arrives quoted), so the
+      # repo paths are quoted too -- a clone under a path with spaces still works.
+        - '"$env:DESKTOPRICE_HOME\tools\bin\wallust\wallust.exe" run {image} --config-dir "$env:DESKTOPRICE_HOME\config\wallust"'
+        - 'pwsh -NoProfile -File "$env:DESKTOPRICE_HOME\tools\apply-wallust-outputs.ps1"'
   cpu:
     type: "yasb.cpu.CpuWidget"
     options:
