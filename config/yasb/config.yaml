@@ -545,7 +545,7 @@ widgets:
       update_interval: 600
       hide_decimal: true
       units: "imperial" # °F
-      location: "00000" # [town removed] - zip is the most unambiguous query for weatherapi.com
+      location: "$env:YASB_WEATHER_LOCATION" # set via `setx YASB_WEATHER_LOCATION "<your zip>"` on each machine - a zip is the most unambiguous query for weatherapi.com; kept out of this public repo like the API key
       callbacks:
         on_left: "toggle_card"
         on_middle: "do_nothing"
