@@ -131,6 +131,21 @@ if (-not $SkipPackages) {
     foreach ($id in $CorePins.Keys) { $allPackages[$id] = $CorePins[$id] }
     foreach ($id in $RequiredPackages) { if (-not $allPackages.Contains($id)) { $allPackages[$id] = $null } }
 
+    # Some installers drop a Desktop shortcut (Flow Launcher and ShareX -- seen on the
+    # 2026-09-24 reinstall test; Flow's installer has no option to skip it). Note which
+    # shortcuts are on the Desktop (yours and the shared Public one) before installing,
+    # and afterwards remove only the ones that appeared in between -- any you already had,
+    # even for these same apps, are left alone. Uninstall needs nothing: both
+    # uninstallers remove their own shortcut.
+    $desktopDirs = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory')) |
+        Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+    function Get-DesktopShortcuts {
+        foreach ($dir in $desktopDirs) {
+            Get-ChildItem -LiteralPath $dir -Filter '*.lnk' -File -ErrorAction SilentlyContinue | ForEach-Object FullName
+        }
+    }
+    $shortcutsBefore = @(Get-DesktopShortcuts)
+
     foreach ($id in $allPackages.Keys) {
         $pinVersion = $allPackages[$id]
         $source = $PackageSources[$id]
@@ -156,6 +171,13 @@ if (-not $SkipPackages) {
             winget @pinArgs 2>$null | Out-Null
         }
     }
+
+    $newShortcuts = @(Get-DesktopShortcuts | Where-Object { $shortcutsBefore -notcontains $_ })
+    $removed = @(foreach ($lnk in $newShortcuts) {
+        try { Remove-Item -LiteralPath $lnk -Force; Split-Path $lnk -Leaf }
+        catch { Step-Warn "Couldn't remove the desktop shortcut $($lnk): $($_.Exception.Message)" }
+    })
+    if ($removed.Count -gt 0) { Step-Ok "Removed the desktop shortcut(s) the installers added: $($removed -join ', ')" }
 
     # Re-read PATH from the registry into this process. Without this, a component that
     # was just installed for the first time above (e.g. komorebi) won't be found by
