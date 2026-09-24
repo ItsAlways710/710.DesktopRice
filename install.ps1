@@ -481,50 +481,36 @@ if ($Activate) {
     } catch { Step-Warn "Could not remove the Startup app-launch delay: $($_.Exception.Message)" }
 
     Step-Info 'Starting services...'
-    # Direct launcher invocation, not `komorebic start`/`yasbc start` -- the same
-    # resilient scripts the Scheduled Tasks use, so "start now" and "start at next logon"
-    # are one code path instead of two (komorebic start in particular is the flaky one;
-    # see scripts/Start-Komorebi.ps1's own header for why).
-    $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    if (Get-KomorebiExe) {
-        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-Komorebi.ps1`""
-        )
+    # Started through each component's own autostart task (schtasks /Run), never launched
+    # directly from this shell. -Activate needs an elevated shell, and anything started
+    # from one runs elevated: an elevated AHK makes every Terminal it opens elevated, and
+    # non-elevated komorebi can't tile elevated windows (the 2026-09-23 admin-AHK incident;
+    # this block used to Start-Process the launchers itself, found 2026-09-24 before the
+    # full reinstall test). The tasks run LeastPrivilege whatever shell fires them -- the
+    # same path logon and SUPER+Shift+R use, so "start now" and "start at next sign-in"
+    # stay one code path. A component whose task couldn't be registered (Register-
+    # Autostart fell back to a Startup shortcut) is started from that shortcut only when
+    # this shell is NOT elevated; elevated, it says so and waits for the next sign-in.
+    $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $startupDir = [Environment]::GetFolderPath('Startup')
+    foreach ($c in @(Get-AutostartComponents)) {
+        if (Test-Task -TaskName $c.TaskName) {
+            $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $c.TaskName) 2>&1
+            if ($LASTEXITCODE -eq 0) { Step-Ok "$($c.Key): started via its autostart task" }
+            else { Step-Warn "$($c.Key): schtasks /Run failed (exit $LASTEXITCODE) -- it will start at the next sign-in." }
+            continue
+        }
+        $lnk = Join-Path $startupDir $c.LnkName
+        if ((Test-Path $lnk) -and -not $elevated) {
+            Start-Process $lnk
+            Step-Ok "$($c.Key): started via its Startup shortcut (no task)"
+        } elseif (Test-Path $lnk) {
+            Step-Warn "$($c.Key): only a Startup shortcut, no task -- not starting it from this elevated shell (it would run elevated); it starts at the next sign-in."
+        } else {
+            Step-Warn "$($c.Key): no autostart task or Startup shortcut -- not started."
+        }
     }
-    $yasbc = (Get-Command yasbc -ErrorAction SilentlyContinue)?.Source
-    if ($yasbc) {
-        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-Yasb.ps1`"",
-            '-YasbExe', "`"$yasbc`"", '-YasbConfigHome', "`"$Root\config\yasb`""
-        )
-    }
-    $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
-    if ((Get-KomorebiExe) -and $pwsh) {
-        # window-slots needs real pwsh (PS7-only syntax -- see tools/lib/window-slots.ps1's
-        # own `?.` usage) to even parse, so it can't be launched directly under the legacy
-        # $ps host used above for komorebi/YASB. Same trampoline as the Scheduled Task
-        # action in tools/lib/activation.ps1's Get-AutostartComponents: the hidden legacy
-        # powershell.exe host just launches pwsh hidden in turn. Bug fix, not a new
-        # pattern -- this immediate "start now" launch had drifted from the already-correct
-        # Scheduled Task version and would otherwise crash on launch with a silent parse
-        # error (nothing redirects this Start-Process call's output).
-        $slots = Join-Path $Root 'scripts\Start-WindowSlots.ps1'
-        $inner = "Start-Process -FilePath '$pwsh' -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$slots'"
-        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-Command', "`"$inner`""
-        )
-    }
-    $sharexExe = Get-ShareXExe
-    if ($sharexExe) { Start-Process $sharexExe -ArgumentList '-silent' }
-    $ahkExe = Get-AhkExe
-    if ($ahkExe) {
-        Remove-Item Env:CLAUDE_CODE_CHILD_SESSION, Env:CLAUDECODE -ErrorAction SilentlyContinue
-        Start-Process $ps -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', "`"$Root\scripts\Start-Ahk.ps1`"",
-            '-AhkExe', "`"$ahkExe`"", '-ScriptPath', "`"$Root\config\ahk\710.ahk`""
-        )
-    }
-    Step-Ok 'Services launching in the background (see %LOCALAPPDATA%\710.DesktopRice\*-autostart.log if one seems to not have come up).'
+    Step-Ok 'Services starting in the background (see %LOCALAPPDATA%\710.DesktopRice\*-autostart.log if one seems to not have come up).'
 } else {
     # Migration path: if autostart was already active from a previous -Activate run,
     # re-register it so it picks up any change to how components are launched (e.g. a
