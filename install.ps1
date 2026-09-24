@@ -201,6 +201,36 @@ Step-Ok "KOMOREBI_CONFIG_HOME = $komorebiConfigHome"
 Step-Ok "YASB_CONFIG_HOME     = $yasbConfigHome"
 Step-Ok "DESKTOPRICE_HOME     = $Root"
 
+# --- 2b. Weather widget (optional) ----------------------------------------------------
+# YASB's weather widget reads its API key and location from these two per-user variables
+# ($env:... in config\yasb\config.yaml) -- kept out of this public repo on purpose. They
+# belong to the person, not the repo: install only fills in what's missing, never echoes
+# what's stored, and uninstall.ps1 leaves both alone -- so a reinstall finds them already
+# set and asks nothing. Enter skips; an unattended run (no one to answer) skips quietly.
+Write-Host "`n-- Weather widget (optional) --" -ForegroundColor Cyan
+$canAsk = [Environment]::UserInteractive -and -not ([Environment]::GetCommandLineArgs() -contains '-NonInteractive')
+$weatherVars = @(
+    @{ Name = 'YASB_WEATHER_API_KEY';  Prompt = 'weatherapi.com API key (free at https://www.weatherapi.com) -- Enter to skip' },
+    @{ Name = 'YASB_WEATHER_LOCATION'; Prompt = 'Weather location -- zip/postal code or city name -- Enter to skip' }
+)
+$weatherMissing = $false
+foreach ($v in $weatherVars) {
+    if ([Environment]::GetEnvironmentVariable($v.Name, 'User')) { Step-Ok "$($v.Name) already set"; continue }
+    $answer = ''
+    if ($canAsk) { try { $answer = "$(Read-Host "  $($v.Prompt)")".Trim() } catch { $answer = '' } }
+    if ($answer) {
+        [Environment]::SetEnvironmentVariable($v.Name, $answer, 'User')
+        Set-Item -Path "env:$($v.Name)" -Value $answer
+        Step-Ok "$($v.Name) set"
+    } else {
+        $weatherMissing = $true
+        Step-Info "$($v.Name) not set -- skipped."
+    }
+}
+if ($weatherMissing) {
+    Step-Info 'The weather widget shows an error until both are set -- re-run .\install.ps1, or `setx` them yourself (see README).'
+}
+
 # --- 3. wallust -----------------------------------------------------------------------
 Write-Host "`n-- wallust --" -ForegroundColor Cyan
 $WallustPinnedVersion = '4.1.0-alpha'
