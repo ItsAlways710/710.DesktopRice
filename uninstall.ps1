@@ -146,6 +146,56 @@ $PackageSources = @{
     '9MZ1SNWT0N5D' = 'msstore'   # PowerShell 7
 }
 
+# winget exit codes this script acts on (winget-cli's doc/.../winget/returnCodes.md).
+# PowerShell reads a 0x8... hex literal as a negative Int32 -- the same thing
+# $LASTEXITCODE holds for these -- so a plain -eq compares them correctly.
+$WingetNotInstalled    = 0x8A150014   # NO_APPLICATIONS_FOUND -- nothing by that ID is installed
+$WingetAdminProhibited = 0x8A15007D   # ADMIN_CONTEXT_ACTION_PROHIBITED -- see Invoke-WingetAsUser
+$WingetNoPin           = 0x8A150063   # PIN_DOES_NOT_EXIST
+
+function Format-WingetCode {
+    # 0x8A15007D reads better than -1978335107 in a warning, and matches winget's own docs.
+    param([int]$Code)
+    '0x{0:X8}' -f $Code
+}
+
+function Invoke-WingetAsUser {
+    <# Runs winget with $Arguments NON-elevated, through a one-shot LeastPrivilege
+       scheduled task (same trick as Restart-Explorer), waits for it to finish, and returns
+       winget's exit code -- or $null if it's still running after $TimeoutSeconds.
+
+       Why: winget refuses to touch a package installed for this user only (per-user
+       scope -- Flow Launcher is one, living under %LOCALAPPDATA%) when it's run from an
+       elevated shell: exit 0x8A15007D, ADMIN_CONTEXT_ACTION_PROHIBITED. This script has
+       to run elevated (Defender exclusions, lock screen), so found live on the
+       2026-09-24 reinstall test: Flow's uninstall failed on every run, while the line
+       below it still printed "uninstalled". The task runs as the same user, un-elevated,
+       so winget allows it. Its console window shows briefly while winget works. #>
+    param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSeconds = 180)
+    $winget   = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe'
+    $taskName = 'winget-as-user'
+    $task     = Get-TaskFullName -TaskName $taskName
+    $null = & schtasks.exe /Create /TN $task /TR "`"$winget`" $($Arguments -join ' ')" /SC ONCE /ST 23:59 /RL LIMITED /F 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "couldn't create the one-shot task to run winget un-elevated (schtasks exit $LASTEXITCODE)" }
+    try {
+        $null = & schtasks.exe /Run /TN $task 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "couldn't start the one-shot task to run winget un-elevated (schtasks exit $LASTEXITCODE)" }
+        # LastTaskResult reads 0x41303 ("has not yet run") until Task Scheduler actually
+        # starts it, then 0x41301 ("currently running"), then winget's own exit code.
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        do {
+            Start-Sleep -Milliseconds 500
+            $result = (Get-ScheduledTaskInfo -TaskPath "\$script:TaskFolder\" -TaskName $taskName).LastTaskResult
+        } while ($result -in 0x41301, 0x41303 -and (Get-Date) -lt $deadline)
+        if ($result -in 0x41301, 0x41303) { return $null }
+        # LastTaskResult is a UInt32; reinterpret the same bits as winget's signed code.
+        return [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$result), 0)
+    }
+    finally {
+        $null = & schtasks.exe /Delete /TN $task /F 2>&1
+    }
+}
+
 # --- 1. Stop any running 710.DesktopRice processes -----------------------------------
 # Unconditional -- regardless of whether -Activate/autostart was ever used on this
 # machine, install.ps1 -Activate's own "start now" step (or a person starting things by
@@ -259,11 +309,19 @@ Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (
 
 # --- 5. Remove winget pins -----------------------------------------------------------
 Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
+    # Every exit code checked: this step used to discard winget's output AND its exit
+    # code, so it said "removed" no matter what. "No pin for that package" counts as
+    # done -- the goal is no pin, however we got there.
+    $failed = @()
     foreach ($row in ($wingetRows | Where-Object { $_.Version -ne 'latest' })) {
         $pinArgs = @('pin', 'remove', '--id', $row.InstallId)
         if ($PackageSources.ContainsKey($row.InstallId)) { $pinArgs += @('--source', $PackageSources[$row.InstallId]) }
         winget @pinArgs 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $WingetNoPin) {
+            $failed += "$($row.InstallId) ($(Format-WingetCode $LASTEXITCODE))"
+        }
     }
+    if ($failed) { throw "winget couldn't remove the pin for: $($failed -join ', ') -- 'winget pin list' shows what's left" }
 } 'Winget pins removed'
 
 # --- 6. Remove packages ---------------------------------------------------------------
@@ -278,11 +336,27 @@ foreach ($row in $wingetRows) {
         Step-Info "$id -- kept (versions.md marks this Pre-existing?; pass -Force to remove it anyway)"
         continue
     }
-    Invoke-Step "Uninstall $id" {
-        $uninstallArgs = @('uninstall', '--id', $id, '--exact', '--silent')
+    if ($DryRun) { Write-Host "  [ ] Uninstall $id"; continue }
+    # Not Invoke-Step: the result line depends on winget's exit code (this used to discard
+    # it and print "uninstalled" regardless -- Flow Launcher was never actually removed).
+    try {
+        $uninstallArgs = @('uninstall', '--id', $id, '--exact', '--silent', '--disable-interactivity')
         if ($PackageSources.ContainsKey($id)) { $uninstallArgs += @('--source', $PackageSources[$id]) }
         winget @uninstallArgs 2>$null | Out-Null
-    } "$id uninstalled"
+        $code = $LASTEXITCODE
+        $how  = ''
+        if ($code -eq $WingetAdminProhibited) {
+            # Installed for this user only -- winget won't remove it from an elevated shell.
+            Step-Info "$id is installed for this user only -- removing it un-elevated ..."
+            $code = Invoke-WingetAsUser -Arguments $uninstallArgs
+            $how  = ' (un-elevated)'
+        }
+        if ($null -eq $code)                  { Step-Warn "$id -- the un-elevated uninstall was still running after 3 minutes; check 'winget list --id $id' once it's done" }
+        elseif ($code -eq 0)                  { Step-Ok "$id uninstalled$how" }
+        elseif ($code -eq $WingetNotInstalled) { Step-Info "$id -- not installed, nothing to remove" }
+        else                                  { Step-Warn "$id -- winget uninstall failed$how (exit $(Format-WingetCode $code)); 'winget uninstall --id $id' by hand shows why" }
+    }
+    catch { Step-Warn "Uninstall $($id): $($_.Exception.Message)" }
 }
 
 # --- 7. wallust binary -----------------------------------------------------------------
