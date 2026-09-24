@@ -36,12 +36,18 @@
     Identity toggles: HideNotifyIcon (710.ahk hosts the one shared tray icon) and
     AutoUpdates/AutoUpdatePlugins/DontPromptUpdateMsg off (Flow is version-pinned).
 
+    Query box: LastQueryMode = Empty, so Flow always opens blank. Flow's default
+    (Selected) reopens with the previous query still in the box, so a plain SUPER+Space
+    showed whatever SUPER+S / SUPER+Ctrl+Space had typed last ('f ' / 'app '). The scoped
+    hotkeys type their own keyword, so they don't need the old query either.
+
     True-uninstall snapshots (restored by tools\lib\activation.ps1's
     Restore-FlowLauncherSettings), each taken ONCE, before the first change they cover:
       - 'flow-settings'          Program keywords + identity toggles (unchanged shape).
       - 'flow-explorer-settings' Explorer keywords + its three file-search fields. Separate
         label because 'flow-settings' predates them and is snapshot-once by design -- on a
         machine that already has it, those fields would never be captured.
+      - 'flow-querymode'         LastQueryMode, its own label for the same reason.
 
     Requires Flow to have run at least once (so Settings.json exists). pwsh 7+ only
     (ConvertFrom-Json -AsHashtable).
@@ -115,6 +121,10 @@ Save-OriginalStateOnce -Label 'flow-explorer-settings' -Data @{
     }
 }
 
+Save-OriginalStateOnce -Label 'flow-querymode' -Data @{
+    LastQueryMode = Get-Field $settings 'LastQueryMode'
+}
+
 $settingsChanged = $false
 $explorerChanged = $false
 $todo = [System.Collections.Generic.List[string]]::new()
@@ -173,6 +183,13 @@ foreach ($k in $identity.Keys) {
         if (-not $todo.Contains('identity toggles')) { $todo.Add('identity toggles') }
         $settingsChanged = $true
     }
+}
+
+# --- Query box: open empty (see header) ----------------------------------------------------
+if ($settings['LastQueryMode'] -ne 'Empty') {
+    $settings['LastQueryMode'] = 'Empty'
+    $settingsChanged = $true
+    $todo.Add('query box opens empty')
 }
 
 if (-not $settingsChanged -and -not $explorerChanged -and $legacyDirs.Count -eq 0) {

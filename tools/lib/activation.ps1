@@ -1228,6 +1228,7 @@ function Restore-FlowLauncherSettings {
          'flow-settings'          Program plugin ActionKeywords + identity toggles
          'flow-explorer-settings' Explorer plugin ActionKeywords + its FileSearchActionKeyword /
                                   FileSearchKeywordEnabled / IndexSearchEngine fields
+         'flow-querymode'         LastQueryMode (Flow's "open with the last query" setting)
        and removes the legacy standalone Everything plugin folder if one is still there
        (matched by its fixed plugin ID, not folder name -- this repo used to install it).
        Flow is force-stopped first and NOT relaunched, same reasons as in
@@ -1239,6 +1240,7 @@ function Restore-FlowLauncherSettings {
        Flow's settings in between survives. #>
     $snap  = Get-OriginalState -Label 'flow-settings'
     $snapE = Get-OriginalState -Label 'flow-explorer-settings'
+    $snapQ = Get-OriginalState -Label 'flow-querymode'
     $flowRoot   = Join-Path $env:APPDATA 'FlowLauncher'
     $pluginsDir = Join-Path $flowRoot 'Plugins'
     $legacyEverythingPluginId = 'D2D2C23B084D411DB66FE0C79D6C2A6E'
@@ -1255,13 +1257,14 @@ function Restore-FlowLauncherSettings {
             (Test-Path $manifest) -and ((Get-Content $manifest -Raw | ConvertFrom-Json).ID -eq $legacyEverythingPluginId)
         } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if (-not $snap -and -not $snapE) { return $false }
+    if (-not $snap -and -not $snapE -and -not $snapQ) { return $false }
 
     $settingsPath = Join-Path $flowRoot 'Settings\Settings.json'
     if (-not (Test-Path $settingsPath)) {
         Step-Info 'Flow Launcher Settings.json not found -- nothing to restore.'
         Remove-OriginalState -Label 'flow-settings'
         Remove-OriginalState -Label 'flow-explorer-settings'
+        Remove-OriginalState -Label 'flow-querymode'
         return $true
     }
     $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
@@ -1298,8 +1301,15 @@ function Restore-FlowLauncherSettings {
         }
     }
 
+    if ($snapQ) {
+        $field = $snapQ.LastQueryMode
+        if ($field.Existed) { $settings['LastQueryMode'] = $field.Value }
+        elseif ($settings.ContainsKey('LastQueryMode')) { $settings.Remove('LastQueryMode') }
+    }
+
     $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
     Remove-OriginalState -Label 'flow-settings'
     Remove-OriginalState -Label 'flow-explorer-settings'
+    Remove-OriginalState -Label 'flow-querymode'
     return $true
 }
