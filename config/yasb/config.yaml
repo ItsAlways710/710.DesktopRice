@@ -80,7 +80,7 @@ widgets:
       - title: Pictures
         path: ~\Pictures
       - title: Wallpapers
-        path: D:\OneDrive\Pictures\Wallpapers\Themes
+        path: C:\710.DesktopRice\assets\wallpapers
       system_menu: true
       power_menu: false
       blur: false
@@ -281,10 +281,12 @@ widgets:
     # Scans both folders (and their subfolders) for wallpapers: the repo's own
     # small tracked default set, and a separate, untracked personal collection
     # that never touches git -- see claude/winarchy-decoupling-plan.md,
-    # Wallpapers section.
+    # Wallpapers section. The personal folder goes through YASB's own $env:
+    # expansion (applied to every config string before validation), so this
+    # file never names a real Windows account -- it's a public repo.
       image_path:
         - "C:\\710.DesktopRice\\assets\\wallpapers"
-        - "C:\\Users\\USERNAME\\Pictures\\wallpapers"
+        - "$env:USERPROFILE\\Pictures\\wallpapers"
       engine:
         # Disabled -- YASB's WallpaperEngine crossfade transition has a real,
         # reproducible bug: it crashes the whole YASB process some time after

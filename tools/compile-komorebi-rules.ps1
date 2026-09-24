@@ -202,7 +202,7 @@ function Get-DisplayIndexPreferences {
     # config/komorebi/display-index.local.json - machine-local, gitignored, written by
     # install.ps1 from a real `komorebic.exe monitor-information` run on that machine.
     # Expected shape: a flat object mapping monitor-config array index (as a string) to
-    # that monitor's serial_number_id (as a string), e.g. {"0": "0", "1": "1234567890"}.
+    # that monitor's serial_number_id (as a string), e.g. {"0": "0", "1": "1234567890"} (made-up serial).
     # Supports up to 4 keys (4 displays) - just more entries in the same map, nothing
     # structural changes past that. Returns $null (not @{}) when there's nothing to
     # merge, so the caller can tell "omit the key" apart from "merge an empty map".
