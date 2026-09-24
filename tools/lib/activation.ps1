@@ -480,7 +480,19 @@ function Set-WindowsHardening {
                 Set-ItemProperty -Path $path -Name $name -Value $value -Type DWord -ErrorAction Stop
             }
             $changed++
-        } catch { Step-Warn "${name}: $($_.Exception.Message)" }
+        } catch {
+            # Widgets button: Windows refuses script writes to TaskbarDa on current builds
+            # ("Attempted to perform an unauthorized operation", even elevated), while its
+            # own Settings toggle still works. Still tried every run in case a build allows
+            # it; when it's refused, say what to do instead of printing the raw error
+            # (plan doc item 31, user's pick).
+            if ($name -eq 'TaskbarDa' -and ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception.Message -match 'unauthorized operation')) {
+                $onOff = if ($Revert) { 'back on' } else { 'off' }
+                Step-Info "Windows won't let a script change the Widgets button -- turn it $onOff in Settings > Personalization > Taskbar."
+            } else {
+                Step-Warn "${name}: $($_.Exception.Message)"
+            }
+        }
     }
     $changed
 }
