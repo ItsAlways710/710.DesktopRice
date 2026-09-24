@@ -37,11 +37,15 @@ $Root = Split-Path -Parent $PSScriptRoot
 $logDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $log = Join-Path $logDir 'window-slots.log'
-if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Remove-Item $log -Force }
+# Log cap: past 1 MB this log becomes window-slots.log.old (replacing the previous one) --
+# same rule as every other 710.DesktopRice log (plan doc, open item 20). Until 2026-09-23
+# this deleted the log outright, losing its history. Checked again on every write below
+# because this daemon runs for the whole session.
+if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Move-Item $log "$log.old" -Force -ErrorAction SilentlyContinue }
 
 function Write-Log {
     param([string]$Message)
-    if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Remove-Item $log -Force }
+    if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Move-Item $log "$log.old" -Force -ErrorAction SilentlyContinue }
     "{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $Message | Add-Content -Path $log -Encoding UTF8
 }
 

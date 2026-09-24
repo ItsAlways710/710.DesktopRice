@@ -60,6 +60,10 @@ $logDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
 $log    = Join-Path $logDir 'reload-stack.log'
 $komorebiOut = Join-Path $logDir 'komorebi.out.log'   # Start-Komorebi.ps1 redirects komorebi's stdout here
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+# Log cap: past 1 MB this log becomes <name>.old (replacing the previous one) and a fresh
+# one starts -- so at most ~2 MB, and the last chunk of history is always kept. Same rule
+# in every 710.DesktopRice log writer (plan doc, open item 20).
+if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Move-Item $log "$log.old" -Force -ErrorAction SilentlyContinue }
 
 function Write-Log([string]$m) {
     "{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m | Out-File -FilePath $log -Append -Encoding utf8

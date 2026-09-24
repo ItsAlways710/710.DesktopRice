@@ -13,6 +13,10 @@ $logDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
 $log    = Join-Path $logDir 'ahk-autostart.log'
 
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+# Log cap: past 1 MB this log becomes <name>.old (replacing the previous one) and a fresh
+# one starts -- so at most ~2 MB, and the last chunk of history is always kept. Same rule
+# in every 710.DesktopRice log writer (plan doc, open item 20).
+if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Move-Item $log "$log.old" -Force -ErrorAction SilentlyContinue }
 
 Add-Type -Namespace Win710 -Name FgAhk -MemberDefinition @'
 [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();

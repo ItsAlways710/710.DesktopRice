@@ -19,6 +19,10 @@ $outLog = Join-Path $logDir 'komorebi.out.log'
 $errLog = Join-Path $logDir 'komorebi.err.log'
 
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+# Log cap: past 1 MB this log becomes <name>.old (replacing the previous one) and a fresh
+# one starts -- so at most ~2 MB, and the last chunk of history is always kept. Same rule
+# in every 710.DesktopRice log writer (plan doc, open item 20).
+if ((Test-Path $log) -and (Get-Item $log).Length -gt 1MB) { Move-Item $log "$log.old" -Force -ErrorAction SilentlyContinue }
 
 # P/Invoke to detect a real foreground window and lower the lock timeout. Without this,
 # komorebi's own AllowSetForegroundWindow call is refused while the desktop hasn't settled.

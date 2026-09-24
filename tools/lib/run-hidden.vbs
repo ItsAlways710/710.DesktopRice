@@ -72,6 +72,19 @@ If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)
 On Error Goto 0
 logPath = logDir & "\run-hidden.log"
 
+' Log cap: past 1 MB, run-hidden.log becomes run-hidden.log.old (replacing the previous
+' one) -- same rule as every other 710.DesktopRice log (plan doc, open item 20). All four
+' launches can reach this at the same moment at logon; whichever loses that race just
+' fails quietly here and appends to the fresh file.
+On Error Resume Next
+If fso.FileExists(logPath) Then
+    If fso.GetFile(logPath).Size > 1048576 Then
+        If fso.FileExists(logPath & ".old") Then fso.DeleteFile logPath & ".old", True
+        fso.MoveFile logPath, logPath & ".old"
+    End If
+End If
+On Error Goto 0
+
 ts = Year(Now) & "-" & Right("0" & Month(Now), 2) & "-" & Right("0" & Day(Now), 2) & " " & _
      Right("0" & Hour(Now), 2) & ":" & Right("0" & Minute(Now), 2) & ":" & Right("0" & Second(Now), 2)
 
