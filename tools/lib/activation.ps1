@@ -560,6 +560,30 @@ function Set-TaskbarAutoHide {
     $true
 }
 
+function Test-TaskbarAutoHide {
+    <# Read-only: is "Automatically hide the taskbar" on right now? Asks the shell itself
+       (SHAppBarMessage ABM_GETSTATE, bit ABS_AUTOHIDE) for the live state; falls back to
+       StuckRects3's byte 8 (what Set-TaskbarAutoHide flips) if that call isn't available.
+       Used by scripts\Start-All.ps1 / Stop-All.ps1, which only ADVISE on auto-hide for an
+       on-demand (no -Activate) setup -- they never change it (user's call, 2026-09-24). #>
+    try {
+        if (-not ('Win32Shell.AppBar' -as [type])) {
+            Add-Type -Namespace Win32Shell -Name AppBar -MemberDefinition @"
+[StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+[StructLayout(LayoutKind.Sequential)] public struct APPBARDATA { public uint cbSize; public System.IntPtr hWnd; public uint uCallbackMessage; public uint uEdge; public RECT rc; public System.IntPtr lParam; }
+[DllImport("shell32.dll")] public static extern System.UIntPtr SHAppBarMessage(uint dwMessage, ref APPBARDATA pData);
+"@
+        }
+        $abd = New-Object 'Win32Shell.AppBar+APPBARDATA'
+        $abd.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($abd)
+        $state = [Win32Shell.AppBar]::SHAppBarMessage(4, [ref]$abd)   # 4 = ABM_GETSTATE
+        return (($state.ToUInt64() -band 1) -ne 0)                     # 1 = ABS_AUTOHIDE
+    } catch {
+        $val = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' -Name Settings -ErrorAction Stop).Settings
+        return (($val[8] -band 0x01) -ne 0)
+    }
+}
+
 # --- StartupDelayInMSec (-Activate-gated) ---------------------------------------------
 function Set-StartupDelay {
     <# Windows staggers Startup-folder/logon app launches by ~10s by default (Explorer's
