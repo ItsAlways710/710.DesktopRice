@@ -262,17 +262,47 @@ function Get-DefenderExclusionPaths {
        sources: frequent I/O from ShareX/Everything, and Defender scanning komorebic.exe /
        pwsh.exe / this repo's own .ps1 files the first time they're touched per session
        (the "only the first time" lag seen on capture/window-close). Only returns paths
-       that actually exist on this machine. #>
+       that actually exist on this machine, plus pwsh.exe (see Get-PwshImagePath). #>
     $komorebic = Get-KomorebiExe
     @(
         (Get-ShareXExe),
         "$env:USERPROFILE\Documents\ShareX",
         "$env:ProgramFiles\Everything\Everything.exe",
         "${env:ProgramFiles(x86)}\Everything\Everything.exe",
-        (Get-Command pwsh.exe -ErrorAction SilentlyContinue)?.Source,
         $komorebic,
         $Root
     ) | Where-Object { $_ -and (Test-Path $_) }
+    Get-PwshImagePath
+}
+
+function Get-PwshImagePath {
+    <# The pwsh.exe Defender should exclude: the real image this very process runs from
+       ($PSHOME) -- install/uninstall always run under PowerShell 7. Defender matches the
+       real image path, which for the Store build is the versioned package folder
+       (...\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.exe).
+       winarchy (and our port) used `Get-Command pwsh.exe`, which depends on PATH order:
+       after install.ps1 re-reads PATH from the registry it finds the per-user App
+       Execution Alias instead (%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe) -- seen
+       on the 2026-09-24 third install, where that alias is what got excluded, which
+       doesn't cover the real binary. No Test-Path: it's the running process's own
+       binary, and Test-Path inside Program Files\WindowsApps isn't reliable. #>
+    Join-Path $PSHOME 'pwsh.exe'
+}
+
+function Get-StalePwshExclusions {
+    <# Existing Defender exclusions that are an earlier pwsh.exe of ours, not the current
+       one: the per-user alias (what the old Get-Command lookup could add) and any other
+       Store-build version folder (left behind when PowerShell updates itself -- its
+       folder name carries the version). Only exact pwsh.exe paths in those two places,
+       so nothing the person excluded themselves is touched. #>
+    param([string[]]$Current)
+    $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
+    $real  = Get-PwshImagePath
+    @($Current | Where-Object {
+        $_ -and $_ -ne $real -and (
+            $_ -eq $alias -or
+            $_ -like "$env:ProgramFiles\WindowsApps\Microsoft.PowerShell_*\pwsh.exe")
+    })
 }
 
 function Set-DefenderExclusions {
@@ -288,6 +318,17 @@ function Set-DefenderExclusions {
         return
     }
     $current = @((Get-MpPreference).ExclusionPath)
+    # An earlier pwsh.exe exclusion (the alias, or a PowerShell version since updated
+    # away) is swapped for the current one rather than left to pile up.
+    $stale = @(Get-StalePwshExclusions -Current $current)
+    if ($stale.Count -gt 0) {
+        try {
+            Remove-MpPreference -ExclusionPath $stale
+            Step-Ok "Old pwsh.exe Defender exclusion(s) removed: $($stale -join ', ')"
+        } catch {
+            Step-Warn "Could not remove old pwsh.exe Defender exclusion(s): $($_.Exception.Message)"
+        }
+    }
     $missing = @($paths | Where-Object { $current -notcontains $_ })
     if ($missing.Count -eq 0) {
         Step-Ok 'Defender exclusions already applied'
@@ -319,7 +360,8 @@ function Remove-DefenderExclusions {
         return
     }
     $current = @((Get-MpPreference).ExclusionPath)
-    $toRemove = @($paths | Where-Object { $current -contains $_ })
+    # Plus any earlier pwsh.exe exclusion of ours (see Get-StalePwshExclusions).
+    $toRemove = @(@($paths | Where-Object { $current -contains $_ }) + @(Get-StalePwshExclusions -Current $current))
     if ($toRemove.Count -eq 0) {
         Step-Info 'Defender exclusions already absent.'
         return
