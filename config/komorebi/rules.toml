@@ -1,0 +1,13 @@
+# Your own komorebi rule overrides -- highest priority layer, above games.toml and
+# the vendored community ASC rules. Compiled into komorebi.json by
+# tools\compile-komorebi-rules.ps1 (run by SUPER+Shift+R). Tracked in git on
+# purpose, so rules follow you to every machine. Sections: [[floating]],
+# [[ignore]], [[manage]], ... with one of exe / class / title per entry.
+
+# WinUI 3 apps (new Photos, and others built on the same framework) stop taking
+# clicks when komorebi's transparency makes them translucent -- found with
+# Photos 2026-09-24 (turning transparency off made its controls work again).
+# Whole window class, not just Photos.exe, so the next WinUI 3 app doesn't need
+# rediscovering. Cost: these stay opaque when unfocused.
+[[transparency_ignore]]
+class = "WinUIDesktopWin32WindowClass"
