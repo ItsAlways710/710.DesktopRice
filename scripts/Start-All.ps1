@@ -17,13 +17,16 @@
   Uses the exact launch commands the sign-in tasks use (tools\lib\activation.ps1's
   Get-AutostartComponents), so on-demand and -Activate start things the same way.
 
-  Never starts the stack elevated. Anything started from an admin shell runs as admin --
-  AHK, and every Terminal it opens after it, and non-elevated komorebi can't tile those
-  windows (the trap install -Activate itself had, fixed 2026-09-24). So:
-    - If the sign-in tasks exist (an -Activate install), it fires them, which always
-      starts things non-elevated -- fine from any shell.
-    - Otherwise it starts each component directly, and refuses to run from an admin
-      shell. Use a normal PowerShell window.
+  Never starts anything elevated by accident. Anything started from an admin shell runs
+  as admin -- AHK, and every Terminal it opens after it (the trap install -Activate itself
+  had, fixed 2026-09-24). So, per component:
+    - If it has a task, it fires the task, which starts it at the task's own registered
+      level whatever shell this is: non-elevated for everything, except komorebi in
+      elevated tiling mode (install.ps1's default), which is elevated on purpose so it can
+      tile admin windows. An on-demand install (no -Activate) registers komorebi's task
+      with no sign-in trigger just for this.
+    - Otherwise it starts it directly -- and refuses to, from an admin shell. Use a
+      normal PowerShell window.
 
   Taskbar auto-hide is left to you: this checks it and, if it's off, the last line says how
   to turn it on (the stack is built around a hidden taskbar). Stop-All.ps1 reminds you to
@@ -64,29 +67,26 @@ if ($components.Count -eq 0) {
     exit 1
 }
 
-$viaTasks = @($components | Where-Object { Test-Task -TaskName $_.TaskName }).Count -eq $components.Count
-if ($viaTasks) {
-    # -Activate install: the sign-in tasks are LeastPrivilege, so this is safe elevated too.
-    foreach ($c in $components) {
-        $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $c.TaskName) 2>&1
-        if ($LASTEXITCODE -eq 0) { Step-Ok "$($c.Key): started via its sign-in task" }
-        else { Step-Warn "$($c.Key): schtasks /Run failed (exit $LASTEXITCODE)" }
-    }
-} else {
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if ($isAdmin) {
-        Step-Warn "This is an admin shell -- everything started from here would run as admin (and komorebi couldn't tile what AHK opens). Run this from a normal PowerShell window instead. Nothing was started."
-        exit 1
-    }
-    # No sign-in delays here: those space things out at logon; by hand they'd just be
-    # waiting.
-    foreach ($c in $components) {
-        try {
-            Start-Process -FilePath $c.Exe -ArgumentList $c.Arguments -WindowStyle Hidden
-            Step-Ok "$($c.Key): launched"
-        } catch {
-            Step-Warn "$($c.Key): failed to launch -- $($_.Exception.Message)"
-        }
+$withTask = @($components | Where-Object { Test-Task -TaskName $_.TaskName })
+$direct   = @($components | Where-Object { $withTask.Key -notcontains $_.Key })
+if ($direct.Count -gt 0 -and (Test-IsAdmin)) {
+    Step-Warn "This is an admin shell -- $($direct.Key -join ', ') would have to be started directly from it and would run as admin. Run this from a normal PowerShell window instead. Nothing was started."
+    exit 1
+}
+# Tasks first: each starts at its own registered level (see the header).
+foreach ($c in $withTask) {
+    $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $c.TaskName) 2>&1
+    if ($LASTEXITCODE -eq 0) { Step-Ok "$($c.Key): started via its task" }
+    else { Step-Warn "$($c.Key): schtasks /Run failed (exit $LASTEXITCODE)" }
+}
+# No sign-in delays here: those space things out at logon; by hand they'd just be
+# waiting.
+foreach ($c in $direct) {
+    try {
+        Start-Process -FilePath $c.Exe -ArgumentList $c.Arguments -WindowStyle Hidden
+        Step-Ok "$($c.Key): launched"
+    } catch {
+        Step-Warn "$($c.Key): failed to launch -- $($_.Exception.Message)"
     }
 }
 

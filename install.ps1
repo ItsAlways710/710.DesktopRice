@@ -59,19 +59,39 @@
   script re-reads Machine+User PATH into $env:Path after the package loop so later steps
   can find just-installed exes without requiring a second run.
 
+  Elevated tiling (plan doc Open item 37): by default komorebi's task runs elevated
+  (HighestAvailable), so admin windows tile like everything else -- only komorebi; AHK
+  runs with UI Access instead and nothing it launches is elevated. -NoElevatedTiling opts
+  out (komorebi non-elevated, admin windows float); -ElevatedTiling opts back in. The
+  choice is remembered per machine (%LOCALAPPDATA%\710.DesktopRice\tiling-mode.txt) and
+  only changes when one of those switches is passed; uninstall forgets it. Registering
+  an elevated task needs an admin shell. An install without -Activate registers
+  komorebi's task with no sign-in trigger, so Start-All.ps1 starts it the same way.
+  Security trade-off: see the README.
+
 .EXAMPLE
   .\install.ps1                # install/update everything this repo owns
   .\install.ps1 -Activate      # ...and autostart + hide taskbar + harden + start now
   .\install.ps1 -SkipPackages  # skip the winget loop; still does env vars / wallust /
                                 # display-index / Flow setup / recompile
+  .\install.ps1 -NoElevatedTiling   # komorebi non-elevated from now on (remembered)
+  .\install.ps1 -ElevatedTiling     # back to the default: komorebi elevated (remembered)
 #>
 [CmdletBinding()]
 param(
     [switch]$Activate,
-    [switch]$SkipPackages
+    [switch]$SkipPackages,
+    [switch]$ElevatedTiling,
+    [switch]$NoElevatedTiling
 )
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
+
+# Before anything else, so a contradictory command line changes nothing at all.
+if ($ElevatedTiling -and $NoElevatedTiling) {
+    Write-Host "  [XX] -ElevatedTiling and -NoElevatedTiling contradict each other -- pick one. Nothing was changed." -ForegroundColor Red
+    exit 1
+}
 
 function Step-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -ForegroundColor Green }
 function Step-Info { param([string]$Message) Write-Host "  [..] $Message" -ForegroundColor Cyan }
@@ -406,6 +426,21 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "`n-- Compiling komorebi.json --" -ForegroundColor Cyan
 & (Join-Path $Root 'tools\compile-komorebi-rules.ps1')
 
+# --- 10b. Tiling mode (elevated komorebi or not) -------------------------------------------
+# Resolved (switch -> remembered -> default 'elevated') and remembered here; section 11's
+# task registration reads it back through Get-KomorebiRunLevel.
+Write-Host "`n-- Tiling mode --" -ForegroundColor Cyan
+$tiling = Resolve-TilingMode -Elevated:$ElevatedTiling -Normal:$NoElevatedTiling
+$tilingWhy = switch ($tiling.Source) { 'switch' { 'set by this run' } 'remembered' { 'remembered from a previous install' } default { 'the default' } }
+if ($tiling.Mode -eq 'elevated') {
+    Step-Ok "Elevated tiling ($tilingWhy): komorebi runs elevated, so admin windows tile too. Opt out with -NoElevatedTiling."
+} else {
+    Step-Ok "Non-elevated tiling ($tilingWhy): admin windows float. Opt back in with -ElevatedTiling."
+}
+if ($tiling.Changed -and (Get-Process komorebi -ErrorAction SilentlyContinue)) {
+    Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run .\scripts\Stop-All.ps1 then .\scripts\Start-All.ps1 from a normal PowerShell.'
+}
+
 # --- 11. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ---
 if ($Activate) {
     Write-Host "`n-- Activate --" -ForegroundColor Cyan
@@ -458,7 +493,8 @@ if ($Activate) {
     # from one runs elevated: an elevated AHK makes every Terminal it opens elevated, and
     # non-elevated komorebi can't tile elevated windows (the 2026-09-23 admin-AHK incident;
     # this block used to Start-Process the launchers itself, found 2026-09-24 before the
-    # full reinstall test). The tasks run LeastPrivilege whatever shell fires them -- the
+    # full reinstall test). The tasks run at their own registered level whatever shell fires
+    # them -- LeastPrivilege, except komorebi's in elevated tiling mode -- the
     # same path logon and SUPER+Shift+R use, so "start now" and "start at next sign-in"
     # stay one code path. A component whose task couldn't be registered (Register-
     # Autostart fell back to a Startup shortcut) is started from that shortcut only when
@@ -498,6 +534,9 @@ if ($Activate) {
         if ($lockScreenActive) { Register-LockScreenSyncTask }
     } else {
         Step-Info 'Not -Activate: packages/config/theming/Defender/profile/Flow are applied, but autostart, the taskbar, hardening and the Startup delay are untouched.'
+        # On-demand: komorebi still gets its task (no trigger), so Start-All.ps1 and
+        # SUPER+Shift+R start it at the tiling mode's level -- the same as -Activate.
+        Register-KomorebiOnDemandTask
         Step-Info 'Run .\install.ps1 -Activate when ready to make this repo the active shell experience.'
     }
 }

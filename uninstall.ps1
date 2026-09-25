@@ -391,8 +391,11 @@ if ($Keep -contains 'PSFzf') {
 # Gitignored, machine-local, always regenerable by install.ps1 -- safe to remove
 # unconditionally, no Pre-existing? question applies (nothing here existed before this
 # repo did, and it's config data, not a package).
-Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json, wallust.toml)" {
+Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json, wallust.toml, tiling-mode.txt)" {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\display-index.local.json')
+    # The remembered elevated/non-elevated tiling choice -- uninstall forgets it, so a
+    # fresh install starts from the default again (plan doc Open item 37).
+    Remove-Item -Force -ErrorAction SilentlyContinue (Get-TilingModePath)
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\komorebi.json')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\wallust\wallust.toml')
 } 'Machine-local generated files removed'

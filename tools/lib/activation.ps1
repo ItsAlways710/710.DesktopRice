@@ -756,7 +756,12 @@ function Get-TaskFullName {
 }
 
 function Test-Task {
-    param([Parameter(Mandatory)][string]$TaskName)
+    <# -AtLogOn: only a task that actually starts at sign-in counts. That's what "this
+       machine is -Activate'd" means -- an on-demand install also has a komorebi task now
+       (Register-KomorebiOnDemandTask, no trigger), and without this check a later plain
+       install.ps1 would read it as "autostart is active" and quietly register everything
+       to start at sign-in (plan doc Open item 37). #>
+    param([Parameter(Mandatory)][string]$TaskName, [switch]$AtLogOn)
     # $null = ... 2>&1 (capture-and-discard), not *> $null (redirect-and-discard): the
     # latter doesn't fully suppress schtasks.exe's own "ERROR: ..." text for a genuinely
     # missing task -- found live tonight when toolspply-wallust-outputs.ps1's own copy
@@ -765,6 +770,10 @@ function Test-Task {
     # this function happened to query a task that already existed, so the leak was never
     # actually exercised here until now.
     $full = Get-TaskFullName -TaskName $TaskName
+    if ($AtLogOn) {
+        $xml = & schtasks.exe /Query /TN $full /XML 2>&1
+        return ($LASTEXITCODE -eq 0) -and (($xml -join "`n") -match '<LogonTrigger>')
+    }
     $null = & schtasks.exe /Query /TN $full 2>&1
     $LASTEXITCODE -eq 0
 }
@@ -794,17 +803,17 @@ function New-TaskXml {
        BelowNormal down to child processes that don't ask for a class, so through our
        wscript -> powershell -> launcher chain komorebi/YASB/AHK all came up BelowNormal
        (winarchy saw delayed retiles under load from exactly this). 4 = Normal. #>
-    param([Parameter(Mandatory)][object]$Component, [Parameter(Mandatory)][string]$User)
+    # -RunLevel HighestAvailable: komorebi in elevated tiling mode (Get-KomorebiRunLevel).
+    # -NoTrigger: an on-demand task that never fires on its own -- Start-All.ps1 and
+    # reload-stack.ps1 fire it (Register-KomorebiOnDemandTask).
+    param([Parameter(Mandatory)][object]$Component, [Parameter(Mandatory)][string]$User,
+          [ValidateSet('LeastPrivilege', 'HighestAvailable')][string]$RunLevel = 'LeastPrivilege',
+          [switch]$NoTrigger)
     $u = [System.Security.SecurityElement]::Escape($User)
     $cmd = [System.Security.SecurityElement]::Escape($Component.Exe)
     $arg = [System.Security.SecurityElement]::Escape($Component.Arguments)
     $delay = if ($Component.Delay) { $Component.Delay } else { 'PT0S' }
-    @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Description>710.DesktopRice autostart: $($Component.Key)</Description>
-  </RegistrationInfo>
+    $triggers = if ($NoTrigger) { '  <Triggers />' } else { @"
   <Triggers>
     <LogonTrigger>
       <Enabled>true</Enabled>
@@ -812,11 +821,19 @@ function New-TaskXml {
       <Delay>$delay</Delay>
     </LogonTrigger>
   </Triggers>
+"@ }
+    @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>710.DesktopRice autostart: $($Component.Key)</Description>
+  </RegistrationInfo>
+$triggers
   <Principals>
     <Principal id="Author">
       <UserId>$u</UserId>
       <LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel>
+      <RunLevel>$RunLevel</RunLevel>
     </Principal>
   </Principals>
   <Settings>
@@ -852,10 +869,21 @@ function Register-Autostart {
         Step-Warn 'Autostart: no components installed.'
         return
     }
+    $admin = Test-IsAdmin
     foreach ($c in $components) {
+        $runLevel = if ($c.Key -eq 'komorebi') { Get-KomorebiRunLevel } else { 'LeastPrivilege' }
+        if ($runLevel -eq 'HighestAvailable' -and -not $admin) {
+            # Only an admin can register a task that runs elevated.
+            if (Test-Task -TaskName $c.TaskName) {
+                Step-Warn "Autostart komorebi: elevated tiling needs an admin PowerShell to register -- its existing task was left as it is. Re-run .\install.ps1 from an admin shell."
+                continue
+            }
+            Step-Warn "Autostart komorebi: elevated tiling needs an admin PowerShell to register -- registering it non-elevated for now (admin windows won't tile). Re-run .\install.ps1 from an admin shell."
+            $runLevel = 'LeastPrivilege'
+        }
         $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) "710-task-$($c.TaskName).xml"
         try {
-            Set-Content -Path $xmlPath -Value (New-TaskXml -Component $c -User $user) -Encoding Unicode
+            Set-Content -Path $xmlPath -Value (New-TaskXml -Component $c -User $user -RunLevel $runLevel) -Encoding Unicode
             $full = Get-TaskFullName -TaskName $c.TaskName
             & schtasks.exe /Create /TN $full /XML $xmlPath /F *> $null
             if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
@@ -922,11 +950,90 @@ function Get-AutostartStatus {
     $startup = [Environment]::GetFolderPath('Startup')
     $status = @{}
     foreach ($c in Get-AutostartComponents) {
-        $hasTask = Test-Task -TaskName $c.TaskName
+        $hasTask = Test-Task -TaskName $c.TaskName -AtLogOn
         $hasLnk = Test-Path (Join-Path $startup $c.LnkName)
         $status[$c.Key] = ($hasTask -or $hasLnk)
     }
     $status
+}
+
+function Register-KomorebiOnDemandTask {
+    <# For an install WITHOUT -Activate: komorebi's task with no trigger at all, at the
+       tiling mode's run level. Nothing starts at sign-in; Start-All.ps1 and reload-stack.ps1
+       (SUPER+Shift+R's komorebi restart) fire it, so on-demand komorebi comes up exactly
+       like an -Activate'd one -- elevated in elevated tiling mode, with no UAC prompt,
+       whatever shell fires it (plan doc Open item 37). Test-Task -AtLogOn ignores this
+       task, so it never makes the machine look -Activate'd. Idempotent (/F). #>
+    $c = @(Get-AutostartComponents) | Where-Object { $_.Key -eq 'komorebi' } | Select-Object -First 1
+    if (-not $c) { Step-Warn 'komorebi on-demand task: komorebi.exe not found -- skipped.'; return }
+    $runLevel = Get-KomorebiRunLevel
+    if ($runLevel -eq 'HighestAvailable' -and -not (Test-IsAdmin)) {
+        Step-Warn 'komorebi on-demand task: elevated tiling needs an admin PowerShell to register -- skipped (Start-All will start komorebi non-elevated). Re-run .\install.ps1 from an admin shell.'
+        return
+    }
+    $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) '710-task-komorebi-ondemand.xml'
+    try {
+        Set-Content -Path $xmlPath -Value (New-TaskXml -Component $c -User "$env:USERDOMAIN\$env:USERNAME" -RunLevel $runLevel -NoTrigger) -Encoding Unicode
+        $null = & schtasks.exe /Create /TN (Get-TaskFullName -TaskName $c.TaskName) /XML $xmlPath /F 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
+        Step-Ok "komorebi on-demand task registered ($(if ($runLevel -eq 'HighestAvailable') { 'elevated' } else { 'non-elevated' }); no sign-in trigger -- Start-All.ps1 fires it)"
+    } catch {
+        Step-Warn "komorebi on-demand task: couldn't register it ($($_.Exception.Message)) -- Start-All will start komorebi directly (non-elevated)."
+    } finally {
+        Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- Tiling mode: elevated komorebi or not (plan doc Open item 37) ------------------------
+# "elevated" (the default): komorebi's task runs HighestAvailable, so komorebi can see and
+# tile admin windows -- a non-elevated komorebi can't even read their process, let alone
+# move them. "normal": LeastPrivilege like everything else; admin windows float. Only
+# komorebi ever runs elevated -- AHK runs with UI Access instead, so what it launches stays
+# normal. The choice is remembered per machine and only changes when install.ps1 gets
+# -ElevatedTiling or -NoElevatedTiling; uninstall forgets it.
+# Security, accepted and documented (README): an elevated task whose launch chain reads
+# user-writable files -- including komorebi's own komorebi.ps1/.ahk loading from its config
+# folder -- is a silent route to admin for anything already running as you.
+function Get-TilingModePath { Join-Path $env:LOCALAPPDATA '710.DesktopRice\tiling-mode.txt' }
+
+function Get-TilingMode {
+    <# 'elevated' or 'normal'; the remembered value, else the default ('elevated'). #>
+    $path = Get-TilingModePath
+    if (Test-Path $path) {
+        $v = (Get-Content $path -Raw -ErrorAction SilentlyContinue)
+        if ($v) { $v = $v.Trim() }
+        if ($v -in 'elevated', 'normal') { return $v }
+    }
+    'elevated'
+}
+
+function Get-KomorebiRunLevel {
+    if ((Get-TilingMode) -eq 'elevated') { 'HighestAvailable' } else { 'LeastPrivilege' }
+}
+
+function Resolve-TilingMode {
+    <# install.ps1's switch -> remembered -> default, in that order. Writes the result back
+       (so a first install remembers the default too) and returns Mode, Source
+       ('switch' / 'remembered' / 'default') and Changed (vs. what was remembered before). #>
+    param([switch]$Elevated, [switch]$Normal)
+    $path = Get-TilingModePath
+    $before = $null
+    if (Test-Path $path) {
+        $b = (Get-Content $path -Raw -ErrorAction SilentlyContinue)
+        if ($b) { $b = $b.Trim() }
+        if ($b -in 'elevated', 'normal') { $before = $b }
+    }
+    if ($Elevated) { $mode = 'elevated'; $source = 'switch' }
+    elseif ($Normal) { $mode = 'normal'; $source = 'switch' }
+    elseif ($before) { $mode = $before; $source = 'remembered' }
+    else { $mode = 'elevated'; $source = 'default' }
+    New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
+    Set-Content -Path $path -Value $mode -Encoding ascii
+    [pscustomobject]@{ Mode = $mode; Source = $source; Changed = ($null -ne $before -and $before -ne $mode) }
+}
+
+function Test-IsAdmin {
+    ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 # --- Lock-screen sync (on-demand elevated task) ---------------------------------------
@@ -1091,6 +1198,12 @@ function Stop-RunningComponents {
         $komorebic = (Get-Command komorebic -ErrorAction SilentlyContinue)?.Source
         if ($komorebic) { try { & $komorebic stop 2>$null | Out-Null; Start-Sleep -Milliseconds 300 } catch { } }
         Stop-Process -Name komorebi -Force -ErrorAction SilentlyContinue
+        # In elevated tiling mode komorebi runs as admin: `komorebic stop` still reaches it
+        # from a normal shell, but the force-kill fallback can't -- so say so if it's still up.
+        Start-Sleep -Milliseconds 300
+        if (Get-Process komorebi -ErrorAction SilentlyContinue) {
+            Step-Warn 'komorebi is still running (in elevated tiling mode it runs as admin, which a normal shell cannot force-stop). Run this from an admin PowerShell.'
+        }
     }
 
     # YASB: same graceful-stop-then-kill pattern.

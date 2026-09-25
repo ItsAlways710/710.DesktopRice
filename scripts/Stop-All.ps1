@@ -48,7 +48,8 @@ Stop-RunningComponents
 Step-Ok 'Done (best-effort -- see any [!!] warnings above for anything that did not stop cleanly).'
 
 try {
-    $activated = @(Get-AutostartComponents | Where-Object { Test-Task -TaskName $_.TaskName }).Count -gt 0
+    # -AtLogOn: an on-demand install's komorebi task (no trigger) isn't "activated".
+    $activated = @(Get-AutostartComponents | Where-Object { Test-Task -TaskName $_.TaskName -AtLogOn }).Count -gt 0
     if (-not $activated -and (Test-TaskbarAutoHide)) {
         Write-Host ''
         Step-Info "Reminder: the Windows taskbar is still set to auto-hide. If you only want that while 710.DesktopRice is running, turn it off: Settings > Personalization > Taskbar > Taskbar behaviors > Automatically hide the taskbar."
