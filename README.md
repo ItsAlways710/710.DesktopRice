@@ -4,7 +4,7 @@ A keyboard-first tiling desktop for Windows 11, themed from your wallpaper.
 
 | Piece | What it does here |
 | --- | --- |
-| [komorebi](https://github.com/LGUG2Z/komorebi) | Tiling window manager: workspaces, layouts, borders |
+| [komorebi](https://github.com/LGUG2Z/komorebi) | Tiling window manager: workspaces, layouts, borders. Admin windows tile too |
 | [YASB](https://github.com/amnweb/yasb) | The bar across the top: workspaces, weather, system info, wallpaper gallery |
 | [AutoHotkey v2](https://www.autohotkey.com/) | Every hotkey, plus the themed, searchable menus (`config/ahk/710.ahk`) |
 | [Flow Launcher](https://www.flowlauncher.com/) + [Everything](https://www.voidtools.com/) | App launcher and instant file search |
@@ -52,7 +52,12 @@ setx YASB_WEATHER_LOCATION "your zip or city"
 ```
 
 They're stored as your own Windows user variables, never in the repo, and uninstall leaves
-them alone.
+them alone. If you set or change them after the bar is already running, restart the bar to
+pick them up (a running program never sees a new `setx` value):
+
+```powershell
+Stop-Process -Name yasb     # the watchdog brings it back within about 10 seconds
+```
 
 The widget shows **°F**. For °C, open `config/yasb/config.yaml`, find the `weather:` widget
 and change `units: "imperial"` to `units: "metric"`.
@@ -61,8 +66,8 @@ and change `units: "imperial"` to `units: "metric"`.
 
 - Windows 11
 - winget (built into current Windows 11)
-- **PowerShell 7, installed first.** Every script here needs it, including the installer,
-  so install it before anything else:
+- **PowerShell 7, installed first.** The installer, uninstaller and the scripts you run
+  yourself all need it, so install it before anything else:
 
   ```powershell
   winget install --id 9MZ1SNWT0N5D --source msstore
@@ -73,7 +78,7 @@ and change `units: "imperial"` to `units: "metric"`.
   nothing here cares which 7.x you have. If the Store is blocked on your machine,
   `winget install --id Microsoft.PowerShell --source winget` works too.
 - An **admin** PowerShell 7 window for `install.ps1` and `uninstall.ps1` (Defender
-  exclusions and the lock-screen image need it).
+  exclusions, the lock-screen image and komorebi's elevated sign-in task need it).
 
 Clone the repo wherever you like. The installer records its location in
 `DESKTOPRICE_HOME`, and everything else finds it from there.
@@ -98,8 +103,9 @@ Either way, `install.ps1`:
   lists every package, its version and where it comes from.
 - Installs wallust (a checksum-verified release download; there's no winget package).
 - Points komorebi and YASB at this repo's config folders.
-- Adds Windows Defender exclusions for ShareX, Everything, komorebi, PowerShell 7 and this
-  repo (without them, the first capture or hotkey of a session lags while Defender scans).
+- Adds Windows Defender exclusions for ShareX, Everything, komorebi's command-line tool
+  (`komorebic.exe`), PowerShell 7 and this repo (without them, the first capture or hotkey
+  of a session lags while Defender scans).
 - Hooks `config/pwsh/profile.ps1` into your PowerShell profile.
 - Sets Windows Terminal's default shell to PowerShell 7.
 - Sets up Flow Launcher: `app` searches apps, `f` searches files through Everything, and it
@@ -107,6 +113,9 @@ Either way, `install.ps1`:
 - Sets the default wallpaper and themes everything from it.
 - Removes the desktop shortcuts the installers drop (Flow Launcher and ShareX add one; ones
   you already had are left alone).
+- Sets komorebi up to run **elevated**, so windows running as administrator tile like
+  everything else. See [Admin windows](#admin-windows), including how to opt out
+  (`-NoElevatedTiling`) and why you might.
 
 ### Full-time: `-Activate`
 
@@ -118,8 +127,8 @@ From an admin PowerShell 7 window in the repo folder:
 
 On top of the above, this:
 
-- Starts komorebi, YASB, AutoHotkey and ShareX at every sign-in, through Scheduled Tasks
-  that never run elevated.
+- Starts komorebi, YASB, AutoHotkey and ShareX at every sign-in, through Scheduled Tasks.
+  Only komorebi's runs elevated (unless you opted out); the rest run as you.
 - Sets the Windows taskbar to auto-hide (the bar replaces it).
 - Turns off, for your user only: Bing results and ad suggestions in Start search, the
   Copilot, Widgets and Task View taskbar buttons, Start menu recommendations and account
@@ -145,7 +154,7 @@ Windows' own default.
 | `Software\Microsoft\Windows\CurrentVersion\SearchSettings` | `IsAADCloudSearchEnabled` | 0 | Work/school cloud results in search |
 | `Software\Microsoft\Windows\CurrentVersion\SearchSettings` | `IsMSACloudSearchEnabled` | 0 | Microsoft account cloud results in search |
 | `Software\Policies\Microsoft\Windows\Explorer` | `DisableSearchBoxSuggestions` | 1 | Web suggestions in the search box |
-| `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `TaskbarDa` | 0 | Widgets button (Windows may refuse this one; see [Tips](#tips-and-troubleshooting)) |
+| `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `TaskbarDa` | 0 | Widgets button (Windows may refuse this one; see [Tips](#tips-and-known-issues)) |
 | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `TaskbarMn` | 0 | Chat/Teams button |
 | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `ShowTaskViewButton` | 0 | Task View button |
 | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `ShowCopilotButton` | 0 | Copilot button |
@@ -179,18 +188,22 @@ Run the installer without `-Activate`:
 .\install.ps1
 ```
 
-Nothing starts at sign-in and none of the Windows changes above are made. See
-[Run on demand](#run-on-demand).
+Nothing starts at sign-in and none of the Windows changes above are made. komorebi still
+gets a Scheduled Task, with no sign-in trigger, so `Start-All` can start it elevated
+without a UAC prompt. See [Run on demand](#run-on-demand).
 
 ### Updating
 
 ```powershell
 git pull
-.\install.ps1          # add -Activate if that's how you run it
+.\install.ps1
 ```
 
-Re-running the installer is always safe; it only changes what's missing or out of date.
-There's no separate update checker, by design.
+Re-running the installer is always safe. A plain re-run keeps whatever you had: a
+full-time (`-Activate`) machine stays full-time, and your elevated-tiling choice is
+remembered. It installs what's missing, re-registers the sign-in tasks, and recompiles the
+rules. One thing to know: **every run applies the default wallpaper and theme again**, so
+pick yours with SUPER+W afterwards. There's no separate update checker, by design.
 
 `.\install.ps1 -SkipPackages` skips the winget step and redoes everything else (config,
 theme, Flow setup), which is quicker when only the repo changed.
@@ -203,8 +216,9 @@ From a **normal** (not admin) PowerShell 7 window in the repo folder:
 .\scripts\Start-All.ps1
 ```
 
-It never starts anything elevated (an admin AutoHotkey would open admin Terminals that
-komorebi can't tile), so run it from a normal window. It checks what came up and says so.
+komorebi starts elevated through its task (unless you opted out); YASB, AutoHotkey and
+ShareX start as you. Run it from a normal window: anything started directly from an admin
+window would run as admin, so it refuses. It checks what came up and says so.
 
 To stop, use `.\scripts\Stop-All.ps1` or **Quit 710sRice** in the tray icon's menu. Flow
 Launcher and Everything keep running either way; they're ordinary apps you can use on
@@ -223,7 +237,7 @@ From an admin PowerShell 7 window in the repo folder:
 .\uninstall.ps1
 ```
 
-This is a real uninstall: it stops everything, removes the sign-in tasks, and puts back
+This is a real uninstall: it stops everything, removes the Scheduled Tasks, and puts back
 what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
 colors and default shell, Flow Launcher settings, taskbar, Windows settings, PowerShell
 profile and Defender exclusions are restored, not reset to defaults. The installer saves
@@ -237,9 +251,10 @@ Terminal and Everything).
   `.\uninstall.ps1 -Keep ShareX.ShareX`.
 - `-Force` removes the Pre-existing rows too.
 
+It forgets your elevated-tiling choice, so a later install starts from the default again.
 It doesn't delete the repo folder, your weather variables, or your personal files
-(`user.ahk`, `user.ps1`, `config/windows.toml`). Delete the folder yourself if you're done
-with it.
+(`user.ahk`, `user.ps1`, `rules.local.toml`, `config/windows.toml`). Delete the folder
+yourself if you're done with it.
 
 ## Hotkeys
 
@@ -248,6 +263,7 @@ with it.
 | Keys | What it does |
 | --- | --- |
 | SUPER+Enter | Windows Terminal (opens on the monitor under the mouse) |
+| SUPER+Alt+Enter | Windows Terminal **as administrator** (UAC prompt; same monitor placement) |
 | SUPER+Space | Flow Launcher |
 | SUPER+Ctrl+Space | Flow, apps only |
 | SUPER+S | Flow, file search |
@@ -264,6 +280,7 @@ with it.
 | SUPER+1…9 | Go to workspace 1–9 |
 | SUPER+Shift+1…9 | Move the window to workspace 1–9 |
 | SUPER+F / SUPER+T | Monocle (fill the screen) / float or tile the window |
+| SUPER+R / SUPER+P | Retile / pause tiling |
 | SUPER+, / SUPER+. | Focus the previous / next monitor |
 
 **Capture (ShareX):**
@@ -284,12 +301,14 @@ keys, Esc to go back.
 
 ## Make it yours
 
-Two optional files are yours alone. Git ignores them, so `git pull` never touches them:
+Three optional files are yours alone. Git ignores them, so `git pull` never touches them:
 
 - `config/ahk/user.ahk` — your own hotkeys. It's loaded after `710.ahk` if it exists, and
   SUPER+K lists its hotkeys too. Reload with SUPER+Shift+R.
 - `config/pwsh/user.ps1` — your own PowerShell profile additions, loaded last by
   `config/pwsh/profile.ps1`. Open a new terminal to pick up changes.
+- `config/komorebi/rules.local.toml` — your own app rules. Quick add rule writes it for you;
+  see [App rules](#app-rules).
 
 ## Wallpapers and theming
 
@@ -307,7 +326,8 @@ The gallery shows two folders:
   setx YASB_WALLPAPER_PATH "C:\Users\<you>\Pictures\Wallpapers"
   ```
 
-  then press SUPER+Shift+R to restart the bar.
+  then restart the bar so it sees the new variable: `Stop-Process -Name yasb` (the watchdog
+  brings it back within about 10 seconds).
 
 For more folders, add lines to `image_path` under the `wallpapers:` widget in
 `config/yasb/config.yaml`:
@@ -321,38 +341,98 @@ For more folders, add lines to `image_path` under the `wallpapers:` widget in
 
 ## App rules
 
-Rules decide which windows komorebi tiles, floats or leaves alone. They come from three
+Rules decide which windows komorebi tiles, floats or leaves alone. They come in four
 layers, lowest to highest priority, and SUPER+Shift+R compiles them into komorebi's config:
 
 1. The community rules in `vendor/asc` (a pinned copy, updated deliberately).
 2. `games.toml`: game launchers and games, so they're never tiled. Game mode (in the main
    menu) shows when one is running.
-3. `config/komorebi/rules.toml`: your own overrides. It's tracked in git, so your rules
-   follow you to every machine. It ships with one: WinUI 3 apps (the new Photos app and
-   others) stay opaque when unfocused, because komorebi's transparency stops them taking
-   clicks.
+3. `config/komorebi/rules.toml`: the rules this repo ships, tracked in git. Currently two:
+   WinUI 3 apps (the new Photos app and others) stay opaque when unfocused, because
+   komorebi's transparency stops them taking clicks; and the Claude desktop app is tiled
+   (see [Tips and known issues](#tips-and-known-issues)).
+4. `config/komorebi/rules.local.toml`: **your** rules, for this machine only (git ignores
+   it). They win over everything above. Want one on every machine? Move it into
+   `rules.toml` and commit it.
 
-The easy way to add a rule: **SUPER+Alt+Space → Tiling → Quick add rule...**, click the
-window, then pick what to match on (its program, window class or title) and whether to
-float, ignore or force-tile it. It's written to `rules.toml` and applied right away.
+One limit: for the "extra behavior" rule types (Layered, Opaque and a few others), every
+layer's rules are added together, so your file can add them but can't cancel a shipped
+one. Edit `rules.toml` for that.
 
-Windows running as administrator always float. komorebi (running as you) isn't allowed to
-move them, and it keeps admin windows out of the way of your hotkeys.
+### Adding a rule
 
-## Tips and troubleshooting
+**SUPER+Alt+Space → Tiling → Quick add rule...**, click the window, pick what to match on
+(its program, window class or title), then what to do with it:
 
-- **Hotkeys do nothing?** If an admin window has focus (for example, the one you just ran
-  the installer in), Windows won't let the hotkeys through. Click any normal window.
+| Action | What it does | Takes effect |
+| --- | --- | --- |
+| Float (never tile) | komorebi manages it but never tiles it | Right away, on that window too |
+| Ignore (hands off) | komorebi leaves it completely alone | Right away |
+| Manage (force tile) | Tiles a window komorebi would normally skip | Right away |
+| Layered (tile an app komorebi skips) | For apps whose windows komorebi turns away because of how they're drawn, like the Claude desktop app | New windows: **relaunch the app** |
+| Opaque (never translucent) | Keeps it solid when unfocused, for apps that stop taking clicks when translucent | The next time you click it |
+
+If the window you picked looks like a Layered case (komorebi isn't managing it and it has
+the telltale window style), Layered moves to the top, marked **suggested**. Rules for
+windows running as administrator work too.
+
+### Removing and editing rules
+
+- **Tiling → Remove a rule...** lists your rules; pick one and confirm. komorebi restarts to
+  drop it. Windows that were already open keep the state komorebi remembered for them (a
+  window you un-floated stays floating, for example) until you press **SUPER+T** on it or
+  relaunch the app.
+- **Tiling → Edit my rules...** opens `rules.local.toml` in whatever opens `.toml` files, or
+  Notepad. Save, then SUPER+Shift+R to apply.
+
+Only your own rules are listed and removable here; the shipped ones are edited in
+`rules.toml` like any other config.
+
+## Admin windows
+
+By default komorebi runs **elevated** (as administrator), so windows running as
+administrator tile, move and resize like everything else. Your hotkeys work in them too:
+AutoHotkey runs with UI Access, which lets it send keys to admin windows **without** being
+elevated itself, so nothing it launches runs as admin by accident.
+
+- **SUPER+Alt+Enter** opens a Windows Terminal as administrator (after a UAC prompt), tiled
+  on the monitor under the mouse.
+- **Opting out:** `.\install.ps1 -NoElevatedTiling` runs komorebi as you instead; admin
+  windows then float and can't be tiled. `.\install.ps1 -ElevatedTiling` switches back. The
+  choice is remembered, so a plain re-run keeps it, and it takes effect the next time
+  komorebi starts (sign out and in, or `Stop-All` then `Start-All`).
+- **Admin commands without an admin window:** turn on Windows 11's `sudo` (Settings >
+  System > For developers > Enable sudo, "Inline" mode) and run `sudo <command>` in a normal
+  Terminal.
+
+**The trade-off, plainly:** an elevated komorebi starts from files your normal account can
+change (its startup script, its config folder, an environment variable). So any program
+already running as you could use them to get admin rights without a UAC prompt. On a
+personal machine where you're the only user that's a small step, since UAC isn't a
+security boundary to begin with, but on a shared or work-connected machine use
+`-NoElevatedTiling`. komorebi's author also describes running it elevated as "not well
+tested", so if something odd shows up around admin windows, that's the first thing to try.
+
+## Tips and known issues
+
+- **Extra title bars on an app after the bar restarts.** Apps tiled through a Layered rule
+  may react badly when the bar restarts (the bar gives its screen strip back and takes it
+  again, and Windows tells every window). The Claude desktop app is the real example, and
+  it's one of the included rules, so expect it: each bar restart can add another title bar
+  on top of Claude's own, and clicks land one row off. Quit it from its tray icon and
+  relaunch to fix. SUPER+Shift+R only restarts the bar when it has to (its `config.yaml`
+  changed, or komorebi restarted), so this is rare.
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.
-- **Admin commands in a normal, tiled Terminal:** turn on Windows 11's `sudo` (Settings >
-  System > For developers > Enable sudo, "Inline" mode) and run `sudo <command>`.
+- **Changed a weather or wallpaper variable?** Restart the bar: `Stop-Process -Name yasb`
+  (the watchdog brings it back).
 - **Something not right?** SUPER+Shift+R reloads the whole stack and re-applies the
   config. Logs are in `%LOCALAPPDATA%\710.DesktopRice\`.
 
 ## Future plans
 
-- **Update this README.**
+- **A proper README pass:** screenshots and a short demo.
 - **Window slots.** Pin an app to the monitor, workspace and tile position you choose, and
   it goes back there every time it opens. Move a pinned app yourself and it learns the new
   spot.
+- **Turn off a shipped rule locally,** without editing the tracked `rules.toml`.
