@@ -57,6 +57,21 @@ if (Test-YasbRunning) { Write-Log 'YASB already running; nothing to do.'; exit 0
 
 Write-Log '--- startup (autostart) ---'
 
+# Fingerprint of the config.yaml this YASB is about to load. tools\reload-stack.ps1 compares
+# against it and leaves YASB running when nothing it reads has changed -- because every YASB
+# restart hands its screen strip back and takes it again (it's a Windows app bar), Windows
+# re-broadcasts the work area to every window, and Claude Desktop stacks one more native
+# title bar per restart until relaunched (found 2026-09-25; plan doc Open item 40). No
+# fingerprint = reload-stack restarts YASB, the safe default.
+$fingerprint = Join-Path $logDir 'yasb-config.sha256'
+try {
+    (Get-FileHash (Join-Path $YasbConfigHome 'config.yaml') -Algorithm SHA256 -ErrorAction Stop).Hash |
+        Set-Content -Path $fingerprint -Encoding ascii
+} catch {
+    Remove-Item $fingerprint -ErrorAction SilentlyContinue
+    Write-Log "couldn't fingerprint config.yaml ($($_.Exception.Message)) -- the next SUPER+Shift+R will restart YASB."
+}
+
 $overallDeadline = (Get-Date).AddMinutes(1)
 $attempt = 0
 while ((Get-Date) -lt $overallDeadline) {

@@ -3,7 +3,7 @@
 .SYNOPSIS
   SUPER+Shift+R: make every config edit take effect without a logoff -- recompile the
   komorebi rules (komorebi picks them up), keep your live workspace layouts, put the
-  wallust borders back, and kill+restart YASB.
+  wallust borders back, and restart YASB when it actually needs it.
   AHK restarts itself afterwards (710.ahk's ReloadStack()), which is why AHK isn't
   touched here.
 
@@ -39,7 +39,13 @@
        Rule additions (quick-add-rule's whole job) stay on the fast hot-reload path.
     3. YASB: kill + restart, never `yasbc reload` -- its hot reload re-subscribes the
        komorebi widgets to the named pipe without closing the old subscription (watch_config
-       stays off for the same reason).
+       stays off for the same reason). ONLY when needed, though: YASB isn't running,
+       komorebi was restarted in step 2 (the widgets need the new komorebi), or config.yaml
+       differs from the fingerprint Start-Yasb.ps1 recorded at YASB's last start (or there
+       is none). Otherwise it's left alone -- every restart makes Windows re-broadcast the
+       work area (YASB is an app bar), and Claude Desktop stacks a native title bar per
+       broadcast (plan doc Open item 40). styles.css and wallpaper colours hot-reload on
+       their own (watch_stylesheet) and never needed the restart.
 
   Starting things goes through the registered autostart Scheduled Tasks
   (`schtasks /Run \710.DesktopRice\<name>`) -- the exact wscript/run-hidden.vbs path boot
@@ -276,6 +282,7 @@ Write-Log ("1. rules compiled -- komorebi.json {0}." -f ($(if ($configChanged) {
 
 # --- 2. komorebi ----------------------------------------------------------------------------
 $removedRules = 0
+$komorebiRestarted = $false   # step 3 restarts YASB after a komorebi restart
 if ($komorebiUp -and $configChanged) {
     try { $removedRules = Get-RemovedRuleCount $oldCfg (Get-Content $config -Raw | ConvertFrom-Json) }
     catch { Write-Log "   couldn't diff old/new rules ($($_.Exception.Message)) -- restarting komorebi to be safe."; $removedRules = 1 }
@@ -287,6 +294,7 @@ if ($komorebiUp -and $removedRules -gt 0) {
     # through its own autostart task, wait for Start-Komorebi.ps1 to finish, then restore
     # anything still off (column counts don't survive a restart).
     Write-Log "2. $removedRules rule(s) removed -- komorebi only ever adds rules on reload, so restarting it."
+    $komorebiRestarted = $true
     try {
         $null = Invoke-Kc stop
         $gone = (Get-Date).AddSeconds(10)
@@ -354,11 +362,31 @@ if ($komorebiUp -and $removedRules -gt 0) {
     $failed = $true
 } else {
     Write-Log "2. komorebi wasn't running -- starting it (Start-Komorebi.ps1 re-applies borders once it's up)."
+    $komorebiRestarted = $true
     if (-not (Start-AutostartTask 'komorebi')) { $failed = $true }
 }
 
-# --- 3. YASB: kill + restart ----------------------------------------------------------------
-if (Get-Process yasb -ErrorAction SilentlyContinue) {
+# --- 3. YASB: kill + restart, only when it has to ----------------------------------------------
+$yasbReason = $null
+if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
+    $yasbReason = 'not running'
+} elseif ($komorebiRestarted) {
+    $yasbReason = 'komorebi was restarted'
+} else {
+    $fingerprint = Join-Path $logDir 'yasb-config.sha256'
+    if (-not (Test-Path $fingerprint)) {
+        $yasbReason = 'no config.yaml fingerprint from its last start'
+    } else {
+        try {
+            $now = (Get-FileHash (Join-Path $Root 'config\yasb\config.yaml') -Algorithm SHA256).Hash
+            if ($now -ne (Get-Content $fingerprint -Raw).Trim()) { $yasbReason = 'config.yaml changed' }
+        } catch { $yasbReason = "couldn't compare config.yaml ($($_.Exception.Message))" }
+    }
+}
+if (-not $yasbReason) {
+    Write-Log '3. YASB left running (config.yaml unchanged, komorebi not restarted).'
+} elseif (Get-Process yasb -ErrorAction SilentlyContinue) {
+    Write-Log "3. YASB restarting ($yasbReason)."
     Stop-Process -Name yasb -Force -ErrorAction SilentlyContinue
     # Start-Yasb.ps1 no-ops if it still sees a yasb process, so wait for the kill to land.
     $deadline = (Get-Date).AddSeconds(5)
