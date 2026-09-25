@@ -31,9 +31,14 @@ function Write-Log([string]$m) {
     "{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m | Out-File -FilePath $log -Append -Encoding utf8
 }
 
-function Test-AhkRunning { [bool](Get-Process AutoHotkey64 -ErrorAction SilentlyContinue) }
+# Either build counts: AutoHotkey64_UIA.exe is what the autostart launches now (UI Access,
+# plan doc Open item 36); plain AutoHotkey64.exe is the per-user-install fallback. Missing
+# the UIA name here would launch a second 710.ahk on top of a running one, whose
+# #SingleInstance can't close a UIA instance anyway -- just a popup and an early exit.
+function Test-AhkRunning { [bool](Get-Process AutoHotkey64, AutoHotkey64_UIA -ErrorAction SilentlyContinue) }
 
-if (-not (Test-Path $exe)) { Write-Log "AutoHotkey64.exe not found at $exe; aborting."; exit 1 }
+$exeName = Split-Path $exe -Leaf
+if (-not (Test-Path $exe)) { Write-Log "$exeName not found at $exe; aborting."; exit 1 }
 if (Test-AhkRunning) { Write-Log 'AHK already running; nothing to do.'; exit 0 }
 
 # Belt-and-suspenders: clears any Claude Code sub-session flags this launcher process
@@ -51,7 +56,7 @@ while ((Get-Date) -lt $overallDeadline) {
 
     while ((Get-Date) -lt $overallDeadline -and -not (Test-ForegroundReady)) { Start-Sleep -Milliseconds 500 }
 
-    Write-Log "attempt ${attempt}: launching AutoHotkey64.exe"
+    Write-Log "attempt ${attempt}: launching $exeName"
     try {
         $p = Start-Process -FilePath $exe -ArgumentList "`"$script`"" -WindowStyle Hidden -PassThru
     } catch {
@@ -60,8 +65,12 @@ while ((Get-Date) -lt $overallDeadline) {
         continue
     }
 
+    # Start-Process = ShellExecute, which the UIA exe needs (AutoHotkey's docs: a UIA exe
+    # can't be started via CreateProcess). Liveness is checked by process name rather than
+    # $p.HasExited: a normal process can be refused access to a UI Access process (found
+    # live: Stop-Process on one is 'Access is denied'), so the handle can't be trusted.
     Start-Sleep -Seconds 3
-    if (-not $p.HasExited) { Write-Log "attempt ${attempt}: AHK still alive after 3s. OK."; exit 0 }
+    if (Test-AhkRunning) { Write-Log "attempt ${attempt}: AHK still alive after 3s. OK."; exit 0 }
 
     $code = try { $p.ExitCode } catch { '?' }
     Write-Log "attempt ${attempt}: AHK exited quickly (code '$code')."

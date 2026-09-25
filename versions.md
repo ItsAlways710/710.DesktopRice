@@ -83,7 +83,10 @@ check will tell the real story the first time it actually runs.
 **AutoHotkey / Flow Launcher versions** — Flow confirmed via real directory evidence on Dell
 (`AppData\Local\FlowLauncher\app-2.1.3`), not guessed. AutoHotkey is installed machine-wide
 (`C:\Program Files\AutoHotkey`); autostart launches the version-independent
-`v2\AutoHotkey64.exe` (`Get-AhkExe`), so a version bump doesn't touch the launch path. (An
+`v2\AutoHotkey64_UIA.exe` (`Get-AhkExe`), so a version bump doesn't touch the launch path.
+That's the UI Access build (hotkeys work over admin windows, plan doc Open item 36); the
+installer only creates and signs it in a Program Files install, so a per-user install falls
+back to plain `AutoHotkey64.exe`. (An
 earlier version of this note placed it under a per-user `...\Programs\AutoHotkey\v2.0.26`
 folder, which doesn't exist on Dell.) Bumped 2.0.26 → 2.0.28 on 2026-09-23 after checking both
 releases' notes (GitHub releases): 2.0.27 = six bug fixes (debugger `=>` breakpoints,

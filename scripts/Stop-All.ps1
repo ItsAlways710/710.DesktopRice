@@ -20,9 +20,12 @@
   -Activate install -- there -Activate set it, and uninstall.ps1 reverts it.
 
 .NOTES
-  The AHK stop only matches processes whose command line references THIS repo's
-  config\ahk\710.ahk (Win32_Process), never a blanket Stop-Process AutoHotkey64 -- another
-  AHK v2 script you run is left alone.
+  AHK is stopped last, and only THIS repo's config\ahk\710.ahk -- never a blanket
+  Stop-Process on AutoHotkey -- so another AHK v2 script you run is left alone. 710.ahk
+  runs with UI Access (AutoHotkey64_UIA.exe), which a normal shell can't force-stop, so it
+  is asked to quit via a message it accepts for exactly that; the old kill stays as the
+  fallback (it works from an admin shell). If it's still running afterwards, you get a
+  [!!] saying so -- quit it from its tray icon.
 
 .EXAMPLE
   .\scripts\Stop-All.ps1

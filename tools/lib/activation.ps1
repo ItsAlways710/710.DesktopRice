@@ -224,8 +224,14 @@ function Get-KomorebiExe {
 }
 
 function Get-AhkExe {
-    <# AutoHotkey v2, per-machine or per-user; $null if not installed. #>
+    <# AutoHotkey v2, per-machine or per-user; $null if not installed. Prefers the UI Access
+       build (AutoHotkey64_UIA.exe) so 710.ahk's hotkeys still reach an admin window that has
+       focus -- without running AHK itself elevated, which would make everything it launches
+       elevated too (plan doc, Open item 36). The UIA exe only exists (and only works) in a
+       Program Files install -- AutoHotkey's installer creates and signs it there -- so a
+       per-user install falls through to the plain exe, same as before. #>
     $found = @(
+        "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64_UIA.exe",
         "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
         "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -1097,19 +1103,78 @@ function Stop-RunningComponents {
     # ShareX: no CLI stop -- the resident tray process is all there is to end.
     Stop-Process -Name ShareX -Force -ErrorAction SilentlyContinue
 
-    # AHK: matched by command line (Win32_Process), not a blanket `Stop-Process -Name
-    # AutoHotkey64` -- that would also kill any unrelated AHK v2 script the person happens
-    # to have running, which isn't this repo's to touch. If Win32_Process can't be queried
-    # for some reason, this is skipped and warned rather than falling back to the blanket
-    # kill (see Stop-WindowSlotsDaemon for the same reasoning, applied to komorebi's
-    # equivalent pwsh-daemon case).
+    # AHK, last. 710.ahk runs with UI Access (AutoHotkey64_UIA.exe), and a normal shell
+    # (Stop-All.ps1) can't Stop-Process a UIA process -- 'Access is denied', found live
+    # 2026-09-25. So: ask it to quit first (710.ahk lets exactly this one message through
+    # its UIPI filter), give it a couple of seconds, then fall back to the old kill for
+    # anything still standing -- which works from uninstall's admin shell, and for a
+    # plain-AutoHotkey64 710.ahk from anywhere. Both steps only ever touch THIS repo's
+    # 710.ahk (window title / command line), never a blanket Stop-Process: another AHK v2
+    # script the person runs isn't ours to touch.
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    if (Send-AhkQuit -ScriptPath $ahkScript) {
+        $deadline = (Get-Date).AddSeconds(2)
+        while ((Get-Date) -lt $deadline -and (Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero) {
+            Start-Sleep -Milliseconds 100
+        }
+    }
     try {
-        $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
-        Get-CimInstance Win32_Process -Filter "Name = 'AutoHotkey64.exe'" -ErrorAction Stop |
+        Get-CimInstance Win32_Process -Filter "Name = 'AutoHotkey64.exe' OR Name = 'AutoHotkey64_UIA.exe'" -ErrorAction Stop |
             Where-Object { $_.CommandLine -and $_.CommandLine.Contains($ahkScript) } |
             ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     } catch {
         Step-Warn "Could not check for a running 710.ahk AutoHotkey process (Win32_Process unavailable): $($_.Exception.Message)"
+    }
+    if ((Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero) {
+        Step-Warn '710.ahk is still running (it runs with UI Access, which a normal shell cannot force-stop). Quit it from its tray icon, or run this from an admin PowerShell.'
+    }
+}
+
+function Find-AhkWindow {
+    <# The hidden main window of the AHK process running -ScriptPath, or [IntPtr]::Zero.
+       AHK titles that window "<full script path> - AutoHotkey v2.x", so the title is how we
+       tell 710.ahk apart from any other AHK script. Found by window rather than by
+       Win32_Process because a normal shell can't read a UI Access process's command line;
+       window titles, on the other hand, are readable across that boundary (open-main-menu.ahk
+       finds 710.ahk the same way). #>
+    param([Parameter(Mandatory)][string]$ScriptPath)
+    Initialize-AhkWindowNative
+    $hwnd = [IntPtr]::Zero
+    while ($true) {
+        # [NullString]::Value, NOT $null: PowerShell hands $null to a .NET string parameter
+        # as "" -- and FindWindowEx(..., "") only matches windows with an EMPTY title, so
+        # the first build of this never found 710.ahk (Stop-All left it running, 2026-09-25).
+        $hwnd = [Win710.AhkWindow]::FindWindowEx([IntPtr]::Zero, $hwnd, 'AutoHotkey', [NullString]::Value)
+        if ($hwnd -eq [IntPtr]::Zero) { return [IntPtr]::Zero }
+        $sb = [System.Text.StringBuilder]::new(1024)
+        [void][Win710.AhkWindow]::GetWindowText($hwnd, $sb, $sb.Capacity)
+        if ($sb.ToString().IndexOf($ScriptPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $hwnd }
+    }
+}
+
+function Send-AhkQuit {
+    <# Posts the registered '710sRice.Quit' message to 710.ahk (see the OnMessage next to
+       OpenMainMenu in config\ahk\710.ahk). $true if a 710.ahk window was found and the post
+       went through, $false otherwise -- the caller's kill fallback covers the rest. #>
+    param([Parameter(Mandatory)][string]$ScriptPath)
+    $hwnd = Find-AhkWindow -ScriptPath $ScriptPath
+    if ($hwnd -eq [IntPtr]::Zero) { return $false }
+    $msg = [Win710.AhkWindow]::RegisterWindowMessage('710sRice.Quit')
+    return [Win710.AhkWindow]::PostMessage($hwnd, $msg, [IntPtr]::Zero, [IntPtr]::Zero)
+}
+
+function Initialize-AhkWindowNative {
+    if (-not ('Win710.AhkWindow' -as [type])) {
+        Add-Type -Namespace Win710 -Name AhkWindow -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern uint RegisterWindowMessage(string lpString);
+[DllImport("user32.dll", SetLastError = true)]
+public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
     }
 }
 

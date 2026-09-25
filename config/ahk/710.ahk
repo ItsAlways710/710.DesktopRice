@@ -1270,7 +1270,24 @@ OpenMainMenu(*) {
 ; YASB's home widget "Main Menu" entry runs config\ahk\open-main-menu.ahk, which
 ; posts this registered message to our hidden window (YASB can only launch
 ; programs). Opened on a new thread so the message handler returns at once.
-OnMessage(DllCall('RegisterWindowMessage', 'Str', '710sRice.OpenMainMenu', 'UInt'), (*) => SetTimer(OpenMainMenu, -1))
+;
+; 710.ahk runs with UI Access (AutoHotkey64_UIA.exe) so its hotkeys still land
+; when an admin window has focus. The catch: Windows then drops messages from
+; ordinary processes at our door (UIPI) -- the plain-AutoHotkey64 sender got
+; 'Access is denied' in testing. ChangeWindowMessageFilterEx(MSGFLT_ALLOW = 1)
+; opens the door for exactly these two messages and nothing else. Harmless when
+; running without UI Access (nothing's filtered, so there's nothing to allow).
+AllowFromNormalProcesses(msg) {
+    DllCall('ChangeWindowMessageFilterEx', 'Ptr', A_ScriptHwnd, 'UInt', msg, 'UInt', 1, 'Ptr', 0)
+    return msg
+}
+OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.OpenMainMenu', 'UInt')), (*) => SetTimer(OpenMainMenu, -1))
+
+; And the polite way out. A normal shell can't Stop-Process a UI Access process
+; (also 'Access is denied'), so scripts\Stop-All.ps1 -- via Stop-RunningComponents
+; in tools\lib\activation.ps1 -- asks us to leave instead. AHK only; Stop-All
+; handles komorebi/YASB/ShareX itself, in order, before it gets here.
+OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.Quit', 'UInt')), (*) => SetTimer(() => ExitApp(), -1))
 
 ; Builds a native Menu() tree from the shared {text, action}/{text, sub}
 ; structure -- recursive so Capture/Tiling/System (all one level deep today)

@@ -36,8 +36,9 @@
   running is left alone (each launcher checks first).
 
 .NOTES
-  The AHK check is a plain `Get-Process AutoHotkey64` -- it can't tell 710.ahk apart from
-  another AHK v2 script you might run. Fine for "did something come up".
+  The AHK check is a plain `Get-Process AutoHotkey64, AutoHotkey64_UIA` (the UI Access
+  build is what the sign-in task runs) -- it can't tell 710.ahk apart from another AHK v2
+  script you might run. Fine for "did something come up".
 
 .EXAMPLE
   .\scripts\Start-All.ps1
@@ -97,7 +98,7 @@ $checks = [ordered]@{
     'komorebi'     = @{ Name = 'komorebi';     Test = { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) };     Log = 'komorebi-autostart.log' }
     'yasb'         = @{ Name = 'YASB';         Test = { [bool](Get-Process yasb -ErrorAction SilentlyContinue) };         Log = 'yasb-autostart.log' }
     'sharex'       = @{ Name = 'ShareX';       Test = { [bool](Get-Process ShareX -ErrorAction SilentlyContinue) };       Log = $null }
-    'ahk'          = @{ Name = '710.ahk';      Test = { [bool](Get-Process AutoHotkey64 -ErrorAction SilentlyContinue) }; Log = 'ahk-autostart.log' }
+    'ahk'          = @{ Name = '710.ahk';      Test = { [bool](Get-Process AutoHotkey64, AutoHotkey64_UIA -ErrorAction SilentlyContinue) }; Log = 'ahk-autostart.log' }
 }
 $pending = [System.Collections.Generic.List[string]]::new()
 foreach ($k in $checks.Keys) { if ($components.Key -contains $k) { $pending.Add($k) } }
@@ -110,7 +111,7 @@ foreach ($k in $checks.Keys) {
     if ($components.Key -notcontains $k) { continue }
     $c = $checks[$k]
     if ($pending -notcontains $k) {
-        Step-Ok ("$($c.Name) running" + $(if ($k -eq 'ahk') { ' (an AutoHotkey64 process -- see NOTES)' }))
+        Step-Ok ("$($c.Name) running" + $(if ($k -eq 'ahk') { ' (an AutoHotkey process -- see NOTES)' }))
     } else {
         Step-Warn ("$($c.Name) not running after 20s" + $(if ($c.Log) { " -- check %LOCALAPPDATA%\710.DesktopRice\$($c.Log)" } else { '' }))
     }
