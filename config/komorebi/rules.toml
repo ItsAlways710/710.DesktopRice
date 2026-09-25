@@ -11,3 +11,12 @@
 # rediscovering. Cost: these stay opaque when unfocused.
 [[transparency_ignore]]
 class = "WinUIDesktopWin32WindowClass"
+
+# Claude Desktop ships its main window with WS_EX_LAYERED already set, and
+# komorebi turns away layered windows unless they're whitelisted -- so Claude
+# floated unmanaged on every workspace. Caught 2026-09-25 in komorebi's log:
+# its Hide events passed the eligibility check (Hide skips the layered test),
+# its Show events never did. [[layered]] and NOT [[manage]], on purpose:
+# a manage rule beats ignore rules, which tiled Claude's file picker (#26).
+[[layered]]
+exe = "claude.exe"
