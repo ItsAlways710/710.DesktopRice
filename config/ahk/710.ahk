@@ -91,6 +91,43 @@ LaunchOnCursorMonitor(target, winCriteria) {
         Run('"' KomorebicExe '" move-to-monitor ' mon, , 'Hide')
 }
 
+; SUPER+Alt+Enter: an ADMIN Windows Terminal, on purpose. `*RunAs` means a UAC
+; prompt every time -- by design, elevation stays a choice you make per launch --
+; and AHK itself stays non-elevated (UI Access), so nothing else it starts is admin.
+; Placement works like LaunchOnCursorMonitor() with one difference: it waits for
+; a NEW Terminal window. The plain helper's WinWait takes ANY Terminal, so with a
+; normal one already open it would match that at once -- before UAC is even
+; answered -- and send whatever has focus to the monitor. Up to 30s, to give you
+; time to answer the prompt; the short settle lets komorebi pick the window up
+; before move-to-monitor (which acts on komorebi's focused window) goes out.
+; Elevated tiling (install.ps1's default): komorebi tiles it and moves it to the
+; cursor's monitor. -NoElevatedTiling: komorebi can't touch an admin window, so it
+; floats wherever Windows put it and the move is a harmless no-op. Cancelling
+; UAC makes Run throw -- nothing opened, nothing to place.
+LaunchAdminTerminal() {
+    global KomorebicExe
+    Komorebic('focus-monitor-at-cursor')
+    mon := QueryKomorebic('query focused-monitor-index')
+    before := Map()
+    for hwnd in WinGetList('ahk_class CASCADIA_HOSTING_WINDOW_CLASS')
+        before[hwnd] := true
+    try Run('*RunAs wt.exe')
+    catch
+        return
+    deadline := A_TickCount + 30000
+    while (A_TickCount < deadline) {
+        for hwnd in WinGetList('ahk_class CASCADIA_HOSTING_WINDOW_CLASS') {
+            if !before.Has(hwnd) {
+                try WinActivate(hwnd)
+                Sleep(200)
+                Run('"' KomorebicExe '" move-to-monitor ' mon, , 'Hide')
+                return
+            }
+        }
+        Sleep(250)
+    }
+}
+
 ; Close the window that's actually in front of you: WM_CLOSE straight to the
 ; active window -- the same message clicking its X sends, so "save changes?"
 ; prompts still happen. Ported from winarchy bb72240 (v1.5.0), which dropped
@@ -817,6 +854,8 @@ SysMenuItems := [
                                     ; Windows Terminal (SUPER+Enter) -- WezTerm dropped, matches the
                                     ; user's own user.ahk override on winarchy. Forces the new window
                                     ; onto the cursor's monitor -- see LaunchOnCursorMonitor() above.
+#!Enter::LaunchAdminTerminal()      ; admin Windows Terminal (UAC prompt)
+                                    ; SUPER+Alt+Enter -- Alt for Admin. See LaunchAdminTerminal() above.
 
 ; ============================================================================
 ; Flow Launcher
