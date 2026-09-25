@@ -1113,13 +1113,18 @@ YasbLog(m) {
 ; Quick add rule (Tiling menu)
 ; ============================================================================
 ; Click-to-pick a window, choose what to match it on (exe / class / title,
-; showing that window's real values) and which rule (Float / Ignore / Manage),
-; and it lands in config\komorebi\rules.toml via tools\add-rule.ps1 (ported
-; from winarchy's Add-WinarchyUserRule -- winarchy only ever had a CLI for
-; this, no UI). add-rule.ps1 also applies the rule to the picked window right
-; away, because komorebi only applies rules to windows opened AFTER them (the
-; 2026-09-23 Notepad test); then SUPER+Shift+R's reload makes it stick for
-; every future window. A rule addition always rides komorebi's fast hot-reload
+; showing that window's real values) and which rule (Float / Ignore / Manage /
+; Layered / Opaque), and it lands in YOUR rules file, the gitignored
+; config\komorebi\rules.local.toml, via tools\add-rule.ps1 (ported from
+; winarchy's Add-WinarchyUserRule -- winarchy only ever had a CLI for this, no
+; UI). add-rule.ps1 also applies Float / Ignore / Manage to the picked window
+; right away, because komorebi only applies rules to windows opened AFTER them
+; (the 2026-09-23 Notepad test); then SUPER+Shift+R's reload makes it stick for
+; every future window. Opaque needs no apply-now (it takes the next time the
+; window is focused); Layered can't have one (komorebi still turns the window
+; away until the reload lands), so its toast says to relaunch the app -- what
+; fixed Claude Desktop on 2026-09-25. "Remove a rule..." and "Edit my rules..."
+; below manage the same file (plan doc Open item 38). A rule addition always rides komorebi's fast hot-reload
 ; path, so layouts survive. Every menu here is the palette -- same look,
 ; search and back-nav as SUPER+Esc / SUPER+Alt+Space.
 ;
@@ -1188,23 +1193,44 @@ QuickPickClick(*) {
         return
     }
     QuickTarget := {hwnd: root}
+    ; Suggest Layered for a window that has WS_EX_LAYERED AND isn't managed by
+    ; komorebi -- exactly how Claude Desktop looked before its rule: turned away
+    ; by komorebi's eligibility check. Both halves matter: komorebi's own
+    ; transparency puts that same style on every unfocused TILED window, and the
+    ; pick click is blocked, so the picked window usually isn't focused. "Not
+    ; managed" = its handle appears nowhere in `komorebic state`.
+    suggest := false
+    try suggest := (WinGetExStyle('ahk_id ' root) & 0x80000)
+        && !RegExMatch(QueryKomorebic('state'), '"hwnd":\s*' root '\b')
     ; exe first so Enter takes the common case. Full values: the palette's label
     ; column ends anything too long in "..." on its own (and search still sees
     ; the whole value).
     items := [
-        {text: 'exe: '   exe, sub: QuickRuleItems('exe', exe)},
-        {text: 'class: ' cls, sub: QuickRuleItems('class', cls)} ]
+        {text: 'exe: '   exe, sub: QuickRuleItems('exe', exe, suggest)},
+        {text: 'class: ' cls, sub: QuickRuleItems('class', cls, suggest)} ]
     if (title != '')
-        items.Push({text: 'title: ' title, sub: QuickRuleItems('title', title)})
+        items.Push({text: 'title: ' title, sub: QuickRuleItems('title', title, suggest)})
     PalOpen('quick', items, 'Match on')
 }
 
-QuickRuleItems(field, value) {
-    return [
+QuickRuleItems(field, value, suggestLayered := false) {
+    layered := {text: 'Layered (tile an app komorebi skips)', action: (*) => QuickApplyRule('layered', field, value)}
+    items := [
         {text: 'Float (never tile)',  action: (*) => QuickApplyRule('floating', field, value)},
         {text: 'Ignore (hands off)',  action: (*) => QuickApplyRule('ignore', field, value)},
-        {text: 'Manage (force tile)', action: (*) => QuickApplyRule('manage', field, value)} ]
+        {text: 'Manage (force tile)', action: (*) => QuickApplyRule('manage', field, value)},
+        layered,
+        {text: 'Opaque (never translucent)', action: (*) => QuickApplyRule('transparency_ignore', field, value)} ]
+    if suggestLayered {
+        layered.hint := 'suggested'
+        items.InsertAt(1, items.RemoveAt(4))    ; to the top, so Enter takes it
+    }
+    return items
 }
+
+; Menu name for a rules-file section ([[transparency_ignore]] reads as "Opaque").
+QuickRuleLabel(cat) => Map('floating', 'Float', 'ignore', 'Ignore', 'manage', 'Manage',
+    'layered', 'Layered', 'transparency_ignore', 'Opaque').Get(cat, cat)
 
 QuickApplyRule(cat, field, value) {
     global QuickTarget, RepoRoot
@@ -1227,13 +1253,118 @@ QuickApplyRule(cat, field, value) {
         return
     }
     EnvSet('QUICKADD_VALUE')
-    label := Map('floating', 'Float', 'ignore', 'Ignore', 'manage', 'Manage')[cat]
+    label := QuickRuleLabel(cat)
+    applied := (cat = 'floating' || cat = 'ignore' || cat = 'manage')
     switch code {
-        case 0: ReloadStack(label ' rule added (' field ' ' value ')')
+        case 0: ReloadStack(label ' rule added (' field ' ' value ')' (cat = 'layered' ? ' -- relaunch the app to tile it' : ''))
         case 2: ReloadStack(label ' rule added, not applied to that window (see add-rule.log)')
-        case 3: TrayTip('Already in rules.toml (' label ' ' field ' ' value ') -- applied to that window', '710sRice')
+        case 3: TrayTip('Already there (' label ' ' field ' ' value ')' (applied ? ' -- applied to that window' : ''), '710sRice')
         default: TrayTip('Rule not added (see add-rule.log)', '710sRice')
     }
+}
+
+; --- Remove a rule... / Edit my rules... (Tiling menu) -----------------------
+; Both work on YOUR rules only (rules.local.toml). The rules this repo ships
+; (rules.toml) aren't removable here -- edit and commit those like any config.
+LocalRulesPath() => RepoRoot '\config\komorebi\rules.local.toml'
+
+; Your rules as {section, field, value}, in file order. Same grammar as
+; compile-komorebi-rules.ps1 and tools\remove-rule.ps1: a block is a
+; [[section]] line plus the lines after it up to a blank line; its first
+; exe / class / title line names the rule.
+ReadLocalRules() {
+    rules := []
+    if !FileExist(LocalRulesPath())
+        return rules
+    section := ''
+    loop parse FileRead(LocalRulesPath(), 'UTF-8'), '`n', '`r' {
+        line := Trim(A_LoopField)
+        if RegExMatch(line, '^\[\[(\w+)\]\]$', &m) {
+            section := m[1]
+        } else if (line = '') {
+            section := ''
+        } else if (section != '' && RegExMatch(line, '^(exe|class|title)\s*=\s*"([^"]*)"$', &m)) {
+            rules.Push({section: section, field: m[1], value: m[2]})
+            section := ''                        ; one entry per block
+        }
+    }
+    return rules
+}
+
+RuleText(r) => QuickRuleLabel(r.section) ' ' Chr(0xB7) ' ' r.field ' = ' r.value
+
+RemoveRuleMenu(*) {
+    rules := ReadLocalRules()
+    if !rules.Length {
+        TrayTip('No rules of your own yet -- nothing to remove', '710sRice')
+        return
+    }
+    items := []
+    for r in rules
+        items.Push({text: RuleText(r), action: RemoveRuleConfirm.Bind(r)})
+    PalOpen('rules', items, 'Remove a rule')
+}
+
+RemoveRuleConfirm(r, *) {
+    PalOpen('rules', [
+        {text: 'Remove', action: (*) => RemoveRuleNow(r)},
+        {text: 'Cancel', action: (*) => 0} ], 'Remove ' RuleText(r) '?')
+}
+
+RemoveRuleNow(r) {
+    global RepoRoot
+    EnvSet('REMOVERULE_VALUE', r.value)       ; same no-command-line rule as Quick add
+    try {
+        code := RunWait('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' RepoRoot '\tools\remove-rule.ps1" -Category ' r.section ' -Field ' r.field, , 'Hide')
+    } catch as e {
+        EnvSet('REMOVERULE_VALUE')
+        TrayTip('Remove rule could not start: ' e.Message, '710sRice')
+        return
+    }
+    EnvSet('REMOVERULE_VALUE')
+    ; A removal takes reload-stack's komorebi-restart path -- the only way to drop
+    ; a live rule -- so every open window is checked again straight away.
+    if (code = 0)
+        ReloadStack('Removed ' RuleText(r))
+    else
+        TrayTip('Rule not removed (see remove-rule.log)', '710sRice')
+}
+
+; Opens your rules file, creating it first with the same header add-rule.ps1
+; writes (keep the two in step) so you never land in an empty mystery file.
+; Default app for .toml if Windows has one, else Notepad. Applying stays
+; manual: save, then SUPER+Shift+R.
+EditMyRules(*) {
+    path := LocalRulesPath()
+    if !FileExist(path) {
+        header := "# Your own komorebi rules -- this machine only (gitignored), the highest-priority`n"
+            . "# layer: above rules.toml (the rules this repo ships), games.toml and the vendored`n"
+            . "# community ASC rules. Quick add rule writes here; compiled into komorebi.json by`n"
+            . "# tools\compile-komorebi-rules.ps1 (SUPER+Shift+R). Sections: [[floating]], [[ignore]],`n"
+            . "# [[manage]], [[layered]], [[transparency_ignore]], ... with one of exe / class /`n"
+            . "# title per entry. Want a rule on every machine? Move it into rules.toml and commit.`n`n"
+        try FileAppend(header, path, 'UTF-8-RAW')
+        catch as e {
+            TrayTip("Couldn't create rules.local.toml: " e.Message, '710sRice')
+            return
+        }
+    }
+    ; Ask Windows what opens .toml rather than just Run()ning the file: with no
+    ; app registered, Run() wouldn't fail, it would pop the "How do you want to
+    ; open this?" picker. AssocQueryString (ASSOCSTR_EXECUTABLE = 2) comes back
+    ; empty, or as OpenWith.exe, when nothing is registered -- that's the Notepad case.
+    size := 520
+    buf := Buffer(size * 2, 0)
+    handler := DllCall('shlwapi\AssocQueryStringW', 'UInt', 0, 'UInt', 2, 'Str', '.toml', 'Ptr', 0, 'Ptr', buf, 'UInt*', &size, 'UInt') = 0 ? StrGet(buf) : ''
+    useDefault := (handler != '' && !InStr(handler, 'OpenWith.exe'))
+    try {
+        if useDefault
+            Run('"' path '"')
+        else
+            Run('notepad.exe "' path '"')
+    } catch
+        Run('notepad.exe "' path '"')
+    TrayTip('Save, then SUPER+Shift+R to apply', '710sRice')
 }
 
 ; ============================================================================
@@ -1273,6 +1404,8 @@ CaptureItems := [
 
 TilingItems := [
     {text: 'Quick add rule...',                          action: (*) => QuickAddRule()},
+    {text: 'Remove a rule...',                           action: (*) => RemoveRuleMenu()},
+    {text: 'Edit my rules...',                           action: (*) => EditMyRules()},
     {text: 'Manage this window',                         action: (*) => Komorebic('manage')},
     {text: 'Unmanage this window',                        action: (*) => Komorebic('unmanage')},
     {text: 'Stop tiling this workspace', hint: 'SUPER+Shift+Z', action: (*) => Komorebic('toggle-tiling')},

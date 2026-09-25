@@ -2,7 +2,8 @@
 <#
 .SYNOPSIS
   Compiles config/komorebi/base.json + vendor/asc/applications.json + games.toml +
-  config/komorebi/rules.toml + config/komorebi/display-index.local.json into the real
+  config/komorebi/rules.toml + config/komorebi/rules.local.toml +
+  config/komorebi/display-index.local.json into the real
   config/komorebi/komorebi.json that komorebi reads. Run this after editing any of those
   inputs, then reload komorebi.
 
@@ -20,7 +21,11 @@
       layered_applications): these describe behavior, never conflict, so every layer's
       entries are simply unioned.
 
-  Priority, low to high: vendor/asc -> games.toml -> config/komorebi/rules.toml.
+  Priority, low to high: vendor/asc -> games.toml -> config/komorebi/rules.toml (shipped,
+  tracked) -> config/komorebi/rules.local.toml (yours, gitignored -- Quick add rule writes
+  here; plan doc Open item 38). Because attribute categories are unioned, a local file can
+  ADD a layered/transparency_ignore/... rule but can't cancel a shipped one (accepted; a
+  "turn off a shipped rule" entry is a README future plan).
   "Same window" identity = kind+id (ignoring matching_strategy); a compound (array)
   rule's identity is the sorted combination of all its conditions.
 
@@ -44,6 +49,7 @@ $BasePath         = Join-Path $RepoRoot 'config\komorebi\base.json'
 $AscPath          = Join-Path $RepoRoot 'vendor\asc\applications.json'
 $GamesPath        = Join-Path $RepoRoot 'games.toml'
 $RulesPath        = Join-Path $RepoRoot 'config\komorebi\rules.toml'
+$LocalRulesPath   = Join-Path $RepoRoot 'config\komorebi\rules.local.toml'
 $DisplayIndexPath = Join-Path $RepoRoot 'config\komorebi\display-index.local.json'
 $OutPath          = Join-Path $RepoRoot 'config\komorebi\komorebi.json'
 
@@ -144,8 +150,8 @@ function Get-GamesLayer {
 }
 
 function Get-UserRulesLayer {
-    # config/komorebi/rules.toml - your own overrides. Doesn't need to exist; an absent
-    # file just means "no overrides yet", not an error.
+    # config/komorebi/rules.toml (shipped) or rules.local.toml (yours) -- same grammar, one
+    # call per file. Neither needs to exist; an absent file just means "no rules there".
     #   [[ignore]]
     #   exe = "SomeApp.exe"
     #   [[disable]]
@@ -156,12 +162,14 @@ function Get-UserRulesLayer {
     # `return @(), @()` silently collapses to $null, $null when both are empty
     # (exactly the case on a first run, before rules.toml exists). Wrapping them in
     # one object sidesteps that footgun entirely.
-    if (-not (Test-Path $RulesPath)) { return [pscustomobject]@{ Entries = @(); Disabled = @() } }
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Source)
+    $name = Split-Path $Path -Leaf
+    if (-not (Test-Path $Path)) { return [pscustomobject]@{ Entries = @(); Disabled = @() } }
     $categories = Get-AllCategories
     $currentSection = $null
     $currentEntry = $null
     $sections = [System.Collections.Generic.List[object]]::new()
-    foreach ($rawLine in Get-Content $RulesPath -Encoding UTF8) {
+    foreach ($rawLine in Get-Content $Path -Encoding UTF8) {
         $line = $rawLine.Trim()
         if (-not $line -or $line.StartsWith('#')) { continue }
         if ($line -match '^\[\[(\w+)\]\]$') {
@@ -180,19 +188,19 @@ function Get-UserRulesLayer {
     foreach ($entry in ($sections | Where-Object { $_.__section -ne 'disable' })) {
         $section = $entry.__section
         if (-not $categories.Contains($section)) {
-            Write-Warning "rules.toml: unknown section [[$section]], skipping."
+            Write-Warning "${name}: unknown section [[$section]], skipping."
             continue
         }
         $kind = $null; $id = $null
         if ($entry.Contains('exe'))   { $kind = 'Exe';   $id = $entry['exe'] }
         elseif ($entry.Contains('class')) { $kind = 'Class'; $id = $entry['class'] }
         elseif ($entry.Contains('title')) { $kind = 'Title'; $id = $entry['title'] }
-        else { Write-Warning "rules.toml: [[$section]] entry needs exe/class/title, skipping."; continue }
+        else { Write-Warning "${name}: [[$section]] entry needs exe/class/title, skipping."; continue }
         $strategy = if ($entry.Contains('matching_strategy')) { $entry['matching_strategy'] } else { 'Equals' }
         $out.Add(@{
             Category = $categories[$section]
             Rule     = [pscustomobject]@{ kind = $kind; id = $id; matching_strategy = $strategy }
-            Source   = 'user:rules.toml'
+            Source   = $Source
         })
     }
     return [pscustomobject]@{ Entries = $out; Disabled = $disabled }
@@ -281,13 +289,14 @@ try {
     if (-not (Test-Path $BasePath)) { throw "Missing $BasePath - nothing to compile onto." }
     $base = Get-Content $BasePath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-    $userRules   = Get-UserRulesLayer
-    $userLayer   = $userRules.Entries
-    $disabledAsc = $userRules.Disabled
+    $userRules   = Get-UserRulesLayer -Path $RulesPath -Source 'user:rules.toml'
+    $localRules  = Get-UserRulesLayer -Path $LocalRulesPath -Source 'local:rules.local.toml'
+    $disabledAsc = @($userRules.Disabled) + @($localRules.Disabled)
     $layers = @(
         ,(Get-AscLayer -Disabled $disabledAsc)   # level 0 - lowest priority
         ,(Get-GamesLayer)                        # level 1
-        ,$userLayer                              # level 2 - highest priority
+        ,$userRules.Entries                      # level 2 - shipped rules.toml
+        ,$localRules.Entries                     # level 3 - highest priority: yours
     )
     $merged = Merge-Rules -Layers $layers
 

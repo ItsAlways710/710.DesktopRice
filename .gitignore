@@ -54,6 +54,12 @@
 # there. See claude/winarchy-decoupling-plan.md's multi-monitor section.
 /config/komorebi/display-index.local.json
 
+# YOUR komorebi rules -- Quick add rule writes here (tools/add-rule.ps1), "Remove a
+# rule..." / "Edit my rules..." manage it. Machine-local like user.ahk, so a `git pull`
+# that updates the shipped config/komorebi/rules.toml never collides with your own
+# rules. Want one on every machine? Move it into rules.toml and commit.
+/config/komorebi/rules.local.toml
+
 # Window placement preferences for THIS machine -- `monitor` is keyed by the same
 # machine-local serial_number_id as display-index.local.json above, so this can't be
 # shared across machines either. Captured with extras/window-slots/save-window-layout.ps1; see
