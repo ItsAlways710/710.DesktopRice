@@ -71,52 +71,36 @@ Komorebic(cmd) {
     Run('"' KomorebicExe '" ' cmd, , 'Hide')
 }
 
-; Launches a program and then forces its new top-level window onto whichever
+; Launches a program and then forces its NEW top-level window onto whichever
 ; monitor the mouse cursor is actually on. Windows' own default placement for
 ; an unpositioned window ignores komorebi's focus state entirely (confirmed
 ; by reading this file's old bare #Enter binding plus Windows Terminal's own
 ; settings.json/state.json -- neither targets a monitor; see
 ; claude/winarchy-decoupling-plan.md, New-window placement section), so this
 ; corrects it explicitly after the fact instead of trusting Windows to guess
-; right. The 3s WinWait is a ceiling, not a fixed delay -- it returns the
-; moment winCriteria matches, so a normal-speed launch adds no felt delay; it
-; only matters if the window is unusually slow to appear (or never does), in
-; which case this silently skips the move (today's behaviour, not worse).
-LaunchOnCursorMonitor(target, winCriteria) {
-    global KomorebicExe
-    Komorebic('focus-monitor-at-cursor')
-    mon := QueryKomorebic('query focused-monitor-index')
-    Run(target)
-    if WinWait(winCriteria, , 3)
-        Run('"' KomorebicExe '" move-to-monitor ' mon, , 'Hide')
-}
-
-; SUPER+Alt+Enter: an ADMIN Windows Terminal, on purpose. `*RunAs` means a UAC
-; prompt every time -- by design, elevation stays a choice you make per launch --
-; and AHK itself stays non-elevated (UI Access), so nothing else it starts is admin.
-; Placement works like LaunchOnCursorMonitor() with one difference: it waits for
-; a NEW Terminal window. The plain helper's WinWait takes ANY Terminal, so with a
-; normal one already open it would match that at once -- before UAC is even
-; answered -- and send whatever has focus to the monitor. Up to 30s, to give you
-; time to answer the prompt; the short settle lets komorebi pick the window up
-; before move-to-monitor (which acts on komorebi's focused window) goes out.
-; Elevated tiling (install.ps1's default): komorebi tiles it and moves it to the
-; cursor's monitor. -NoElevatedTiling: komorebi can't touch an admin window, so it
-; floats wherever Windows put it and the move is a harmless no-op. Cancelling
-; UAC makes Run throw -- nothing opened, nothing to place.
-LaunchAdminTerminal() {
+; right.
+; "New" is the point: it snapshots the windows matching winCriteria before the
+; launch and only acts on one that wasn't there. A plain WinWait takes ANY
+; match, so with a Terminal already open it returned at once and sent whatever
+; komorebi had focused to the monitor (Open item 42). The short settle lets
+; komorebi pick the new window up first -- move-to-monitor acts on komorebi's
+; focused window, not on an hwnd. timeoutMs is a ceiling, not a delay: the poll
+; stops the moment the window shows up. Nothing new in time (slow start, or
+; Terminal set to open tabs in an existing window) = no move, nothing disturbed.
+; A launch that throws (a cancelled UAC prompt, for one) = nothing to place.
+LaunchOnCursorMonitor(target, winCriteria, timeoutMs := 3000) {
     global KomorebicExe
     Komorebic('focus-monitor-at-cursor')
     mon := QueryKomorebic('query focused-monitor-index')
     before := Map()
-    for hwnd in WinGetList('ahk_class CASCADIA_HOSTING_WINDOW_CLASS')
+    for hwnd in WinGetList(winCriteria)
         before[hwnd] := true
-    try Run('*RunAs wt.exe')
+    try Run(target)
     catch
         return
-    deadline := A_TickCount + 30000
+    deadline := A_TickCount + timeoutMs
     while (A_TickCount < deadline) {
-        for hwnd in WinGetList('ahk_class CASCADIA_HOSTING_WINDOW_CLASS') {
+        for hwnd in WinGetList(winCriteria) {
             if !before.Has(hwnd) {
                 try WinActivate(hwnd)
                 Sleep(200)
@@ -124,8 +108,20 @@ LaunchAdminTerminal() {
                 return
             }
         }
-        Sleep(250)
+        Sleep(100)
     }
+}
+
+; SUPER+Alt+Enter: an ADMIN Windows Terminal, on purpose. `*RunAs` means a UAC
+; prompt every time -- by design, elevation stays a choice you make per launch --
+; and AHK itself stays non-elevated (UI Access), so nothing else it starts is admin.
+; Placement is LaunchOnCursorMonitor() with 30s instead of 3s, to give you time
+; to answer the prompt. Elevated tiling (install.ps1's default): komorebi tiles
+; it and moves it to the cursor's monitor. -NoElevatedTiling: komorebi can't
+; touch an admin window, so it floats wherever Windows put it and the move is a
+; harmless no-op. Cancelling UAC makes Run throw -- nothing opened, nothing to place.
+LaunchAdminTerminal() {
+    LaunchOnCursorMonitor('*RunAs wt.exe', 'ahk_class CASCADIA_HOSTING_WINDOW_CLASS', 30000)
 }
 
 ; Close the window that's actually in front of you: WM_CLOSE straight to the
