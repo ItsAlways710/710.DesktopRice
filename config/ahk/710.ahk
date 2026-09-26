@@ -922,6 +922,11 @@ ToggleFlowScoped(prefix) {
 ; Stay awake
 ; ============================================================================
 AwakeFlag := StateDir "\stay-awake.flag"
+; The flag survives this process; SetThreadExecutionState doesn't -- Windows drops it
+; the moment AHK exits (Reload(), 710sRice stop/start, a reboot). So every start puts
+; it back, and the menu's "on" stays true.
+if FileExist(AwakeFlag)
+    DllCall('SetThreadExecutionState', 'UInt', 0x80000003)   ; ES_CONTINUOUS | SYSTEM | DISPLAY
 
 ToggleStayAwake() {
     global AwakeFlag
