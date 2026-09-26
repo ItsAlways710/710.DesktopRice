@@ -55,11 +55,20 @@
   install from before 2026-09-26 that hasn't been re-run, or a failed registration) is
   logged and skipped.
 
+  -BarOnly (`710sRice reload bar`, never AHK -- SUPER+Shift+R is exactly the above): step 3
+  alone, and ALWAYS -- the manual "restart the bar" for what step 3 deliberately skips (a
+  weather setting change, a bar that's up but wrong). Same kill/wait/start-through-its-task
+  code, same log, no rule compile, no komorebi steps. First a pause check: a bar started
+  while komorebi is paused never connects its komorebi widgets (plan doc Open item 41), so
+  with komorebi paused (`komorebic state` -> is_paused, komorebi 0.1.41) it leaves YASB alone
+  and exits 3. komorebi not running at all -> restarts the bar anyway.
+
   Exit codes: 0 = everything reloaded; 1 = rule compile failed, nothing was touched;
-  2 = compile was fine but at least one later step failed (see the log).
+  2 = compile was fine but at least one later step failed (see the log); 3 = -BarOnly only:
+  komorebi is paused, the bar was left alone.
 #>
 [CmdletBinding()]
-param()
+param([switch]$BarOnly)
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 
@@ -252,9 +261,51 @@ function Restore-Layouts($Snap) {
     if ($restored -eq 0 -and $columnFixes.Count -eq 0) { Write-Log '   nothing needed restoring.' }
 }
 
+function Restart-Yasb([string]$Reason) {
+    <# Step 3's kill + start -- and all of -BarOnly. $false if a step failed (it's logged). #>
+    $ok = $true
+    if (Get-Process yasb -ErrorAction SilentlyContinue) {
+        Write-Log "3. YASB restarting ($Reason)."
+        Stop-Process -Name yasb -Force -ErrorAction SilentlyContinue
+        # Start-Yasb.ps1 no-ops if it still sees a yasb process, so wait for the kill to land.
+        $deadline = (Get-Date).AddSeconds(5)
+        while ((Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+        if (Get-Process yasb -ErrorAction SilentlyContinue) {
+            Write-Log '3. YASB still alive 5s after kill -- not restarting it.'
+            $ok = $false
+        } else {
+            Write-Log '3. YASB stopped.'
+        }
+    } else {
+        Write-Log "3. YASB wasn't running."
+    }
+    if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
+        if (-not (Start-AutostartTask 'yasb')) { $ok = $false }
+    }
+    $ok
+}
+
 $failed = $false
-Write-Log '--- reload-stack (SUPER+Shift+R) ---'
 $komorebiUp = [bool](Get-Process komorebi -ErrorAction SilentlyContinue) -and [bool]$komorebic
+
+# --- -BarOnly: `710sRice reload bar` -- step 3 alone, always (see the header) -----------------
+if ($BarOnly) {
+    Write-Log '--- reload-stack -BarOnly (710sRice reload bar) ---'
+    if ($komorebiUp) {
+        $paused = $false
+        try { $paused = [bool]((Invoke-Kc state) -join "`n" | ConvertFrom-Json).is_paused }
+        catch { Write-Log "   couldn't read komorebi's state -- restarting the bar anyway: $($_.Exception.Message)" }
+        if ($paused) {
+            Write-Log '   komorebi is paused -- bar left alone (a bar started now would never connect; unpause with SUPER+P first).'
+            exit 3
+        }
+    }
+    if (Restart-Yasb 'asked for: 710sRice reload bar') { Write-Log 'done.'; exit 0 }
+    Write-Log 'done, with failures (see above).'
+    exit 2
+}
+
+Write-Log '--- reload-stack (SUPER+Shift+R) ---'
 
 # --- 0. Snapshot live layouts -------------------------------------------------------------
 $snapshot = $null
@@ -387,23 +438,8 @@ if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
 }
 if (-not $yasbReason) {
     Write-Log '3. YASB left running (config.yaml unchanged, komorebi not restarted).'
-} elseif (Get-Process yasb -ErrorAction SilentlyContinue) {
-    Write-Log "3. YASB restarting ($yasbReason)."
-    Stop-Process -Name yasb -Force -ErrorAction SilentlyContinue
-    # Start-Yasb.ps1 no-ops if it still sees a yasb process, so wait for the kill to land.
-    $deadline = (Get-Date).AddSeconds(5)
-    while ((Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-    if (Get-Process yasb -ErrorAction SilentlyContinue) {
-        Write-Log '3. YASB still alive 5s after kill -- not restarting it.'
-        $failed = $true
-    } else {
-        Write-Log '3. YASB stopped.'
-    }
-} else {
-    Write-Log "3. YASB wasn't running."
-}
-if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
-    if (-not (Start-AutostartTask 'yasb')) { $failed = $true }
+} elseif (-not (Restart-Yasb $yasbReason)) {
+    $failed = $true
 }
 
 if ($failed) { Write-Log 'done, with failures (see above).'; exit 2 }

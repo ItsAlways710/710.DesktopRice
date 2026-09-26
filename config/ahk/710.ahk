@@ -1445,8 +1445,9 @@ OpenMainMenu(*) {
 ; when an admin window has focus. The catch: Windows then drops messages from
 ; ordinary processes at our door (UIPI) -- the plain-AutoHotkey64 sender got
 ; 'Access is denied' in testing. ChangeWindowMessageFilterEx(MSGFLT_ALLOW = 1)
-; opens the door for exactly these two messages and nothing else. Harmless when
-; running without UI Access (nothing's filtered, so there's nothing to allow).
+; opens the door for exactly the three 710sRice.* messages below and nothing
+; else. Harmless when running without UI Access (nothing's filtered, so there's
+; nothing to allow).
 AllowFromNormalProcesses(msg) {
     DllCall('ChangeWindowMessageFilterEx', 'Ptr', A_ScriptHwnd, 'UInt', msg, 'UInt', 1, 'Ptr', 0)
     return msg
@@ -1458,6 +1459,12 @@ OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710s
 ; in tools\lib\activation.ps1 -- asks us to leave instead. AHK only; Stop-All
 ; handles komorebi/YASB/ShareX itself, in order, before it gets here.
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.Quit', 'UInt')), (*) => SetTimer(() => ExitApp(), -1))
+
+; `710sRice reload` knocks here: the very same ReloadStack() as SUPER+Shift+R --
+; same toasts, same double-press guard, same Reload() at the end. A reload
+; already mid-flight shrugs it off; the CLI just reports that one instead (it
+; reads reload-stack.log, not us).
+OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.ReloadStack', 'UInt')), (*) => SetTimer(ReloadStack, -1))
 
 ; Builds a native Menu() tree from the shared {text, action}/{text, sub}
 ; structure -- recursive so Capture/Tiling/System (all one level deep today)

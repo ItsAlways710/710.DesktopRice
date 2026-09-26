@@ -24,11 +24,13 @@
   admin window -- one UAC prompt -- and waits for it: `pwsh -File 710sRice.ps1 --elevated
   <command as typed>`. The admin window holds the output and always ends with "Press Enter to
   close"; this window reports its exit code and passes it on. Already admin: it just runs.
-  Nothing that STARTS the stack needs that: start goes through the sign-in tasks, which carry
-  their own run level, so it's safe from any window (see claude/cli-plan.md).
+  Nothing that STARTS the stack needs that: start, reload and reload bar only ever start
+  things through the components' own scheduled tasks, which carry their own run level, so
+  they're safe from any window (see claude/cli-plan.md).
 
   Exit codes: help 0; unknown command, an error or a declined UAC prompt 1; otherwise the
-  called script's own (relayed from the admin window when it ran there).
+  called script's own (relayed from the admin window when it ran there) -- for reload, read
+  from reload-stack.log, since 710.ahk is the one that runs it.
 
   Never run this hidden (AHK, scheduled tasks). When its window was opened just for it (the
   Run dialog, an Explorer double-click, the elevated relaunch) it ends with "Press Enter to
@@ -39,6 +41,7 @@
   710sRice install -?                 # one command's usage
   .\710sRice.ps1 install -Activate    # the very first install, from the repo folder
   710sRice uninstall -DryRun -Keep AutoHotkey.AutoHotkey,ShareX.ShareX
+  710sRice reload bar                 # just the bar, e.g. after a weather setting change
 #>
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
@@ -61,12 +64,24 @@ $Commands = [ordered]@{
                      Run = { Invoke-RiceScript 'scripts\Start-All.ps1' @args } }
     'stop'      = @{ Usage = 'stop'; Help = 'Stop the stack'; Admin = 'Any'
                      Run = { Invoke-RiceScript 'scripts\Stop-All.ps1' @args } }
+    # activation.ps1 (Send-AhkMessage) is loaded here, not at the top, so the other commands
+    # -- help above all -- don't pay for parsing it. Dot-sourced into this block's scope,
+    # which Invoke-RiceReload runs inside of.
+    'reload'    = @{ Usage = 'reload'; Help = 'Reload the whole stack (same as SUPER+Shift+R)'; Admin = 'Any'
+                     Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Invoke-RiceReload } }
+    'reload bar' = @{ Usage = 'reload bar'; Help = 'Restart just the bar (YASB)'; Admin = 'Any'
+                     Run = { Invoke-RiceReloadBar } }
 }
 
 # Anywhere after a command these mean "tell me about it" -- never run it, never elevate.
 $HelpFlags = @('-h', '-?', '/?', '--help')
 
 function Write-RiceError { param([string]$Message) Write-Host "  [XX] $Message" -ForegroundColor Red }
+# The same three the scripts print with -- and tools\lib\activation.ps1 expects its caller to
+# have them before it's dot-sourced (see its header).
+function Step-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -ForegroundColor Green }
+function Step-Info { param([string]$Message) Write-Host "  [..] $Message" -ForegroundColor Cyan }
+function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -ForegroundColor Yellow }
 
 function Invoke-RiceScript {
     # $args[0] is the script (relative to the repo), the rest the arguments as typed, switch
@@ -78,6 +93,112 @@ function Invoke-RiceScript {
     $global:LASTEXITCODE = 0
     & $path @rest
     $script:RiceExit = if ($?) { 0 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
+}
+
+# --- reload / reload bar -------------------------------------------------------------------------
+$RiceReloadLog = Join-Path $env:LOCALAPPDATA '710.DesktopRice\reload-stack.log'
+
+function Read-RiceLogFrom {
+    # Everything written to the log since byte $Offset. A log that's now SHORTER than that got
+    # rotated to .old -- which reload-stack.ps1 only does at the very start of a run, before its
+    # first line -- so then all of it is new. Opened share-everything: a run may be appending.
+    param([string]$Path, [long]$Offset)
+    if (-not (Test-Path -LiteralPath $Path)) { return '' }
+    $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+                                 [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+    $sr = [System.IO.StreamReader]::new($fs)   # disposing the reader closes the file too
+    try {
+        if ($fs.Length -lt $Offset) { $Offset = 0 }
+        $null = $fs.Seek($Offset, [System.IO.SeekOrigin]::Begin)
+        $sr.ReadToEnd()
+    } finally { $sr.Dispose() }
+}
+
+function Get-RiceReloadOutcome {
+    # The first full reload that ENDS in $Text: its exit code, as reload-stack.ps1 gives it,
+    # and its log lines (from its header, when that's in $Text too). $null while none has. A
+    # `reload bar` run (-BarOnly) that happens to finish in between is skipped -- its 'done.'
+    # isn't ours.
+    param([string]$Text)
+    $lines = @("$Text" -split "`r?`n" | Where-Object { $_ })
+    $inBar = $false
+    $start = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $m = $lines[$i] -replace '^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d  ', ''
+        if ($m -like '--- reload-stack -BarOnly*') { $inBar = $true; continue }
+        if ($m -like '--- reload-stack*')          { $inBar = $false; $start = $i; continue }
+        $code = if ($m -eq 'done.') { 0 } elseif ($m -like 'done, with failures*') { 2 } elseif ($m -like '1. rule compile FAILED*') { 1 } else { $null }
+        if ($null -eq $code) { continue }
+        if ($inBar) { $inBar = $false; continue }
+        return [pscustomobject]@{ Code = $code; Lines = @($lines[$start..$i]) }
+    }
+    $null
+}
+
+function Write-RiceReloadResult {
+    # Same words as 710.ahk's toasts. When it didn't go cleanly, the run's own log lines too.
+    param([int]$Code, [string[]]$Lines)
+    $script:RiceExit = $Code
+    switch ($Code) {
+        0       { Step-Ok 'Stack reloaded' }
+        1       { Write-RiceError 'Rules failed to compile -- nothing reloaded (see reload-stack.log)' }
+        default { Step-Warn 'Reloaded, with errors (see reload-stack.log)' }
+    }
+    if ($Code -ne 0) { $Lines | ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray } }
+}
+
+function Invoke-RiceReload {
+    # `reload` = SUPER+Shift+R: 710.ahk runs its own ReloadStack() (toasts, double-press guard,
+    # its Reload() at the end), we read the result from reload-stack.log -- only what's written
+    # after the post, so an older run can't pass for this one. A reload already running when we
+    # post: AHK ignores ours and we report that one, which is the one that counts anyway.
+    $ahk    = Join-Path $Root 'config\ahk\710.ahk'
+    $offset = if (Test-Path -LiteralPath $RiceReloadLog) { (Get-Item -LiteralPath $RiceReloadLog).Length } else { 0 }
+    if (Send-AhkMessage -ScriptPath $ahk -Name '710sRice.ReloadStack') {
+        Step-Info 'Reloading (same as SUPER+Shift+R)...'
+        $deadline = (Get-Date).AddMinutes(2)
+        $outcome  = $null
+        while (-not $outcome -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 250
+            $outcome = Get-RiceReloadOutcome (Read-RiceLogFrom $RiceReloadLog $offset)
+        }
+        if ($outcome) { Write-RiceReloadResult $outcome.Code $outcome.Lines }
+        else {
+            Step-Warn 'No result in reload-stack.log after 2 minutes -- check its toasts and the log.'
+            $script:RiceExit = 2
+        }
+        return
+    }
+    # No 710.ahk: run the script ourselves. Safe from any window (it starts things only through
+    # their tasks), but nothing brings AHK back afterwards -- so say what does.
+    Step-Info "Reloading without 710.ahk (it isn't running)..."
+    Invoke-RiceScript 'tools\reload-stack.ps1'
+    Write-RiceReloadResult $script:RiceExit (Get-RiceReloadOutcome (Read-RiceLogFrom $RiceReloadLog $offset)).Lines
+    Step-Warn "710.ahk isn't running -- reloaded without it; ``710sRice start`` brings it back."
+}
+
+function Invoke-RiceReloadBar {
+    # `reload bar`: reload-stack.ps1 -BarOnly, right here -- no AHK, no Reload(). YASB only ever
+    # starts through its task, so any window will do. "Restarted" only once yasb.exe is back:
+    # the script is done when the task has fired, and YASB takes a few seconds after that.
+    $offset = if (Test-Path -LiteralPath $RiceReloadLog) { (Get-Item -LiteralPath $RiceReloadLog).Length } else { 0 }
+    Step-Info 'Restarting the bar...'
+    Invoke-RiceScript 'tools\reload-stack.ps1' -BarOnly
+    switch ($script:RiceExit) {
+        0 {
+            $deadline = (Get-Date).AddSeconds(15)
+            while (-not (Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+            if (Get-Process yasb -ErrorAction SilentlyContinue) { Step-Ok 'Bar restarted' }
+            else { Step-Warn "Bar's task fired, but YASB isn't up after 15s -- it may still be starting (see yasb-autostart.log)." }
+            Step-Info 'Apps tiled through a layered rule (Claude Desktop) can pick up an extra title bar when the bar restarts -- relaunch the app if you see one.'
+        }
+        3 { Step-Warn 'komorebi is paused -- unpause it first (SUPER+P). A bar started during a pause never connects to komorebi.' }
+        default {
+            Step-Warn 'Bar restart had errors (see reload-stack.log)'
+            ((Read-RiceLogFrom $RiceReloadLog $offset) -split "`r?`n" | Where-Object { $_ }) |
+                ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
+        }
+    }
 }
 
 # --- Admin: reopen in an admin window ------------------------------------------------------------

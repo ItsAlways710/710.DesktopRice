@@ -1393,15 +1393,24 @@ function Find-AhkWindow {
     }
 }
 
-function Send-AhkQuit {
-    <# Posts the registered '710sRice.Quit' message to 710.ahk (see the OnMessage next to
-       OpenMainMenu in config\ahk\710.ahk). $true if a 710.ahk window was found and the post
-       went through, $false otherwise -- the caller's kill fallback covers the rest. #>
-    param([Parameter(Mandatory)][string]$ScriptPath)
+function Send-AhkMessage {
+    <# Posts the registered window message -Name ('710sRice.Quit', '710sRice.ReloadStack') to
+       710.ahk -- see the OnMessage hooks next to OpenMainMenu in config\ahk\710.ahk, each let
+       through UIPI there because AHK runs with UI Access. $true if a 710.ahk window was found
+       and the post went through, $false otherwise (AHK not running, as far as the caller
+       cares). Fire-and-forget: a post doesn't wait for AHK to act on it. #>
+    param([Parameter(Mandatory)][string]$ScriptPath, [Parameter(Mandatory)][string]$Name)
     $hwnd = Find-AhkWindow -ScriptPath $ScriptPath
     if ($hwnd -eq [IntPtr]::Zero) { return $false }
-    $msg = [Win710.AhkWindow]::RegisterWindowMessage('710sRice.Quit')
+    $msg = [Win710.AhkWindow]::RegisterWindowMessage($Name)
     return [Win710.AhkWindow]::PostMessage($hwnd, $msg, [IntPtr]::Zero, [IntPtr]::Zero)
+}
+
+function Send-AhkQuit {
+    <# Asks 710.ahk to quit ('710sRice.Quit'). $false = no 710.ahk window found; the caller's
+       kill fallback covers the rest. #>
+    param([Parameter(Mandatory)][string]$ScriptPath)
+    Send-AhkMessage -ScriptPath $ScriptPath -Name '710sRice.Quit'
 }
 
 function Initialize-AhkWindowNative {
