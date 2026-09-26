@@ -1,0 +1,1 @@
+@setlocal EnableDelayedExpansion & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\710sRice.ps1" %* & (if errorlevel 9009 echo 710sRice needs PowerShell 7 -- pwsh was not found on PATH. & pause) & exit /b !errorlevel!

@@ -12,6 +12,10 @@
     pointing at this repo, and mirrors them into the current process so the rest of this
     run sees them too. DESKTOPRICE_HOME (the repo root) is what config\yasb\config.yaml's
     own paths are built from ($env:DESKTOPRICE_HOME), so the repo can live anywhere.
+  - Puts <repo>\bin on the user PATH (bin\710sRice.cmd, the `710sRice` command) --
+    written raw as REG_EXPAND_SZ so the user's other %VAR% PATH entries keep expanding
+    (Add-UserPathEntry in tools\lib\activation.ps1). Works in this window at once, and in
+    any PS7 window opened after the run.
   - Installs wallust (tools/install-wallust.ps1) if it's missing or behind its pin.
   - Refreshes this machine's real monitor identity in
     config/komorebi/display-index.local.json (gitignored, machine-local) via
@@ -270,6 +274,24 @@ foreach ($v in $weatherVars) {
 }
 if ($weatherMissing) {
     Step-Info 'The weather widget shows an error until both are set -- re-run .\install.ps1, or `setx` them yourself (see README).'
+}
+
+# --- 2c. PATH: the 710sRice command --------------------------------------------------
+# bin\ holds one file, 710sRice.cmd -- a one-line shim that runs 710sRice.ps1 with pwsh -- so
+# `710sRice <command>` works from any PS7 window opened from now on. Add-UserPathEntry keeps
+# every other user PATH entry exactly as stored (%VARS% and all), appends ours, writes it back
+# as REG_EXPAND_SZ and tells Explorer; it also adds bin\ to this window. A failure here
+# only costs the shortcut, so it warns instead of stopping the install.
+Write-Host "`n-- 710sRice command --" -ForegroundColor Cyan
+$riceBin = Join-Path $Root 'bin'
+try {
+    if (Add-UserPathEntry -Dir $riceBin) {
+        Step-Ok "710sRice command: $riceBin added to your PATH (open a new PS7 window to use it)"
+    } else {
+        Step-Ok '710sRice command: already on your PATH'
+    }
+} catch {
+    Step-Warn "710sRice command: couldn't add $riceBin to your PATH -- $($_.Exception.Message)"
 }
 
 # --- 3. wallust -----------------------------------------------------------------------

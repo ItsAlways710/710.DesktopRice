@@ -1,0 +1,3 @@
+# cmd.exe wants CRLF batch files (LF breaks if/else blocks and labels), so every .cmd -- today
+# just bin\710sRice.cmd -- checks out CRLF on every machine. Same rule as winarchy's.
+*.cmd text eol=crlf

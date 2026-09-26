@@ -12,7 +12,8 @@
   and the lock-screen image itself), everything install.ps1 applies unconditionally (the
   pwsh $PROFILE hook, Windows Defender exclusions, the desktop wallpaper, Windows accent
   color/dark-mode, Windows Terminal's colorScheme/theme/default shell, Flow Launcher's
-  ActionKeyword merge/identity toggles/Everything plugin), the env vars and winget pins
+  ActionKeyword merge/identity toggles/Everything plugin), the env vars, the `710sRice`
+  command's user-PATH entry (<repo>\bin, only that exact entry) and winget pins
   install.ps1 sets, then removes the packages this repo's own install.ps1 installs --
   EXCEPT any row versions.md marks Pre-existing? = yes, which is left alone unless you
   pass -Force (see versions.md for what that column means and why most rows currently
@@ -307,6 +308,18 @@ Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (
         [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $null, 'User')
     }
 } 'Env vars reverted'
+
+# The 710sRice command: only this clone's bin\ comes off the user PATH; every other entry is
+# written back exactly as stored (Remove-UserPathEntry). Reports its own result line, hence
+# Invoke-ActivationRevert (same -DryRun gate, no extra "done" line) rather than Invoke-Step.
+$riceBin = Join-Path $Root 'bin'
+Invoke-ActivationRevert "Remove $riceBin from your user PATH (the 710sRice command)" {
+    if (Remove-UserPathEntry -Dir $riceBin) {
+        Step-Ok "710sRice command: $riceBin removed from your PATH"
+    } else {
+        Step-Info "710sRice command: wasn't on your PATH"
+    }
+}
 
 # --- 5. Remove winget pins -----------------------------------------------------------
 Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
