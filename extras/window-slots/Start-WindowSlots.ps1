@@ -1,4 +1,6 @@
-# Start-WindowSlots.ps1 -- keeps every PINNED window in the slot the user gave it.
+# Start-WindowSlots.ps1 -- keeps every PINNED window in the slot (tile position within its
+# workspace) the user gave it. It never moves a window to another monitor or workspace --
+# see window-slots.ps1's header.
 #
 # NOT WIRED IN (unwired 2026-09-24) -- see README.md in this folder. It used to be launched
 # hidden by an At-LogOn Scheduled Task (tools/lib/activation.ps1's Get-AutostartComponents). Subscribes to komorebi's events over a named pipe and reacts

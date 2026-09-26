@@ -432,7 +432,8 @@ tested", so if something odd shows up around admin windows, that's the first thi
 ## Future plans
 
 - **A proper README pass:** screenshots and a short demo.
-- **Window slots.** Pin an app to the monitor, workspace and tile position you choose, and
-  it goes back there every time it opens. Move a pinned app yourself and it learns the new
-  spot.
+- **Pin an app to a workspace.** A Quick add action that makes an app open on the monitor
+  and workspace you pick, using komorebi's own workspace rules -- no extra background
+  process. By default you can still move it afterwards; optionally lock it there. Saved in
+  your machine-local `rules.local.toml`.
 - **Turn off a shipped rule locally,** without editing the tracked `rules.toml`.

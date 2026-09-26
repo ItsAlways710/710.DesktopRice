@@ -1,9 +1,14 @@
-# window-slots (not wired in)
+# window-slots (closed, not wired in)
 
-Keeps chosen apps on the monitor, workspace and tile position you gave them. Ported from
-winarchy. **Not part of the running stack:** it was unwired on 2026-09-24 because no app
-was ever pinned, so the daemon sat idle at every sign-in. The code is kept here as a
-possible future feature.
+Ported from winarchy. **What it actually does:** keeps a pinned app in the tile position
+you gave it *within the workspace it already opened on*. It never moves a window to its
+saved monitor or workspace -- in winarchy that half came from komorebi's own workspace
+rules (`Add-WinarchyWindowRulesToKomorebiJson`), which was never ported here.
+
+**Status:** unwired on 2026-09-24 (no app was ever pinned, so the daemon sat idle at every
+sign-in) and closed on 2026-09-25. Monitor/workspace pinning is planned instead as a Quick
+add "pin to this workspace" action on komorebi's own rules, with no daemon (see Future
+plans in the main README). This folder is kept for reference and may be deleted later.
 
 ## What's here
 
@@ -26,7 +31,8 @@ All of it needs PowerShell 7.
 
 ## Wiring it back in
 
-It used to be an autostart component. To bring it back:
+It used to be an autostart component. Wiring it back gives you tile order only (see above).
+To bring it back:
 
 - `tools\lib\activation.ps1`: add it back to `Get-AutostartComponents` (a hidden
   powershell.exe host that starts pwsh on `Start-WindowSlots.ps1`, 10s delay so komorebi

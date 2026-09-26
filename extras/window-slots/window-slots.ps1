@@ -36,11 +36,16 @@
      real multi-monitor reconnect/disconnect test either.
 
   Placement-on-open (winarchy's Add-WinarchyWindowRulesToKomorebiJson, which injects saved
-  preferences as initial_workspace_rules/workspace_rules into komorebi.json) is also NOT
-  ported as winarchy implements it -- it depended on live komorebi state at apply time,
-  which doesn't fit this repo's compile-everything-from-files model. Equivalent placement
-  is done offline instead, in tools/compile-komorebi-rules.ps1, using the same install-time
-  serial_number_id map deviation (1) already uses.
+  preferences as initial_workspace_rules/workspace_rules into komorebi.json) was NOT
+  ported, and nothing else does it: tools/compile-komorebi-rules.ps1 never reads
+  config/windows.toml. (An earlier version of this comment claimed compile did it
+  offline -- it never did; corrected 2026-09-25.) So this code only ever reorders a pinned
+  window's TILE POSITION within the workspace it already opened on; it never moves a
+  window to its saved monitor or workspace. In winarchy, too, that half came from komorebi's
+  own workspace rules, and "learning" only ever meant the tile position.
+  Closed 2026-09-25: the monitor/workspace half is planned instead as a Quick add
+  "pin to this workspace" action on komorebi's own rules, with no daemon (plan doc, Open
+  item 43, parked until the Godzilla install).
 #>
 
 # --- komorebi process / CLI helpers ---------------------------------------------------
