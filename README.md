@@ -37,14 +37,14 @@ The bar's weather widget needs a free API key from [weatherapi.com](https://www.
 (sign up, then copy the key from your dashboard). YASB's
 [weather widget page](https://github.com/amnweb/yasb/wiki/(Widget)-Weather) has the details.
 
-You don't have to set anything up ahead of time. `install.ps1` asks for two values:
+You don't have to set anything up ahead of time. The installer asks for two values:
 
 - `YASB_WEATHER_API_KEY` — your weatherapi.com key
 - `YASB_WEATHER_LOCATION` — a zip/postal code or city name
 
 It only asks for the ones that aren't set yet, never prints what's stored, and Enter skips.
-Skip them and the widget shows an error until they're set; re-run the installer or set them
-yourself:
+Skip them and the widget shows an error until they're set; run `710sRice install` again or
+set them yourself:
 
 ```powershell
 setx YASB_WEATHER_API_KEY "your-key"
@@ -56,7 +56,7 @@ them alone. If you set or change them after the bar is already running, restart 
 pick them up (a running program never sees a new `setx` value):
 
 ```powershell
-Stop-Process -Name yasb     # the watchdog brings it back within about 10 seconds
+710sRice reload bar
 ```
 
 The widget shows **°F**. For °C, open `config/yasb/config.yaml`, find the `weather:` widget
@@ -66,19 +66,20 @@ and change `units: "imperial"` to `units: "metric"`.
 
 - Windows 11
 - winget (built into current Windows 11)
-- **PowerShell 7, installed first.** The installer, uninstaller and the scripts you run
-  yourself all need it, so install it before anything else:
+- **PowerShell 7, installed first.** The `710sRice` command and everything it runs need it,
+  so install it before anything else:
 
   ```powershell
   winget install --id 9MZ1SNWT0N5D --source msstore
   ```
 
-  That's the Microsoft Store build, the same package `install.ps1` checks for. It isn't
+  That's the Microsoft Store build, the same package the installer checks for. It isn't
   tied to a version: it installs the current release and keeps itself updated, and
   nothing here cares which 7.x you have. If the Store is blocked on your machine,
   `winget install --id Microsoft.PowerShell --source winget` works too.
-- An **admin** PowerShell 7 window for `install.ps1` and `uninstall.ps1` (Defender
-  exclusions, the lock-screen image and komorebi's elevated sign-in task need it).
+- Admin rights for install and uninstall (Defender exclusions, the lock-screen image and
+  komorebi's elevated sign-in task need them). You don't open an admin window for that:
+  both ask with a UAC prompt.
 
 Clone the repo wherever you like. The installer records its location in
 `DESKTOPRICE_HOME`, and everything else finds it from there.
@@ -93,9 +94,14 @@ cd 710.DesktopRice
 There are two ways to run it: **full-time**, where it's your desktop from the moment you sign
 in, or **on demand**, where you start it when you want it and stop it when you don't.
 
+The first install runs from a normal PowerShell 7 window in the repo folder, as
+`.\710sRice.ps1`. It opens an admin window for the install itself (one UAC prompt) and waits
+for it. After that, `710sRice` works in any PowerShell 7 window, the one you started from
+included, and once the stack is running SUPER+Enter opens one.
+
 ### What install always does
 
-Either way, `install.ps1`:
+Either way, the installer:
 
 - Installs the packages with winget. komorebi, YASB, AutoHotkey, Flow Launcher and
   Everything are **pinned** to tested versions so a `winget upgrade --all` can't move them
@@ -115,14 +121,14 @@ Either way, `install.ps1`:
   you already had are left alone).
 - Sets komorebi up to run **elevated**, so windows running as administrator tile like
   everything else. See [Admin windows](#admin-windows), including how to opt out
-  (`-NoElevatedTiling`) and why you might.
+  (`710sRice tiling normal`) and why you might.
 
 ### Full-time: `-Activate`
 
-From an admin PowerShell 7 window in the repo folder:
+From a PowerShell 7 window in the repo folder:
 
 ```powershell
-.\install.ps1 -Activate
+.\710sRice.ps1 install -Activate
 ```
 
 On top of the above, this:
@@ -182,21 +188,22 @@ lock-screen ads):
 
 ### On demand
 
-Run the installer without `-Activate`:
+Run the installer without `-Activate`, from a PowerShell 7 window in the repo folder:
 
 ```powershell
-.\install.ps1
+.\710sRice.ps1 install
 ```
 
-Nothing starts at sign-in and none of the Windows changes above are made. komorebi still
-gets a Scheduled Task, with no sign-in trigger, so `Start-All` can start it elevated
-without a UAC prompt. See [Run on demand](#run-on-demand).
+Nothing starts at sign-in and none of the Windows changes above are made. Each part still
+gets a Scheduled Task, just with no sign-in trigger, so `710sRice start` starts everything
+the way sign-in would (komorebi elevated, with no UAC prompt). See
+[Run on demand](#run-on-demand).
 
 ### Updating
 
 ```powershell
 git pull
-.\install.ps1
+710sRice install
 ```
 
 Re-running the installer is always safe. A plain re-run keeps whatever you had: a
@@ -205,36 +212,55 @@ remembered. It installs what's missing, re-registers the sign-in tasks, and reco
 rules. One thing to know: **every run applies the default wallpaper and theme again**, so
 pick yours with SUPER+W afterwards. There's no separate update checker, by design.
 
-`.\install.ps1 -SkipPackages` skips the winget step and redoes everything else (config,
+`710sRice install -SkipPackages` skips the winget step and redoes everything else (config,
 theme, Flow setup), which is quicker when only the repo changed.
+
+## The 710sRice command
+
+Run it from any PowerShell 7 window. Commands marked *(admin)* ask for admin rights with a
+UAC prompt and run in their own admin window; there's no need to open one yourself.
+
+| Command | What it does |
+| --- | --- |
+| `710sRice` | The command list. `710sRice <command> -?` shows one command's options |
+| `710sRice install` | Install or update; `-Activate` makes it full-time, `-SkipPackages` skips winget *(admin)* |
+| `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
+| `710sRice start` / `stop` | Start or stop the stack |
+| `710sRice reload` | Reload the whole stack, same as SUPER+Shift+R |
+| `710sRice reload bar` | Restart just the bar |
+| `710sRice logs` | Open the logs folder and list what's in it |
+| `710sRice tiling status` | Whether komorebi runs elevated: the saved choice, its task, and the running copy |
+| `710sRice tiling elevated` / `normal` | Switch komorebi to elevated or not *(admin)* |
+
+The scripts behind it (`install.ps1`, `uninstall.ps1`, `scripts\Start-All.ps1` and so on)
+still exist and work on their own; the command just gives them one name.
 
 ## Run on demand
 
-From a **normal** (not admin) PowerShell 7 window in the repo folder:
+From a PowerShell 7 window:
 
 ```powershell
-.\scripts\Start-All.ps1
+710sRice start
 ```
 
-komorebi starts elevated through its task (unless you opted out); YASB, AutoHotkey and
-ShareX start as you. Run it from a normal window: anything started directly from an admin
-window would run as admin, so it refuses. It checks what came up and says so.
+Everything starts through its own Scheduled Task, so it doesn't matter which window you run
+it from: komorebi starts elevated (unless you switched that off), and YASB, AutoHotkey and
+ShareX start as you. It checks what came up and says so.
 
-To stop, use `.\scripts\Stop-All.ps1` or **Quit 710sRice** in the tray icon's menu. Flow
-Launcher and Everything keep running either way; they're ordinary apps you can use on
-their own.
+To stop, use `710sRice stop` or **Quit 710sRice** in the tray icon's menu. Flow Launcher and
+Everything keep running either way; they're ordinary apps you can use on their own.
 
-The taskbar is left to you. The stack is built around a hidden taskbar, so `Start-All`
-tells you how to turn auto-hide on if it's off, and `Stop-All` reminds you to turn it back
-off. Neither changes it.
+The taskbar is left to you. The stack is built around a hidden taskbar, so `710sRice start`
+tells you how to turn auto-hide on if it's off, and `710sRice stop` reminds you to turn it
+back off. Neither changes it.
 
 ## Uninstall
 
-From an admin PowerShell 7 window in the repo folder:
+From a PowerShell 7 window:
 
 ```powershell
-.\uninstall.ps1 -DryRun    # show what it would do, change nothing
-.\uninstall.ps1
+710sRice uninstall -DryRun    # show what it would do, change nothing
+710sRice uninstall
 ```
 
 This is a real uninstall: it stops everything, removes the Scheduled Tasks, and puts back
@@ -248,10 +274,13 @@ in [versions.md](versions.md) (common tools you may well have had already, like 
 Terminal and Everything).
 
 - `-Keep <Install ID>` keeps a package that would otherwise be removed, e.g.
-  `.\uninstall.ps1 -Keep ShareX.ShareX`.
+  `710sRice uninstall -Keep ShareX.ShareX`. Several at once:
+  `-Keep ShareX.ShareX,Flow-Launcher.Flow-Launcher`.
 - `-Force` removes the Pre-existing rows too.
 
 It forgets your elevated-tiling choice, so a later install starts from the default again.
+It also takes the `710sRice` command off your PATH; `.\710sRice.ps1` in the repo folder still
+works, for a reinstall.
 It doesn't delete the repo folder, your weather variables, or your personal files
 (`user.ahk`, `user.ps1`, `rules.local.toml`, `config/windows.toml`). Delete the folder
 yourself if you're done with it.
@@ -277,6 +306,7 @@ yourself if you're done with it.
 | SUPER+Shift+R | Reload the whole stack (re-applies config and rules) |
 | SUPER+Arrows | Move focus |
 | SUPER+Shift+Arrows | Move the window |
+| SUPER+Alt+Arrows | Stack the window with its neighbor (tabs show on the stack); SUPER+Alt+, / SUPER+Alt+. switch tabs, SUPER+Alt+U unstacks |
 | SUPER+1…9 | Go to workspace 1–9 |
 | SUPER+Shift+1…9 | Move the window to workspace 1–9 |
 | SUPER+F / SUPER+T | Monocle (fill the screen) / float or tile the window |
@@ -326,8 +356,7 @@ The gallery shows two folders:
   setx YASB_WALLPAPER_PATH "C:\Users\<you>\Pictures\Wallpapers"
   ```
 
-  then restart the bar so it sees the new variable: `Stop-Process -Name yasb` (the watchdog
-  brings it back within about 10 seconds).
+  then restart the bar so it sees the new variable: `710sRice reload bar`.
 
 For more folders, add lines to `image_path` under the `wallpapers:` widget in
 `config/yasb/config.yaml`:
@@ -397,10 +426,11 @@ elevated itself, so nothing it launches runs as admin by accident.
 
 - **SUPER+Alt+Enter** opens a Windows Terminal as administrator (after a UAC prompt), tiled
   on the monitor under the mouse.
-- **Opting out:** `.\install.ps1 -NoElevatedTiling` runs komorebi as you instead; admin
-  windows then float and can't be tiled. `.\install.ps1 -ElevatedTiling` switches back. The
-  choice is remembered, so a plain re-run keeps it, and it takes effect the next time
-  komorebi starts (sign out and in, or `Stop-All` then `Start-All`).
+- **Opting out:** `710sRice tiling normal` runs komorebi as you instead; admin windows then
+  float and can't be tiled. `710sRice tiling elevated` switches back, and
+  `710sRice tiling status` shows where things stand. The choice is remembered (a re-run of
+  install keeps it), it doesn't touch your wallpaper or theme, and it takes effect the next
+  time komorebi starts (sign out and in, or `710sRice stop` then `710sRice start`).
 - **Admin commands without an admin window:** turn on Windows 11's `sudo` (Settings >
   System > For developers > Enable sudo, "Inline" mode) and run `sudo <command>` in a normal
   Terminal.
@@ -410,7 +440,7 @@ change (its startup script, its config folder, an environment variable). So any 
 already running as you could use them to get admin rights without a UAC prompt. On a
 personal machine where you're the only user that's a small step, since UAC isn't a
 security boundary to begin with, but on a shared or work-connected machine use
-`-NoElevatedTiling`. komorebi's author also describes running it elevated as "not well
+`710sRice tiling normal`. komorebi's author also describes running it elevated as "not well
 tested", so if something odd shows up around admin windows, that's the first thing to try.
 
 ## Tips and known issues
@@ -421,16 +451,20 @@ tested", so if something odd shows up around admin windows, that's the first thi
   it's one of the included rules, so expect it: each bar restart can add another title bar
   on top of Claude's own, and clicks land one row off. Quit it from its tray icon and
   relaunch to fix. SUPER+Shift+R only restarts the bar when it has to (its `config.yaml`
-  changed, or komorebi restarted), so this is rare.
+  changed, or komorebi restarted), so this is rare; `710sRice reload bar` always does.
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.
-- **Changed a weather or wallpaper variable?** Restart the bar: `Stop-Process -Name yasb`
-  (the watchdog brings it back).
-- **Something not right?** SUPER+Shift+R reloads the whole stack and re-applies the
-  config. Logs are in `%LOCALAPPDATA%\710.DesktopRice\`.
+- **Changed a weather or wallpaper variable?** Restart the bar: `710sRice reload bar`.
+- **Something not right?** SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and
+  re-applies the config. `710sRice logs` opens the folder with every log.
 
 ## Future plans
 
+- **`710sRice doctor`** (in progress): a read-only health check of the install, what's
+  wrong and how to fix it, plus whether a newer version is out. Then `710sRice doctor
+  -repair` to fix what it finds, and `710sRice update` to pull and repair in one go.
+- **More commands:** set the weather key and location, point the wallpaper gallery at a
+  folder, add or remove a game for game mode, and turn taskbar auto-hide on or off.
 - **A proper README pass:** screenshots and a short demo.
 - **Pin an app to a workspace.** A Quick add action that makes an app open on the monitor
   and workspace you pick, using komorebi's own workspace rules -- no extra background
