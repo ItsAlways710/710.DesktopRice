@@ -851,10 +851,10 @@ function Get-TaskFullName {
 
 function Test-Task {
     <# -AtLogOn: only a task that actually starts at sign-in counts. That's what "this
-       machine is -Activate'd" means -- an on-demand install also has a komorebi task now
-       (Register-KomorebiOnDemandTask, no trigger), and without this check a later plain
-       install.ps1 would read it as "autostart is active" and quietly register everything
-       to start at sign-in (plan doc Open item 37). #>
+       machine is -Activate'd" means -- an on-demand install has a task for every
+       component too (Register-OnDemandTasks, no trigger), and without this check a later
+       plain install.ps1 would read them as "autostart is active" and quietly register
+       everything to start at sign-in (plan doc Open item 37). #>
     param([Parameter(Mandatory)][string]$TaskName, [switch]$AtLogOn)
     # $null = ... 2>&1 (capture-and-discard), not *> $null (redirect-and-discard): the
     # latter doesn't fully suppress schtasks.exe's own "ERROR: ..." text for a genuinely
@@ -898,8 +898,9 @@ function New-TaskXml {
        wscript -> powershell -> launcher chain komorebi/YASB/AHK all came up BelowNormal
        (winarchy saw delayed retiles under load from exactly this). 4 = Normal. #>
     # -RunLevel HighestAvailable: komorebi in elevated tiling mode (Get-KomorebiRunLevel).
-    # -NoTrigger: an on-demand task that never fires on its own -- Start-All.ps1 and
-    # reload-stack.ps1 fire it (Register-KomorebiOnDemandTask).
+    # -NoTrigger: an on-demand task that never fires on its own -- Start-All.ps1,
+    # reload-stack.ps1 and the AHK bar watchdog fire it (Register-OnDemandTasks). Labelled
+    # "on demand" rather than "autostart" in Task Scheduler, so the list doesn't lie.
     param([Parameter(Mandatory)][object]$Component, [Parameter(Mandatory)][string]$User,
           [ValidateSet('LeastPrivilege', 'HighestAvailable')][string]$RunLevel = 'LeastPrivilege',
           [switch]$NoTrigger)
@@ -907,6 +908,7 @@ function New-TaskXml {
     $cmd = [System.Security.SecurityElement]::Escape($Component.Exe)
     $arg = [System.Security.SecurityElement]::Escape($Component.Arguments)
     $delay = if ($Component.Delay) { $Component.Delay } else { 'PT0S' }
+    $label = if ($NoTrigger) { 'on demand' } else { 'autostart' }
     $triggers = if ($NoTrigger) { '  <Triggers />' } else { @"
   <Triggers>
     <LogonTrigger>
@@ -920,7 +922,7 @@ function New-TaskXml {
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>710.DesktopRice autostart: $($Component.Key)</Description>
+    <Description>710.DesktopRice ${label}: $($Component.Key)</Description>
   </RegistrationInfo>
 $triggers
   <Principals>
@@ -1051,30 +1053,62 @@ function Get-AutostartStatus {
     $status
 }
 
-function Register-KomorebiOnDemandTask {
-    <# For an install WITHOUT -Activate: komorebi's task with no trigger at all, at the
-       tiling mode's run level. Nothing starts at sign-in; Start-All.ps1 and reload-stack.ps1
-       (SUPER+Shift+R's komorebi restart) fire it, so on-demand komorebi comes up exactly
-       like an -Activate'd one -- elevated in elevated tiling mode, with no UAC prompt,
-       whatever shell fires it (plan doc Open item 37). Test-Task -AtLogOn ignores this
-       task, so it never makes the machine look -Activate'd. Idempotent (/F). #>
-    $c = @(Get-AutostartComponents) | Where-Object { $_.Key -eq 'komorebi' } | Select-Object -First 1
-    if (-not $c) { Step-Warn 'komorebi on-demand task: komorebi.exe not found -- skipped.'; return }
-    $runLevel = Get-KomorebiRunLevel
-    if ($runLevel -eq 'HighestAvailable' -and -not (Test-IsAdmin)) {
-        Step-Warn 'komorebi on-demand task: elevated tiling needs an admin PowerShell to register -- skipped (Start-All will start komorebi non-elevated). Re-run .\install.ps1 from an admin shell.'
+function Register-OnDemandTasks {
+    <# For an install WITHOUT -Activate: every component's task, with no trigger at all.
+       Nothing starts at sign-in; Start-All.ps1 (`710sRice start`), reload-stack.ps1
+       (SUPER+Shift+R) and 710.ahk's bar watchdog fire them, so an on-demand stack starts
+       and restarts exactly like an -Activate'd one -- each at its task's own run level,
+       whatever shell fires it: komorebi at the tiling mode's (elevated by default, and no
+       UAC prompt), everything else LeastPrivilege. That's also why `710sRice start` works
+       from an admin window here: nothing has to be launched directly from it.
+       Until 2026-09-26 only komorebi got one (plan doc Open item 37), so on these installs
+       every YASB restart through its task -- SUPER+Shift+R's, the watchdog's -- killed the
+       bar and left it down (cli-plan, commit 3a). Test-Task -AtLogOn ignores these tasks,
+       so they never make the machine look -Activate'd, and uninstall's Unregister-Autostart
+       deletes them like any other component task. -Key: just that one component (the
+       `tiling` command re-registers komorebi alone). Idempotent (/F). #>
+    param([string]$Key)
+    $components = @(Get-AutostartComponents | Where-Object { -not $Key -or $_.Key -eq $Key })
+    if ($components.Count -eq 0) {
+        Step-Warn "On-demand tasks: $(if ($Key) { "$Key isn't installed" } else { 'no components installed' }) -- nothing registered."
         return
     }
-    $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) '710-task-komorebi-ondemand.xml'
-    try {
-        Set-Content -Path $xmlPath -Value (New-TaskXml -Component $c -User "$env:USERDOMAIN\$env:USERNAME" -RunLevel $runLevel -NoTrigger) -Encoding Unicode
-        $null = & schtasks.exe /Create /TN (Get-TaskFullName -TaskName $c.TaskName) /XML $xmlPath /F 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
-        Step-Ok "komorebi on-demand task registered ($(if ($runLevel -eq 'HighestAvailable') { 'elevated' } else { 'non-elevated' }); no sign-in trigger -- Start-All.ps1 fires it)"
-    } catch {
-        Step-Warn "komorebi on-demand task: couldn't register it ($($_.Exception.Message)) -- Start-All will start komorebi directly (non-elevated)."
-    } finally {
-        Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
+    $user = "$env:USERDOMAIN\$env:USERNAME"
+    $admin = Test-IsAdmin
+    $registered = [System.Collections.Generic.List[string]]::new()
+    foreach ($c in $components) {
+        $runLevel = if ($c.Key -eq 'komorebi') { Get-KomorebiRunLevel } else { 'LeastPrivilege' }
+        if ($runLevel -eq 'HighestAvailable' -and -not $admin) {
+            # Same rule as Register-Autostart: only an admin can register a task that runs
+            # elevated. Only reachable by running install.ps1 directly from a normal window --
+            # `710sRice install` always elevates first.
+            if (Test-Task -TaskName $c.TaskName) {
+                Step-Warn "On-demand task komorebi: elevated tiling needs an admin PowerShell to register -- its existing task was left as it is. Re-run .\install.ps1 from an admin shell."
+                continue
+            }
+            Step-Warn "On-demand task komorebi: elevated tiling needs an admin PowerShell to register -- registering it non-elevated for now (admin windows won't tile). Re-run .\install.ps1 from an admin shell."
+            $runLevel = 'LeastPrivilege'
+        }
+        $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) "710-task-$($c.TaskName)-ondemand.xml"
+        try {
+            Set-Content -Path $xmlPath -Value (New-TaskXml -Component $c -User $user -RunLevel $runLevel -NoTrigger) -Encoding Unicode
+            $null = & schtasks.exe /Create /TN (Get-TaskFullName -TaskName $c.TaskName) /XML $xmlPath /F 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
+            $registered.Add($c.Key + $(if ($c.Key -eq 'komorebi') { " ($(if ($runLevel -eq 'HighestAvailable') { 'elevated' } else { 'non-elevated' }))" }))
+        } catch {
+            # Same split as Register-Autostart: a task that exists but couldn't be UPDATED
+            # (typically created from an elevated shell, this run isn't) still works as it is.
+            if (Test-Task -TaskName $c.TaskName) {
+                Step-Warn "On-demand task $($c.Key): couldn't update the existing task ($($_.Exception.Message)) -- keeping the old one."
+            } else {
+                Step-Warn "On-demand task $($c.Key): couldn't register it ($($_.Exception.Message)) -- ``710sRice start`` will launch it directly instead (from a normal window only)."
+            }
+        } finally {
+            Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($registered.Count -gt 0) {
+        Step-Ok "On-demand tasks registered (no sign-in trigger -- ``710sRice start`` fires them): $($registered -join ', ')"
     }
 }
 

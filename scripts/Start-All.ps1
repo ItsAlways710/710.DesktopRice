@@ -23,10 +23,13 @@
     - If it has a task, it fires the task, which starts it at the task's own registered
       level whatever shell this is: non-elevated for everything, except komorebi in
       elevated tiling mode (install.ps1's default), which is elevated on purpose so it can
-      tile admin windows. An on-demand install (no -Activate) registers komorebi's task
-      with no sign-in trigger just for this.
-    - Otherwise it starts it directly -- and refuses to, from an admin shell. Use a
-      normal PowerShell window.
+      tile admin windows. Every install has a task per component -- an on-demand install
+      (no -Activate) registers them with no sign-in trigger just for this -- so this is
+      the normal path, from a normal or an admin window alike.
+    - Otherwise (its task couldn't be registered, or it's an on-demand install from before
+      2026-09-26, when only komorebi got a task, that hasn't been re-run) it starts it
+      directly -- and refuses to, from an admin shell. Use a normal PowerShell window, or
+      re-run `710sRice install` to get the tasks.
 
   Taskbar auto-hide is left to you: this checks it and, if it's off, the last line says how
   to turn it on (the stack is built around a hidden taskbar). Stop-All.ps1 reminds you to
@@ -69,8 +72,12 @@ if ($components.Count -eq 0) {
 
 $withTask = @($components | Where-Object { Test-Task -TaskName $_.TaskName })
 $direct   = @($components | Where-Object { $withTask.Key -notcontains $_.Key })
+# Only SUPER+Shift+R's komorebi/YASB restarts and the bar watchdog need the task, but
+# "everything through its task" is the simple rule, and it's what makes an admin window OK.
+$reRun = "No task for $($direct.Key -join ', ') -- re-run ``710sRice install`` to register $(if ($direct.Count -eq 1) { 'it' } else { 'them' }), so everything starts (and restarts) through its task."
 if ($direct.Count -gt 0 -and (Test-IsAdmin)) {
     Step-Warn "This is an admin shell -- $($direct.Key -join ', ') would have to be started directly from it and would run as admin. Run this from a normal PowerShell window instead. Nothing was started."
+    Step-Info $reRun
     exit 1
 }
 # Tasks first: each starts at its own registered level (see the header).
@@ -89,6 +96,7 @@ foreach ($c in $direct) {
         Step-Warn "$($c.Key): failed to launch -- $($_.Exception.Message)"
     }
 }
+if ($direct.Count -gt 0) { Step-Info $reRun }
 
 Write-Host "`n-- Checking what came up (up to 20s; see the header if something's still settling) --" -ForegroundColor Cyan
 # One check per component, polled once a second until all pass or 20s is up --

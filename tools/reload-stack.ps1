@@ -50,8 +50,10 @@
   Starting things goes through the registered autostart Scheduled Tasks
   (`schtasks /Run \710.DesktopRice\<name>`) -- the exact wscript/run-hidden.vbs path boot
   uses, so no console flash, non-elevated like every autostart task (LeastPrivilege), and
-  no second copy of every launch command line to keep in sync. An unregistered task (a
-  machine that never ran install.ps1 -Activate) is logged and skipped.
+  no second copy of every launch command line to keep in sync. Every install registers
+  them -- an on-demand one (no -Activate) with no sign-in trigger. An unregistered task (an
+  install from before 2026-09-26 that hasn't been re-run, or a failed registration) is
+  logged and skipped.
 
   Exit codes: 0 = everything reloaded; 1 = rule compile failed, nothing was touched;
   2 = compile was fine but at least one later step failed (see the log).
@@ -88,7 +90,7 @@ function Start-AutostartTask([string]$Name) {
        only means Task Scheduler accepted it; the launcher scripts themselves log whether
        the component actually came up (komorebi-autostart.log, yasb-autostart.log, ...). #>
     if (-not (Test-AutostartTask $Name)) {
-        Write-Log "   ${Name}: autostart task $TaskFolder\$Name isn't registered (install.ps1 -Activate never ran?) -- skipped."
+        Write-Log "   ${Name}: task $TaskFolder\$Name isn't registered (re-run ``710sRice install``) -- skipped."
         return $false
     }
     $out = & schtasks.exe /Run /TN "$TaskFolder\$Name" 2>&1

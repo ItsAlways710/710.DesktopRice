@@ -48,7 +48,7 @@ Stop-RunningComponents
 Step-Ok 'Done (best-effort -- see any [!!] warnings above for anything that did not stop cleanly).'
 
 try {
-    # -AtLogOn: an on-demand install's komorebi task (no trigger) isn't "activated".
+    # -AtLogOn: an on-demand install's tasks (no trigger) aren't "activated".
     $activated = @(Get-AutostartComponents | Where-Object { Test-Task -TaskName $_.TaskName -AtLogOn }).Count -gt 0
     if (-not $activated -and (Test-TaskbarAutoHide)) {
         Write-Host ''

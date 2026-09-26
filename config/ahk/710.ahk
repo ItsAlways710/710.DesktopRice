@@ -1033,8 +1033,9 @@ ToggleGameMode() {
 ; YASB watchdog
 ; ============================================================================
 ; Ported from winarchy bb72240 (v1.5.0), with three changes agreed 2026-09-23:
-;  - The relaunch goes through YASB's own autostart task (schtasks /Run) -- the
-;    same door boot and SUPER+Shift+R use. That buys Start-Yasb.ps1's
+;  - The relaunch goes through YASB's own task (schtasks /Run) -- the same door
+;    boot and SUPER+Shift+R use; on-demand installs have it too, just with no
+;    sign-in trigger (since 2026-09-26). That buys Start-Yasb.ps1's
 ;    wait-for-desktop + retry loop, a hidden launch, and LeastPrivilege every
 ;    time: the bar never comes back elevated even if AHK somehow is (the
 ;    elevated-Terminal trap from the SUPER+Shift+R testing).
@@ -1081,10 +1082,11 @@ YasbWatch() {
     catch
         code := -1
     if (code != 0) {
-        ; No task = autostart was never activated (or got removed) -- nothing sane to relaunch with.
+        ; No task = an install from before on-demand installs got one (or it was
+        ; removed) -- nothing sane to relaunch with.
         SetTimer(YasbWatch, 0)
-        YasbLog('watchdog: schtasks /Run failed (' code ') -- is the \710.DesktopRice\yasb task registered? Watchdog off.')
-        TrayTip("Couldn't relaunch the bar (no autostart task?) -- watchdog off.`nSee %LOCALAPPDATA%\710.DesktopRice\yasb-autostart.log", '710sRice')
+        YasbLog('watchdog: schtasks /Run failed (' code ') -- is the \710.DesktopRice\yasb task registered? Re-run 710sRice install. Watchdog off.')
+        TrayTip("Couldn't relaunch the bar (no yasb task? re-run 710sRice install) -- watchdog off.`nSee %LOCALAPPDATA%\710.DesktopRice\yasb-autostart.log", '710sRice')
     }
 }
 

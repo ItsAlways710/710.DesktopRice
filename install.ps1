@@ -42,9 +42,9 @@
   zeroes Explorer's Startup app-launch delay, and starts everything right away. Without
   -Activate, none of that happens -- packages, config, theming, Defender exclusions, the
   profile hook and Everything plugin are still applied, but nothing autostarts and the
-  taskbar/hardening/Startup-delay registry settings are left alone. See "Next steps" at
-  the end of a run for the exact command to (re)launch komorebi with this repo's config
-  by hand instead.
+  taskbar/hardening/Startup-delay registry settings are left alone. Each component still
+  gets its Scheduled Task, just with no sign-in trigger, so `710sRice start` (the closing
+  lines of a run say so) starts the stack on demand the same way sign-in would.
 
   KOMOREBI_CONFIG_HOME is a single shared User-scope environment variable that winarchy's
   own startup path also reads and never resets -- if winarchy is still installed on this
@@ -69,8 +69,8 @@
   out (komorebi non-elevated, admin windows float); -ElevatedTiling opts back in. The
   choice is remembered per machine (%LOCALAPPDATA%\710.DesktopRice\tiling-mode.txt) and
   only changes when one of those switches is passed; uninstall forgets it. Registering
-  an elevated task needs an admin shell. An install without -Activate registers
-  komorebi's task with no sign-in trigger, so Start-All.ps1 starts it the same way.
+  an elevated task needs an admin shell. An install without -Activate registers every
+  component's task with no sign-in trigger, so Start-All.ps1 starts them the same way.
   Security trade-off: see the README.
 
 .EXAMPLE
@@ -460,7 +460,7 @@ if ($tiling.Mode -eq 'elevated') {
     Step-Ok "Non-elevated tiling ($tilingWhy): admin windows float. Opt back in with -ElevatedTiling."
 }
 if ($tiling.Changed -and (Get-Process komorebi -ErrorAction SilentlyContinue)) {
-    Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run `710sRice stop` then `710sRice start` from a normal PS7 window.'
+    Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run `710sRice stop` then `710sRice start`.'
 }
 
 # --- 11. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ---
@@ -556,9 +556,10 @@ if ($Activate) {
         if ($lockScreenActive) { Register-LockScreenSyncTask }
     } else {
         Step-Info 'Not -Activate: packages/config/theming/Defender/profile/Flow are applied, but autostart, the taskbar, hardening and the Startup delay are untouched.'
-        # On-demand: komorebi still gets its task (no trigger), so Start-All.ps1 and
-        # SUPER+Shift+R start it at the tiling mode's level -- the same as -Activate.
-        Register-KomorebiOnDemandTask
+        # On-demand: every component still gets its task (no trigger), so Start-All.ps1,
+        # SUPER+Shift+R and the bar watchdog start each one at its task's own level -- the
+        # same as -Activate, from any window (Register-OnDemandTasks).
+        Register-OnDemandTasks
         Step-Info 'Run `710sRice install -Activate` when ready to make this repo the active shell experience.'
     }
 }
@@ -568,7 +569,7 @@ Write-Host "`n== Install complete ==" -ForegroundColor Cyan
 if (-not $Activate) {
     Write-Host "This run didn't start the stack or touch autostart/taskbar/hardening. To run it now (on demand):"
     Write-Host ""
-    Write-Host "    710sRice start     # from a normal (not admin) PS7 window" -ForegroundColor DarkGray
+    Write-Host "    710sRice start" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "Or run ``710sRice install -Activate`` to start it at every sign-in."
 }
