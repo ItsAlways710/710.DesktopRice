@@ -12,6 +12,12 @@
   "transparency_alpha": 220,
   "mouse_follows_focus": false,
   "global_work_area_offset": { "left": 0, "top": 0, "right": 0, "bottom": 2 },
+  "stackbar": {
+    "height": 26,
+    "mode": "OnStack",
+    "label": "Title",
+    "tabs": { "width": 220, "font_size": 12 }
+  },
   "monitors": [
     {
       "workspaces": [

@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Applies wallust's generated colors to everything that isn't a simple CSS
-    import: komorebi's live border colors and the Windows accent color.
+    import: komorebi's live border and stack-tab colors and the Windows accent color.
     (YASB gets its colors directly via config/wallust/templates/yasb-colors.css.tpl
     -- no script needed there, it's just an @import.)
 
@@ -25,13 +25,14 @@
 #>
 [CmdletBinding()]
 param(
-    # Re-push only the komorebi border colors from the current palette, then stop --
-    # no Windows accent, no Terminal merge, no lock-screen fire, no snapshots. For callers
-    # that just (re)started or reloaded komorebi and need its borders back, because
-    # `komorebic border-colour` is runtime-only state: every komorebi start comes up on
-    # its own default (blue) borders, and nothing in base.json can carry wallust's live
-    # palette. Callers: tools\reload-stack.ps1 (SUPER+Shift+R) and scripts\Start-Komorebi.ps1
-    # (boot). Exits 1 if komorebi isn't running, since then there was nothing to apply.
+    # Re-push only komorebi's colors from the current palette -- the borders and, since
+    # 2026-09-26, the stack tabs -- then stop: no Windows accent, no Terminal merge, no
+    # lock-screen fire, no snapshots. For callers that just (re)started or reloaded komorebi
+    # and need them back, because both are runtime-only state: every komorebi start comes up
+    # on its own defaults (blue borders, grey tabs), and nothing in base.json can carry
+    # wallust's live palette. The name predates the tabs; kept so the callers don't change.
+    # Callers: tools\reload-stack.ps1 (SUPER+Shift+R) and scripts\Start-Komorebi.ps1 (boot).
+    # Exits 1 if komorebi isn't running, since then there was nothing to apply.
     [switch]$BordersOnly
 )
 
@@ -53,6 +54,28 @@ function ConvertTo-Rgb {
         G = [Convert]::ToInt32($h.Substring(2, 2), 16)
         B = [Convert]::ToInt32($h.Substring(4, 2), 16)
     }
+}
+
+function Send-KomorebiMessage {
+    <# Talks to komorebi the way komorebic does, for the runtime settings komorebic has no
+       command for -- the stack-tab colours (komorebi 0.1.41 takes them as
+       SocketMessage::Stackbar*Colour and repaints the tabs straight after, but komorebic
+       only exposes stackbar-mode). Connects to komorebi's socket,
+       %LOCALAPPDATA%\komorebi\komorebi.sock, and writes one JSON message per line:
+       {"type":"<name>","content":<args>} -- komorebi-client's send_batch, done from .NET
+       (UnixDomainSocketEndPoint -- PS7, like every caller of this script). A normal process
+       reaches an elevated komorebi here exactly as komorebic does. #>
+    param([Parameter(Mandatory)][object[]]$Messages)
+    $path = Join-Path $env:LOCALAPPDATA 'komorebi\komorebi.sock'
+    $socket = [System.Net.Sockets.Socket]::new([System.Net.Sockets.AddressFamily]::Unix,
+        [System.Net.Sockets.SocketType]::Stream, [System.Net.Sockets.ProtocolType]::Unspecified)
+    try {
+        $socket.SendTimeout = 1000
+        $socket.Connect([System.Net.Sockets.UnixDomainSocketEndPoint]::new($path))
+        $text = -join @(foreach ($m in $Messages) { ($m | ConvertTo-Json -Compress) + "`n" })
+        $null = $socket.Send([System.Text.Encoding]::UTF8.GetBytes($text))
+        $socket.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
+    } finally { $socket.Dispose() }
 }
 
 function Save-OriginalStateOnce {
@@ -123,6 +146,38 @@ if ($komorebiRunning) {
         $rgb = ConvertTo-Rgb -Hex $borders[$kind]
         & komorebic.exe border-colour --window-kind $kind $rgb.R $rgb.G $rgb.B 2>$null
     }
+
+    # --- komorebi stack tabs (base.json turns them on: mode OnStack) ------------------------
+    # Dressed like the bar (yasb-colors.css.tpl's slots): background = its --background
+    # (color1, = the unfocused border), the focused tab's text = its --text (color6, the
+    # bright one), the other tabs' text = its --subtext (color5). NOT the accent for the
+    # focused text: color3 is a mid-tone the bar puts BEHIND highlighted items, and as text
+    # on color1 it all but vanished (first Dell test, 2026-09-26). komorebi gives every tab
+    # one background, so the focused tab can only stand out by its text.
+    # A slot missing from colors.json (one written by colors.json.tpl before color5/color6
+    # were added -- wallust only rewrites it on a wallpaper change) skips just that colour.
+    # Best-effort throughout -- a tab colour that doesn't land is cosmetic and must not stop
+    # the accent/Terminal/lock-screen steps below.
+    try {
+        $tabs = [ordered]@{
+            StackbarBackgroundColour    = 'color1'
+            StackbarFocusedTextColour   = 'color6'
+            StackbarUnfocusedTextColour = 'color5'
+        }
+        $missing = @($tabs.Values | Where-Object { -not $colors.$_ })
+        if ($missing.Count) {
+            Write-Host "colors.json has no $($missing -join '/') yet -- change the wallpaper once to regenerate it; those stack-tab colors are skipped until then."
+        }
+        $messages = @(foreach ($name in $tabs.Keys) {
+            $hex = $colors.($tabs[$name])
+            if (-not $hex) { continue }
+            $rgb = ConvertTo-Rgb -Hex $hex
+            [ordered]@{ type = $name; content = @($rgb.R, $rgb.G, $rgb.B) }
+        })
+        if ($messages.Count) { Send-KomorebiMessage -Messages $messages }
+    } catch {
+        Write-Host "couldn't set komorebi's stack-tab colors: $($_.Exception.Message)"
+    }
 } else {
     Write-Host "komorebi isn't running -- skipped border colors."
 }
@@ -130,7 +185,7 @@ if ($komorebiRunning) {
 # -BordersOnly: borders were the whole job. Everything below (accent, Terminal, lock-screen
 # task) is wallpaper-change work that a plain komorebi (re)start has no reason to redo.
 if ($BordersOnly) {
-    if ($komorebiRunning) { Write-Host 'wallust borders re-applied to komorebi.'; exit 0 }
+    if ($komorebiRunning) { Write-Host 'wallust borders and stack tabs re-applied to komorebi.'; exit 0 }
     exit 1
 }
 
