@@ -42,6 +42,7 @@
   .\710sRice.ps1 install -Activate    # the very first install, from the repo folder
   710sRice uninstall -DryRun -Keep AutoHotkey.AutoHotkey,ShareX.ShareX
   710sRice reload bar                 # just the bar, e.g. after a weather setting change
+  710sRice tiling normal              # komorebi stops running as admin (next start)
 #>
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
@@ -50,7 +51,8 @@ $Root = $PSScriptRoot
 # One row per command, shown in help in this order. The name is one word or two ('reload bar'
 # beats 'reload': the dispatcher tries the first two words before the first one). Usage is the
 # help line's left side; Admin is 'Required' (the command asks for UAC itself) or 'Any'; Run gets
-# the arguments that follow the name, with their switch marks intact.
+# the arguments that follow the name, with their switch marks intact. Hidden rows work but
+# stay out of the help list (bare `tiling` = `tiling status`).
 $Commands = [ordered]@{
     'help'      = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'
                      Run = { Show-RiceHelp } }
@@ -71,6 +73,25 @@ $Commands = [ordered]@{
                      Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Invoke-RiceReload } }
     'reload bar' = @{ Usage = 'reload bar'; Help = 'Restart just the bar (YASB)'; Admin = 'Any'
                      Run = { Invoke-RiceReloadBar } }
+    'logs'      = @{ Usage = 'logs'; Help = 'Open the logs folder (and list what''s in it)'; Admin = 'Any'
+                     Run = { Show-RiceLogs } }
+    # tiling: the saved mode (tiling-mode.txt) and komorebi's task only -- never install's
+    # theme reset. Changing it needs admin: an elevated task can only be registered, or a
+    # task an admin window made replaced, from an admin window.
+    'tiling'    = @{ Usage = 'tiling [status | elevated | normal]'; Help = 'Same as tiling status'; Admin = 'Any'; Hidden = $true
+                     Run = {
+                         if ($args.Count) {
+                             Write-RiceError "Unknown command 'tiling $($args -join ' ')'"
+                             Show-RiceHelp
+                             $script:RiceExit = 1
+                         } else { . (Join-Path $Root 'tools\lib\activation.ps1'); Show-RiceTilingStatus }
+                     } }
+    'tiling status'   = @{ Usage = 'tiling status'; Help = 'Show the tiling mode, komorebi''s task and the running komorebi'; Admin = 'Any'
+                           Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Show-RiceTilingStatus } }
+    'tiling elevated' = @{ Usage = 'tiling elevated'; Help = 'komorebi runs as admin, so admin windows tile too (the default)'; Admin = 'Required'
+                           Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Set-RiceTilingMode 'elevated' } }
+    'tiling normal'   = @{ Usage = 'tiling normal'; Help = 'komorebi runs as you; admin windows float'; Admin = 'Required'
+                           Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Set-RiceTilingMode 'normal' } }
 }
 
 # Anywhere after a command these mean "tell me about it" -- never run it, never elevate.
@@ -201,6 +222,88 @@ function Invoke-RiceReloadBar {
     }
 }
 
+# --- logs / tiling ---------------------------------------------------------------------------------
+function Show-RiceLogs {
+    # The folder every 710.DesktopRice log lives in: its path and logs here, newest first (which
+    # one just moved), and the folder in Explorer. From an admin window Explorer hands the
+    # folder to your running (normal) shell, so that window isn't elevated.
+    $dir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
+    if (-not (Test-Path -LiteralPath $dir)) {
+        Write-RiceError "Nothing logged yet -- $dir doesn't exist"
+        $script:RiceExit = 1
+        return
+    }
+    Write-Host ''
+    Write-Host "  $dir"
+    $logs = @(Get-ChildItem -LiteralPath $dir -File |
+              Where-Object { $_.Name -like '*.log' -or $_.Name -like '*.log.old' } |
+              Sort-Object LastWriteTime -Descending)
+    foreach ($f in $logs) {
+        $size = if ($f.Length -ge 1MB) { '{0:N1} MB' -f ($f.Length / 1MB) }
+                elseif ($f.Length -ge 1KB) { '{0:N0} KB' -f ($f.Length / 1KB) }
+                else { "$($f.Length) B" }
+        Write-Host ('    {0,-28}{1,9}   {2:yyyy-MM-dd HH:mm:ss}' -f $f.Name, $size, $f.LastWriteTime)
+    }
+    if (-not $logs.Count) { Write-Host '    (no .log files yet)' }
+    Write-Host ''
+    Invoke-Item -LiteralPath $dir
+}
+
+function Get-RiceLevelText { param($Level) if ($Level -eq 'HighestAvailable' -or $Level -eq 'elevated') { 'elevated' } else { 'not elevated' } }
+
+function Show-RiceTilingStatus {
+    # Three answers that can disagree: what's saved, what komorebi's task will start it as,
+    # and what's running now. The saved mode only reaches the task through install or
+    # `tiling elevated|normal`, and the task only reaches komorebi at its next start.
+    $saved   = Get-TilingMode
+    $isSaved = Test-Path -LiteralPath (Get-TilingModePath)
+    $task    = Get-ComponentTaskInfo -TaskName 'komorebi'
+    $running = Get-ProcessElevation -Name 'komorebi'
+    $taskText = if (-not $task) { 'none -- run `710sRice install` first' }
+                else { "$(Get-RiceLevelText $task.RunLevel), $(if ($task.AtLogOn) { 'starts at sign-in' } else { 'on demand (no sign-in start)' })" }
+    $runText  = switch ($running) {
+        'elevated'    { 'elevated' }
+        'normal'      { 'not elevated' }
+        'not running' { 'not running' }
+        default       { "couldn't tell" }
+    }
+    Write-Host ''
+    Write-Host ('    {0,-20}{1}' -f 'Tiling mode:', "$saved$(if (-not $isSaved) { ' (the default)' })")
+    Write-Host ('    {0,-20}{1}' -f "komorebi's task:", $taskText)
+    Write-Host ('    {0,-20}{1}' -f 'Running komorebi:', $runText)
+    Write-Host ''
+    if ($task -and (Get-RiceLevelText $task.RunLevel) -ne (Get-RiceLevelText $saved)) {
+        Step-Warn "komorebi's task doesn't match the saved mode -- ``710sRice tiling $saved`` re-registers it."
+    } elseif ($task -and $running -in 'elevated', 'normal' -and (Get-RiceLevelText $running) -ne (Get-RiceLevelText $task.RunLevel)) {
+        Step-Info 'Takes effect at komorebi''s next start: `710sRice stop`, then `710sRice start` (or sign out and in).'
+    }
+}
+
+function Set-RiceTilingMode {
+    # `tiling elevated|normal` (already admin by now): save the mode, then re-register ONLY
+    # komorebi's task, in the kind it already is -- sign-in (an -Activate'd machine) or on
+    # demand. Same mode as before: say so and re-register anyway, which also repairs a task
+    # that drifted from the saved mode. A running komorebi is left alone.
+    param([ValidateSet('elevated', 'normal')][string]$Mode)
+    $task = Get-ComponentTaskInfo -TaskName 'komorebi'
+    if (-not $task) { throw 'komorebi has no scheduled task yet -- run `710sRice install` first. Nothing was changed.' }
+    $before = Get-TilingMode
+    $null = Resolve-TilingMode -Elevated:($Mode -eq 'elevated') -Normal:($Mode -eq 'normal')
+    if ($before -eq $Mode) { Step-Info "Tiling mode is already $Mode -- re-registering komorebi's task to match anyway." }
+    else { Step-Ok "Tiling mode: $before -> $Mode" }
+    if ($task.AtLogOn) { Register-Autostart -Key 'komorebi' } else { Register-OnDemandTasks -Key 'komorebi' }
+    $after = Get-ComponentTaskInfo -TaskName 'komorebi'
+    if (-not $after -or (Get-RiceLevelText $after.RunLevel) -ne (Get-RiceLevelText $Mode)) {
+        Write-RiceError "komorebi's task still isn't $Mode (see above). The saved mode is $Mode now, so ``710sRice tiling $Mode`` again retries just the task."
+        $script:RiceExit = 1
+        return
+    }
+    $running = Get-ProcessElevation -Name 'komorebi'
+    if ($running -in 'elevated', 'normal' -and (Get-RiceLevelText $running) -ne (Get-RiceLevelText $Mode)) {
+        Step-Info "komorebi is still running $(if ($running -eq 'elevated') { 'elevated' } else { 'non-elevated' }) -- the new mode takes effect at its next start: ``710sRice stop``, then ``710sRice start`` (or sign out and in)."
+    }
+}
+
 # --- Admin: reopen in an admin window ------------------------------------------------------------
 function Test-RiceAdmin {
     ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -256,6 +359,7 @@ function Show-RiceHelp {
     Write-Host ''
     foreach ($name in $Commands.Keys) {
         $c = $Commands[$name]
+        if ($c.Hidden) { continue }
         $tag = Get-RiceAdminTag $c
         if ($c.Usage.Length -lt $col) {
             Write-Host ('    {0}{1}{2}' -f $c.Usage.PadRight($col), $c.Help, $tag)

@@ -956,13 +956,18 @@ function Register-Autostart {
     <# Registers every present component as an At-LogOn Scheduled Task, delay 0 (or per-
        component), unelevated, interactive-session-only. Deletes legacy .lnk files first
        (migration). Idempotent. Falls back to a Startup .lnk for any component whose task
-       registration fails. Also removes retired components (Remove-RetiredAutostart). #>
-    Remove-StartupShortcuts
-    Remove-RetiredAutostart
+       registration fails. Also removes retired components (Remove-RetiredAutostart).
+       -Key: just that one component, and neither whole-install cleanup (Startup shortcuts,
+       retired components) -- `710sRice tiling` re-registers komorebi alone. #>
+    param([string]$Key)
+    if (-not $Key) {
+        Remove-StartupShortcuts
+        Remove-RetiredAutostart
+    }
     $user = "$env:USERDOMAIN\$env:USERNAME"
-    $components = Get-AutostartComponents
+    $components = @(Get-AutostartComponents | Where-Object { -not $Key -or $_.Key -eq $Key })
     if ($components.Count -eq 0) {
-        Step-Warn 'Autostart: no components installed.'
+        Step-Warn "Autostart: $(if ($Key) { "$Key isn't installed" } else { 'no components installed' })."
         return
     }
     $admin = Test-IsAdmin
@@ -1039,6 +1044,62 @@ function Stop-RetiredWindowSlots {
             Where-Object { $_.CommandLine -and $_.CommandLine.Contains('Start-WindowSlots.ps1') } |
             ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     } catch { }
+}
+
+function Get-ComponentTaskInfo {
+    <# A component's task as registered: $null when there is none, else AtLogOn (it has a
+       sign-in trigger -- an -Activate'd machine; an on-demand install's tasks have none) and
+       RunLevel ('HighestAvailable' = runs elevated, 'LeastPrivilege'). Read from
+       `schtasks /Query /XML`, like Test-Task -AtLogOn, so it works from a normal window too. #>
+    param([Parameter(Mandatory)][string]$TaskName)
+    $xml = & schtasks.exe /Query /TN (Get-TaskFullName -TaskName $TaskName) /XML 2>&1
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $text = $xml -join "`n"
+    $runLevel = if ($text -match '<RunLevel>(\w+)</RunLevel>') { $Matches[1] } else { 'LeastPrivilege' }
+    [pscustomobject]@{ AtLogOn = ($text -match '<LogonTrigger>'); RunLevel = $runLevel }
+}
+
+function Initialize-ProcessTokenNative {
+    if (-not ('Win710.ProcessToken' -as [type])) {
+        Add-Type -Namespace Win710 -Name ProcessToken -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, int processId);
+[DllImport("advapi32.dll", SetLastError = true)]
+public static extern bool OpenProcessToken(IntPtr process, uint desiredAccess, out IntPtr token);
+[DllImport("advapi32.dll", SetLastError = true)]
+public static extern bool GetTokenInformation(IntPtr token, int infoClass, out int info, int length, out int returnLength);
+[DllImport("kernel32.dll")]
+public static extern bool CloseHandle(IntPtr handle);
+'@
+    }
+}
+
+function Get-ProcessElevation {
+    <# 'elevated', 'normal', 'not running' or 'unknown', for the first process called -Name
+       (`710sRice tiling status` asks about komorebi). Reads the process token's
+       TokenElevation. From a NORMAL window Windows won't hand over an elevated process's
+       token at all -- while a same-user normal process's token always opens -- so that
+       refusal is itself the answer. From an admin window the token opens either way. #>
+    param([Parameter(Mandatory)][string]$Name)
+    $p = Get-Process -Name $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $p) { return 'not running' }
+    try { Initialize-ProcessTokenNative } catch { return 'unknown' }
+    # PROCESS_QUERY_LIMITED_INFORMATION (0x1000): allowed across elevation levels.
+    $h = [Win710.ProcessToken]::OpenProcess(0x1000, $false, $p.Id)
+    if ($h -eq [IntPtr]::Zero) { return 'unknown' }
+    try {
+        $token = [IntPtr]::Zero
+        if (-not [Win710.ProcessToken]::OpenProcessToken($h, 0x0008, [ref]$token)) {   # TOKEN_QUERY
+            if (Test-IsAdmin) { return 'unknown' }
+            return 'elevated'
+        }
+        try {
+            $elevated = 0; $len = 0
+            # 20 = TokenElevation: one DWORD, non-zero when the token is elevated.
+            if (-not [Win710.ProcessToken]::GetTokenInformation($token, 20, [ref]$elevated, 4, [ref]$len)) { return 'unknown' }
+            if ($elevated -ne 0) { 'elevated' } else { 'normal' }
+        } finally { [void][Win710.ProcessToken]::CloseHandle($token) }
+    } finally { [void][Win710.ProcessToken]::CloseHandle($h) }
 }
 
 function Get-AutostartStatus {
