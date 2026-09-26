@@ -20,15 +20,25 @@
   Corollary: never pass the arguments through a [string[]] parameter or cast -- that strips
   the marks too. Slices and copies of $args keep them.
 
-  Exit codes: help 0; unknown command or an error 1; otherwise the called script's own.
+  Admin: a command tagged (admin) that's run from a normal window reopens itself in a new
+  admin window -- one UAC prompt -- and waits for it: `pwsh -File 710sRice.ps1 --elevated
+  <command as typed>`. The admin window holds the output and always ends with "Press Enter to
+  close"; this window reports its exit code and passes it on. Already admin: it just runs.
+  Nothing that STARTS the stack needs that: start goes through the sign-in tasks, which carry
+  their own run level, so it's safe from any window (see claude/cli-plan.md).
+
+  Exit codes: help 0; unknown command, an error or a declined UAC prompt 1; otherwise the
+  called script's own (relayed from the admin window when it ran there).
 
   Never run this hidden (AHK, scheduled tasks). When its window was opened just for it (the
   Run dialog, an Explorer double-click, the elevated relaunch) it ends with "Press Enter to
   close" -- in a hidden window that waits forever. Hidden callers use the scripts directly.
 
 .EXAMPLE
-  710sRice                 # the command list
-  710sRice help -?         # one command's usage
+  710sRice                            # the command list
+  710sRice install -?                 # one command's usage
+  .\710sRice.ps1 install -Activate    # the very first install, from the repo folder
+  710sRice uninstall -DryRun -Keep AutoHotkey.AutoHotkey,ShareX.ShareX
 #>
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
@@ -39,13 +49,80 @@ $Root = $PSScriptRoot
 # help line's left side; Admin is 'Required' (the command asks for UAC itself) or 'Any'; Run gets
 # the arguments that follow the name, with their switch marks intact.
 $Commands = [ordered]@{
-    'help' = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'; Run = { Show-RiceHelp } }
+    'help'      = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'
+                     Run = { Show-RiceHelp } }
+    'install'   = @{ Usage = 'install [-Activate] [-SkipPackages] [-ElevatedTiling | -NoElevatedTiling]'
+                     Help = 'Install or update (safe to re-run); -Activate = start it at every sign-in'; Admin = 'Required'
+                     Run = { Invoke-RiceScript 'install.ps1' @args } }
+    'uninstall' = @{ Usage = 'uninstall [-DryRun] [-Force] [-Keep <id>,<id>...]'
+                     Help = 'Undo everything install did; -DryRun shows the plan first'; Admin = 'Required'
+                     Run = { Invoke-RiceScript 'uninstall.ps1' @args } }
+    'start'     = @{ Usage = 'start'; Help = 'Start the stack'; Admin = 'Any'
+                     Run = { Invoke-RiceScript 'scripts\Start-All.ps1' @args } }
+    'stop'      = @{ Usage = 'stop'; Help = 'Stop the stack'; Admin = 'Any'
+                     Run = { Invoke-RiceScript 'scripts\Stop-All.ps1' @args } }
 }
 
 # Anywhere after a command these mean "tell me about it" -- never run it, never elevate.
 $HelpFlags = @('-h', '-?', '/?', '--help')
 
 function Write-RiceError { param([string]$Message) Write-Host "  [XX] $Message" -ForegroundColor Red }
+
+function Invoke-RiceScript {
+    # $args[0] is the script (relative to the repo), the rest the arguments as typed, switch
+    # marks intact. The exit code to pass on goes in $script:RiceExit. $? decides, not
+    # $LASTEXITCODE alone: a script that finishes without an `exit` still holds whatever its
+    # last native command returned (a failed schtasks, say) while $? stays True -- tested.
+    $path = Join-Path $Root $args[0]
+    $rest = @($args | Select-Object -Skip 1)
+    $global:LASTEXITCODE = 0
+    & $path @rest
+    $script:RiceExit = if ($?) { 0 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
+}
+
+# --- Admin: reopen in an admin window ------------------------------------------------------------
+function Test-RiceAdmin {
+    ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function ConvertTo-RiceArgument {
+    # One argument back into command-line text for the admin relaunch. An array (-Keep A,B typed
+    # at a PS7 prompt, running in place) goes over as A,B -- uninstall.ps1 splits it again.
+    # Quoted only when it has to be, with the usual backslash-before-quote rules.
+    $v = $args[0]
+    $s = if ($v -is [array]) { ($v | ForEach-Object { "$_" }) -join ',' } else { "$v" }
+    if ($s -ne '' -and $s -notmatch '[\s"]') { return $s }
+    '"' + (($s -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"'
+}
+
+function Invoke-RiceElevated {
+    # $args = the command line as typed, command name first. Opens a new admin window running
+    # this same file with it (one UAC prompt), waits, and passes its exit code on. `pwsh` by
+    # name, not this process's own path: the Store build lives in WindowsApps, whose exes
+    # can't always be started directly -- the alias on PATH can.
+    $typed    = @($args | ForEach-Object { ConvertTo-RiceArgument $_ })
+    $display  = $typed -join ' '
+    $argLine  = "-NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $Root '710sRice.ps1')`" --elevated $display"
+    Write-Host "  [..] Needs admin -- running '$display' in a new admin window (UAC)..." -ForegroundColor Cyan
+    try {
+        $p = Start-Process -FilePath 'pwsh' -ArgumentList $argLine -Verb RunAs -Wait -PassThru -ErrorAction Stop
+    } catch {
+        # A declined UAC prompt is ERROR_CANCELLED (1223) somewhere in the exception chain.
+        $cancelled = $false
+        for ($e = $_.Exception; $e; $e = $e.InnerException) {
+            if ($e -is [System.ComponentModel.Win32Exception] -and $e.NativeErrorCode -eq 1223) { $cancelled = $true }
+        }
+        if ($cancelled -or $_.Exception.Message -match 'canceled by the user') {
+            throw 'Needs admin rights and UAC was declined -- nothing was changed.'
+        }
+        throw "Couldn't open an admin window: $($_.Exception.Message)"
+    }
+    $script:RiceExit    = $p.ExitCode
+    $script:RiceRelayed = $true   # the output is over there, so this window doesn't wait for Enter
+    $color = if ($p.ExitCode -eq 0) { 'Green' } else { 'Yellow' }
+    Write-Host "  [$(if ($p.ExitCode -eq 0) { 'OK' } else { '!!' })] Admin window finished (exit $($p.ExitCode))" -ForegroundColor $color
+}
 
 function Get-RiceAdminTag { param($Command) if ($Command.Admin -eq 'Required') { '   (admin)' } else { '' } }
 
@@ -124,6 +201,8 @@ function Test-LaunchedForUs {
 function Test-RiceOwnConsole {
     try {
         if ([Console]::IsInputRedirected) { return $false }
+        # 0. The admin relaunch: always a window of its own, and the output lives only there.
+        if ($script:RiceElevatedRun) { return $true }
         # 1. Running inside someone's shell: that window is theirs.
         if (-not (Test-LaunchedForUs)) { return $false }
         # 2. Typed in a PS7 / Windows PowerShell window: parent cmd /c, grandparent the shell.
@@ -154,9 +233,16 @@ function Wait-RiceClose {
 }
 
 # --- Dispatch -------------------------------------------------------------------------------------
-$script:RiceExit = 0
+$script:RiceExit        = 0
+$script:RiceRelayed     = $false
+$script:RiceElevatedRun = $false
 try {
-    $argv  = $args   # no cast: the switch marks must survive (see the header)
+    $argv = $args   # no cast: the switch marks must survive (see the header)
+    # The admin relaunch marks itself with a leading --elevated (never typed by a person).
+    if ($argv.Count -ge 1 -and "$($argv[0])" -eq '--elevated') {
+        $script:RiceElevatedRun = $true
+        $argv = @($argv | Select-Object -Skip 1)
+    }
     $first = if ($argv.Count -ge 1) { "$($argv[0])".ToLowerInvariant() } else { '' }
 
     if ($first -eq '' -or $first -in $HelpFlags) {
@@ -178,6 +264,21 @@ try {
             $rest = @($argv | Select-Object -Skip $skip)
             if (@($rest | Where-Object { "$_" -in $HelpFlags }).Count) {
                 Show-RiceCommandHelp $name
+            } elseif ($Commands[$name].Admin -eq 'Required' -and -not (Test-RiceAdmin)) {
+                # Never relaunch from a relaunch: if the admin window somehow isn't admin, stop
+                # here rather than asking for UAC again and again.
+                if ($script:RiceElevatedRun) { throw 'The admin window did not get admin rights -- nothing was changed.' }
+                Invoke-RiceElevated @argv
+                # The very first install is `.\710sRice.ps1 install` typed in a normal window, so
+                # this file is running inside that window: put bin\ on its PATH too, and
+                # `710sRice` works there straight away (install did the same in the admin one).
+                if ($name -eq 'install' -and $script:RiceExit -eq 0 -and -not (Test-LaunchedForUs)) {
+                    $bin = Join-Path $Root 'bin'
+                    if (-not @(("$env:Path" -split ';') | Where-Object { $_.TrimEnd('\') -eq $bin })) {
+                        $env:Path = "$("$env:Path".TrimEnd(';'));$bin"
+                        Write-Host '  [OK] 710sRice works in this window now too.' -ForegroundColor Green
+                    }
+                }
             } else {
                 & $Commands[$name].Run @rest
             }
@@ -188,5 +289,6 @@ try {
     $script:RiceExit = 1
 }
 
-if (Test-RiceOwnConsole) { Wait-RiceClose }
+# After an admin relaunch the output is in the admin window, which waits for Enter itself.
+if (-not $script:RiceRelayed -and (Test-RiceOwnConsole)) { Wait-RiceClose }
 exit $script:RiceExit

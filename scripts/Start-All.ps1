@@ -63,7 +63,7 @@ Write-Host "`n== 710.DesktopRice: start all ==" -ForegroundColor Cyan
 
 $components = @(Get-AutostartComponents)
 if ($components.Count -eq 0) {
-    Step-Warn "No components found installed (komorebi/YASB/ShareX/AHK all missing?) -- run .\install.ps1 first."
+    Step-Warn "No components found installed (komorebi/YASB/ShareX/AHK all missing?) -- run ``.\710sRice.ps1 install`` from the repo folder first."
     exit 1
 }
 

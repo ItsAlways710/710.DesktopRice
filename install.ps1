@@ -273,7 +273,7 @@ foreach ($v in $weatherVars) {
     }
 }
 if ($weatherMissing) {
-    Step-Info 'The weather widget shows an error until both are set -- re-run .\install.ps1, or `setx` them yourself (see README).'
+    Step-Info 'The weather widget shows an error until both are set -- re-run `710sRice install`, or `setx` them yourself (see README).'
 }
 
 # --- 2c. PATH: the 710sRice command --------------------------------------------------
@@ -426,7 +426,7 @@ if ($wtSettingsPath) {
             Step-Ok 'Windows Terminal default profile already PowerShell 7'
         }
     } else {
-        Step-Warn "No PowerShell 7 profile found in Windows Terminal's settings.json yet -- open Terminal once (it generates this profile the first time it sees pwsh.exe on PATH), then re-run .\install.ps1."
+        Step-Warn "No PowerShell 7 profile found in Windows Terminal's settings.json yet -- open Terminal once (it generates this profile the first time it sees pwsh.exe on PATH), then re-run ``710sRice install``."
     }
 } else {
     Step-Warn 'Windows Terminal settings.json not found -- default shell not set (install/launch Windows Terminal first).'
@@ -441,7 +441,7 @@ Write-Host "`n-- Flow Launcher --" -ForegroundColor Cyan
 $global:LASTEXITCODE = 0
 & (Join-Path $Root 'tools\setup-flow-launcher.ps1')
 if ($LASTEXITCODE -ne 0) {
-    Step-Info "Flow Launcher setup skipped this run (see message above) -- harmless if Flow hasn't been run yet; re-run .\install.ps1 after its first launch."
+    Step-Info "Flow Launcher setup skipped this run (see message above) -- harmless if Flow hasn't been run yet; re-run ``710sRice install`` after its first launch."
 }
 
 # --- 10. Recompile komorebi.json -----------------------------------------------------------
@@ -460,7 +460,7 @@ if ($tiling.Mode -eq 'elevated') {
     Step-Ok "Non-elevated tiling ($tilingWhy): admin windows float. Opt back in with -ElevatedTiling."
 }
 if ($tiling.Changed -and (Get-Process komorebi -ErrorAction SilentlyContinue)) {
-    Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run .\scripts\Stop-All.ps1 then .\scripts\Start-All.ps1 from a normal PowerShell.'
+    Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run `710sRice stop` then `710sRice start` from a normal PS7 window.'
 }
 
 # --- 11. Activate: autostart, taskbar, hardening, Startup delay, start now (-Activate) ---
@@ -559,7 +559,7 @@ if ($Activate) {
         # On-demand: komorebi still gets its task (no trigger), so Start-All.ps1 and
         # SUPER+Shift+R start it at the tiling mode's level -- the same as -Activate.
         Register-KomorebiOnDemandTask
-        Step-Info 'Run .\install.ps1 -Activate when ready to make this repo the active shell experience.'
+        Step-Info 'Run `710sRice install -Activate` when ready to make this repo the active shell experience.'
     }
 }
 
@@ -568,7 +568,7 @@ Write-Host "`n== Install complete ==" -ForegroundColor Cyan
 if (-not $Activate) {
     Write-Host "This run didn't start the stack or touch autostart/taskbar/hardening. To run it now (on demand):"
     Write-Host ""
-    Write-Host "    .\scripts\Start-All.ps1     # from a normal (not admin) PowerShell window" -ForegroundColor DarkGray
+    Write-Host "    710sRice start     # from a normal (not admin) PS7 window" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "Or re-run with -Activate to start it at every sign-in."
+    Write-Host "Or run ``710sRice install -Activate`` to start it at every sign-in."
 }

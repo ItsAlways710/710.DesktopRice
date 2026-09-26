@@ -69,6 +69,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 
+# -Keep A,B: typed at a PS7 prompt that's already two values, but through the 710sRice command
+# (its shim, and its admin relaunch -- both `pwsh -File`) it arrives as ONE string 'A,B', which
+# would protect nothing. Winget IDs never contain a comma, so split every value on them.
+$Keep = @($Keep | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
 function Step-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -ForegroundColor Green }
 function Step-Info { param([string]$Message) Write-Host "  [..] $Message" -ForegroundColor Cyan }
 function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -ForegroundColor Yellow }
