@@ -93,7 +93,7 @@ try {
     Write-Warning "couldn't write ${target}: $($_.Exception.Message)"
     exit 1
 }
-Write-Host "Wrote $($map.Count) monitor(s) to $target"
+Write-Host "Wrote $($map.Count) monitor(s) to config\komorebi\display-index.local.json"
 
 if ($Compile) {
     # compile-komorebi-rules.ps1 throws on failure (after printing why) rather than

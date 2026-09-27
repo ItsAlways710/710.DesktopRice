@@ -68,5 +68,5 @@ Copy-Item -Path $exeSource.FullName -Destination (Join-Path $TargetDir "wallust.
 
 Remove-Item -Recurse -Force $TempDir
 
-Write-Host "wallust $WallustVersion installed to $TargetDir"
+Write-Host "wallust $WallustVersion installed to tools\bin\wallust"
 & (Join-Path $TargetDir "wallust.exe") --version

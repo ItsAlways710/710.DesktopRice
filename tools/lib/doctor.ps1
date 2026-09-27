@@ -236,9 +236,16 @@ function Get-DoctorUserEnv {
 function Get-DoctorScriptCommand {
     # This clone's 710sRice.ps1 as a command that works typed into any PS7 window -- for when
     # the bare `710sRice` isn't on PATH, or runs some other copy. A plain path needs no
-    # quoting; anything else (a space, a quote, a $...) gets the call operator.
+    # quoting; anything else (a space, a quote, a $...) gets the call operator. A clone under
+    # the user's own folders (the README's `git clone` from a fresh window lands in the home
+    # folder) is written with $env:USERPROFILE & co., never the user name -- still typeable.
     param([Parameter(Mandatory)][string]$CommandLine)
-    $ps1 = Join-Path $Root '710sRice.ps1'
+    $ps1  = Join-Path $Root '710sRice.ps1'
+    $safe = ConvertTo-SafePath $ps1
+    if ($safe -match '^%(\w+)%(.*)$') {
+        $rest = $Matches[2] -replace '([`$"])', '`$1'   # escaped for a double-quoted string
+        return "& `"`$env:$($Matches[1])$rest`" $CommandLine"
+    }
     if ($ps1 -match '^[A-Za-z]:\\[\w.\\-]+$') { return "$ps1 $CommandLine" }
     "& '$($ps1 -replace "'", "''")' $CommandLine"
 }
@@ -248,7 +255,7 @@ function Test-DoctorPath {
     # new window gets. Missing: say whether a new window would find some other copy instead.
     $bin = Join-Path $Root 'bin'
     if (@("$(Get-UserPathRaw)" -split ';' | Where-Object { Test-SamePathEntry $_ $bin }).Count) {
-        return New-DoctorResult -Id 'path' -Status 'OK' -Text "710sRice command: $bin is on your PATH"
+        return New-DoctorResult -Id 'path' -Status 'OK' -Text "710sRice command: $(ConvertTo-SafePath $bin) is on your PATH"
     }
     # A new window's PATH is the machine's entries, then the user's. [IO.Path]::Combine, not
     # Join-Path: Join-Path throws on a drive that isn't there (an unplugged USB or network
@@ -260,8 +267,8 @@ function Test-DoctorPath {
         try { $found = Test-Path -LiteralPath ([IO.Path]::Combine($dir, '710sRice.cmd')) } catch { $found = $false }
         if ($found) { $other = $dir; break }
     }
-    New-DoctorResult -Id 'path' -Status 'XX' -Text "710sRice command: $bin isn't on your PATH" `
-        -Detail $(if ($other) { "710sRice on your PATH runs another copy: $other" }) `
+    New-DoctorResult -Id 'path' -Status 'XX' -Text "710sRice command: $(ConvertTo-SafePath $bin) isn't on your PATH" `
+        -Detail $(if ($other) { "710sRice on your PATH runs another copy: $(ConvertTo-SafePath $other)" }) `
         -Fix (Get-DoctorScriptCommand 'install -Only path') -Step 'path'
 }
 
@@ -276,7 +283,7 @@ function Test-DoctorEnvVars {
     $wrong = foreach ($name in $want.Keys) {
         $v = Get-DoctorUserEnv $name
         if (-not $v) { "$name isn't set" }
-        elseif (-not (Test-SamePathEntry $v $want[$name])) { "$name = $v" }
+        elseif (-not (Test-SamePathEntry $v $want[$name])) { "$name = $(ConvertTo-SafePath $v)" }
     }
     if (-not @($wrong).Count) {
         return New-DoctorResult -Id 'envvars' -Status 'OK' -Text "Config env vars point at this clone ($($want.Keys -join ', '))"

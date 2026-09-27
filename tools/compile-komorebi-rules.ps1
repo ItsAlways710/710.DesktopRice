@@ -347,10 +347,10 @@ try {
     $unchanged = $null -ne $existing -and ($existing -replace "`r`n", "`n").TrimEnd() -ceq ($json -replace "`r`n", "`n").TrimEnd()
     if ($Check) { exit $(if ($unchanged) { 0 } else { 3 }) }   # read-only: the answer, nothing written
     if ($unchanged) {
-        Write-Host "Unchanged $OutPath (left alone -- komorebi reloads on every write)"
+        Write-Host "Unchanged config\komorebi\komorebi.json (left alone -- komorebi reloads on every write)"
     } else {
         $json | Set-Content -Path $OutPath -Encoding UTF8
-        Write-Host "Compiled $OutPath"
+        Write-Host "Compiled config\komorebi\komorebi.json"
     }
     foreach ($cat in (Get-AllCategories).Values) {
         $count = @($merged[$cat]).Count

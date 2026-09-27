@@ -42,7 +42,7 @@ $RepoRoot   = Split-Path -Parent $PSScriptRoot
 $ColorsJson = Join-Path $RepoRoot "config\wallust\generated\colors.json"
 
 if (-not (Test-Path $ColorsJson)) {
-    throw "Expected wallust to have generated $ColorsJson before running this hook."
+    throw "Expected wallust to have generated config\wallust\generated\colors.json before running this hook."
 }
 $colors = Get-Content $ColorsJson -Raw | ConvertFrom-Json
 

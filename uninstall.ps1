@@ -233,9 +233,9 @@ Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (
 # written back exactly as stored (Remove-UserPathEntry). Reports its own result line, hence
 # Invoke-ActivationRevert (same -DryRun gate, no extra "done" line) rather than Invoke-Step.
 $riceBin = Join-Path $Root 'bin'
-Invoke-ActivationRevert "Remove $riceBin from your user PATH (the 710sRice command)" {
+Invoke-ActivationRevert "Remove $(ConvertTo-SafePath $riceBin) from your user PATH (the 710sRice command)" {
     if (Remove-UserPathEntry -Dir $riceBin) {
-        Step-Ok "710sRice command: $riceBin removed from your PATH"
+        Step-Ok "710sRice command: $(ConvertTo-SafePath $riceBin) removed from your PATH"
     } else {
         Step-Info "710sRice command: wasn't on your PATH"
     }
@@ -297,7 +297,7 @@ $wallustDir = Join-Path $Root 'tools\bin\wallust'
 if ($wallustRow -and ($Keep -contains $wallustRow.InstallId)) {
     Step-Info "$($wallustRow.InstallId) -- kept (-Keep)"
 } elseif (Test-Path $wallustDir) {
-    Invoke-Step "Remove downloaded wallust binary ($wallustDir)" {
+    Invoke-Step "Remove downloaded wallust binary (tools\bin\wallust)" {
         Remove-Item -Recurse -Force $wallustDir
     } 'wallust binary removed'
 } else {

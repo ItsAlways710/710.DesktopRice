@@ -340,9 +340,10 @@ $Steps['envvars'] = {
     $env:KOMOREBI_CONFIG_HOME = $komorebiConfigHome
     $env:YASB_CONFIG_HOME     = $yasbConfigHome
     $env:DESKTOPRICE_HOME     = $Root
-    Step-Ok "KOMOREBI_CONFIG_HOME = $komorebiConfigHome"
-    Step-Ok "YASB_CONFIG_HOME     = $yasbConfigHome"
-    Step-Ok "DESKTOPRICE_HOME     = $Root"
+    # Shown as %USERPROFILE%\... when the clone lives under the user's folders (ConvertTo-SafePath).
+    Step-Ok "KOMOREBI_CONFIG_HOME = $(ConvertTo-SafePath $komorebiConfigHome)"
+    Step-Ok "YASB_CONFIG_HOME     = $(ConvertTo-SafePath $yasbConfigHome)"
+    Step-Ok "DESKTOPRICE_HOME     = $(ConvertTo-SafePath $Root)"
 }
 
 $Steps['weather'] = {
@@ -388,7 +389,7 @@ $Steps['path'] = {
     $riceBin = Join-Path $Root 'bin'
     try {
         if (Add-UserPathEntry -Dir $riceBin) {
-            Step-Ok "710sRice command: $riceBin added to your PATH (open a new PS7 window to use it)"
+            Step-Ok "710sRice command: $(ConvertTo-SafePath $riceBin) added to your PATH (open a new PS7 window to use it)"
         } else {
             Step-Ok '710sRice command: already on your PATH'
         }
@@ -447,7 +448,7 @@ $Steps['theme'] = {
     $defaultWallpaper = Join-Path $Root 'assets\wallpapers\710Default001.png'
 
     if (-not (Test-Path $defaultWallpaper)) {
-        Step-Warn "Default wallpaper not found at $defaultWallpaper -- skipping the default theme."
+        Step-Warn "Default wallpaper not found at $(ConvertTo-SafePath $defaultWallpaper) -- skipping the default theme."
     } elseif (-not (Test-Path $wallustExe) -or -not (Test-Path (Join-Path $Root 'config\wallust\wallust.toml'))) {
         # The wallust step installs both; -Only theme on its own can find them missing.
         Step-Warn "wallust isn't set up (no wallust.exe or wallust.toml) -- skipping the default theme.$(if ($OnlyRun) { ' Add the wallust step: 710sRice install -Only wallust,theme' })"
@@ -459,7 +460,7 @@ $Steps['theme'] = {
             # tools\lib\activation.ps1).
             Save-OriginalWallpaper
             Set-DesktopWallpaper -Path $defaultWallpaper
-            Step-Ok "Desktop wallpaper set to $defaultWallpaper"
+            Step-Ok "Desktop wallpaper set to $(ConvertTo-SafePath $defaultWallpaper)"
 
             & $wallustExe run $defaultWallpaper --config-dir (Join-Path $Root 'config\wallust') 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "wallust run exited with code $LASTEXITCODE" }
