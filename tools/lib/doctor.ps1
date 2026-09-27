@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
   `710sRice doctor` -- a read-only health report of this clone and its install. Dot-sourced
-  by 710sRice.ps1 (after tools\lib\activation.ps1) -- never run directly.
+  by 710sRice.ps1 after tools\lib\activation.ps1 and tools\lib\packages.ps1 (it uses both)
+  -- never run directly.
 
 .DESCRIPTION
   Read-only, and it has to stay that way: doctor changes nothing, starts or stops nothing and
@@ -20,9 +21,9 @@
     [OK]  fine -- every one is shown, so a report also says what WAS checked
 
   A check that throws becomes "[!!] <name> -- couldn't check (<why>)" and the run goes on.
-  Nothing is printed until every check is in, so the report comes out in one piece. The two
-  slow outside calls -- `git ls-remote` (the network) and `git status` -- start first, in the
-  background, and are collected last.
+  Nothing is printed until every check is in, so the report comes out in one piece. The slow
+  outside calls -- `git ls-remote` (the network), `git status` and `winget pin list` -- start
+  first, in the background, and the checks that need them run last (Late).
 
   claude/cli-plan.md, Stage 3, has the full check list, what each severity means, and why.
 #>
@@ -53,9 +54,10 @@ function Write-DoctorResult {
 }
 
 function Invoke-DoctorCheck {
-    # One check's results; a check that throws is reported, never fatal.
-    param($Check)
-    try { @(& $Check.Run) }
+    # One check's results; a check that throws is reported, never fatal. $Context carries the
+    # background jobs (see Invoke-RiceDoctor) for the checks that collect one.
+    param($Check, $Context)
+    try { @(& $Check.Run $Context | Where-Object { $_ }) }
     catch { New-DoctorResult -Id $Check.Id -Status '!!' -Text "$($Check.Name) -- couldn't check ($($_.Exception.Message))" }
 }
 
@@ -77,6 +79,8 @@ function Start-DoctorProcess {
     $psi.RedirectStandardInput  = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
+    $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding  = [Text.Encoding]::UTF8
     foreach ($k in $Environment.Keys) { $psi.Environment[$k] = "$($Environment[$k])" }
     $p = [System.Diagnostics.Process]::Start($psi)
     $p.StandardInput.Close()
@@ -286,13 +290,162 @@ function Test-DoctorWeather {
         -Step 'weather' -NeedsYou
 }
 
+# --- b. Packages and pins -----------------------------------------------------------------------
+# versions.md's rows against the machine: the local probes in tools\lib\packages.ps1 (the ones
+# install's upgrade step goes by, so a check and its fix can't disagree) and ONE `winget pin
+# list`, started in the background at the top of the run -- a `winget list` per package would
+# be 20-30 s. Pinned rows get their version against the pin; the rest just need to be there.
+
+function Get-DoctorShellToolIds { @('Starship.Starship', 'junegunn.fzf', 'ajeetdsouza.zoxide', 'eza-community.eza', 'sharkdp.bat') }
+
+function Get-DoctorVersionRows {
+    $rows = @(Get-VersionsTable -Path (Join-Path $Root 'versions.md'))
+    if (-not $rows.Count) { throw "versions.md has no package table" }
+    $rows
+}
+
+function Test-DoctorPinnedWingetRow { param($Row) (Test-WingetRow $Row) -and (Test-PinnedRow $Row) }
+
+function Get-DoctorPackageName {
+    # "PowerShell 7" at 7.6.6 reads "PowerShell 7.6.6", not "PowerShell 7 7.6.6".
+    param([string]$Component, [string]$Version)
+    if (-not $Version) { return $Component }
+    if ($Component -match '^(.*\S)\s+(\d+)$' -and $Version.StartsWith("$($Matches[2]).")) { return "$($Matches[1]) $Version" }
+    "$Component $Version"
+}
+
+function Get-DoctorPackageResult {
+    # One versions.md row: installed at all, and -- when it's pinned -- at its pin.
+    param($Row)
+    $id   = "pkg:$($Row.InstallId)"
+    $name = $Row.Component
+    $v    = Get-PackageVersion $Row
+    if (-not $v.Probe)     { return New-DoctorResult -Id $id -Status '!!' -Text "$name -- doctor doesn't know how to check it" }
+    if (-not $v.Installed) { return New-DoctorResult -Id $id -Status 'XX' -Text "$name isn't installed" -Fix '710sRice install -Only packages' -Step 'packages' }
+    $shown = Get-DoctorPackageName $name $v.Version
+    if (-not (Test-PinnedRow $Row)) { return New-DoctorResult -Id $id -Status 'OK' -Text $shown }
+    $pin = $Row.Version
+    switch (Compare-PinVersion $v.Version $pin) {
+        0  { return New-DoctorResult -Id $id -Status 'OK' -Text "$shown -- at its pin" }
+        -1 { return New-DoctorResult -Id $id -Status 'XX' -Text "$shown -- older than its pin $pin" -Fix '710sRice install -Only upgrade' -Step 'upgrade' }
+        1  {
+            # The user's call, not a problem: a hand upgrade being tried out before the pin moves.
+            return New-DoctorResult -Id $id -Status '!!' -Text "$shown -- newer than its pin $pin" `
+                -Detail "left alone -- your call: bump versions.md once it's tested, or go back to $pin by hand"
+        }
+    }
+    $what = if ($v.Version) { "its version '$($v.Version)' can't be compared with its pin $pin" } else { "installed, but its version couldn't be read" }
+    New-DoctorResult -Id $id -Status '!!' -Text "$name -- $what"
+}
+
+function Test-DoctorPinnedPackages {
+    # The pinned winget rows, in versions.md's order, one line each.
+    foreach ($row in @(Get-DoctorVersionRows | Where-Object { Test-DoctorPinnedWingetRow $_ })) { Get-DoctorPackageResult $row }
+}
+
+function Start-DoctorWingetJob {
+    # `winget pin list`, in the background (3.2 s on the Dell). Reason says why there's no job.
+    $winget = (Get-Command winget.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    if (-not $winget) { return [pscustomobject]@{ Reason = "winget isn't installed"; Job = $null } }
+    [pscustomobject]@{ Reason = $null; Job = (Start-DoctorProcess -Exe $winget -Arguments @('pin', 'list')) }
+}
+
+function Test-DoctorPins {
+    # Every installed pinned package still winget-pinned -- without the pin, a general `winget
+    # upgrade --all` moves it off the version this repo was tested with. One line for all of
+    # them. Each Id is matched as a whole word in `winget pin list`'s output (its Name column
+    # has spaces, so it isn't split into columns). A package that isn't installed is already
+    # its own [XX] above, and the packages step pins what it installs.
+    param($Context)
+    $rows = @(Get-DoctorVersionRows | Where-Object { (Test-DoctorPinnedWingetRow $_) -and (Get-PackageVersion $_).Installed })
+    if (-not $rows.Count) { return }
+    $w = $Context.Winget
+    if ($w.Reason) { return New-DoctorResult -Id 'pins' -Status '!!' -Text "winget pins -- couldn't check ($($w.Reason))" }
+    $r = Wait-DoctorProcess -Job $w.Job -TimeoutSeconds 20
+    if ($r.TimedOut)       { return New-DoctorResult -Id 'pins' -Status '!!' -Text "winget pins -- couldn't check (winget didn't answer in 20 s)" }
+    if ($r.ExitCode -ne 0) { return New-DoctorResult -Id 'pins' -Status '!!' -Text "winget pins -- couldn't check (winget exited $(Format-WingetCode $r.ExitCode))" }
+    $missing = @($rows | Where-Object { $r.Out -notmatch "(?<![\w.-])$([regex]::Escape($_.InstallId))(?![\w.-])" } | ForEach-Object Component)
+    if ($missing.Count) {
+        return New-DoctorResult -Id 'pins' -Status 'XX' -Text "winget pins missing: $($missing -join ', ')" -Fix '710sRice install -Only packages' -Step 'packages'
+    }
+    if ($rows.Count -eq 1) { return New-DoctorResult -Id 'pins' -Status 'OK' -Text "winget pin in place ($($rows[0].Component))" }
+    New-DoctorResult -Id 'pins' -Status 'OK' -Text "winget pins: all $($rows.Count) in place"
+}
+
+function Test-DoctorWallust {
+    # wallust at versions.md's pin, by the very test install's wallust step makes (its
+    # --version output contains the pin) -- so this check and its fix can't disagree.
+    $row = Get-DoctorVersionRows | Where-Object { $_.InstallId -like '*wallust*' } | Select-Object -First 1
+    if (-not $row) { return }   # no wallust row: nothing to hold it to
+    $pin = $row.Version
+    $exe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
+    if (-not (Test-Path -LiteralPath $exe)) {
+        return New-DoctorResult -Id 'wallust' -Status 'XX' -Text "wallust isn't installed" -Fix '710sRice install -Only wallust' -Step 'wallust'
+    }
+    $out = "$(& $exe --version 2>$null)"
+    $ver = if ($out -match '^\s*wallust\s+(\S+)') { $Matches[1] } else { '' }
+    if ($out -match [regex]::Escape($pin)) {
+        return New-DoctorResult -Id 'wallust' -Status 'OK' -Text "wallust $(if ($ver) { $ver } else { $pin }) -- at its pin"
+    }
+    $text = if ($ver) { "wallust $ver -- its pin is $pin" } else { "wallust -- its version couldn't be read (its pin is $pin)" }
+    New-DoctorResult -Id 'wallust' -Status 'XX' -Text $text -Fix '710sRice install -Only wallust' -Step 'wallust'
+}
+
+function Get-DoctorShellToolsResult {
+    # The five shell tools on one line: what's there (starship with its version), and what isn't.
+    param([object[]]$Rows)
+    $have = @(); $missing = @()
+    foreach ($row in $Rows) {
+        $v = Get-PackageVersion $row
+        if (-not $v.Probe) { Get-DoctorPackageResult $row; continue }   # its own "doesn't know" line
+        if ($v.Installed) { $have += Get-DoctorPackageName $row.Component $v.Version } else { $missing += $row.Component }
+    }
+    if (-not $missing.Count) { return New-DoctorResult -Id 'pkg:shell-tools' -Status 'OK' -Text "Shell tools: $($have -join ', ')" }
+    $verb = if ($missing.Count -eq 1) { "isn't" } else { "aren't" }
+    $text = if ($have.Count) { "Shell tools: $($have -join ', ') -- $($missing -join ', ') $verb installed" }
+            else { "Shell tools: $($missing -join ', ') $verb installed" }
+    New-DoctorResult -Id 'pkg:shell-tools' -Status 'XX' -Text $text -Fix '710sRice install -Only packages' -Step 'packages'
+}
+
+function Test-DoctorOtherPackages {
+    # Everything that isn't a pinned winget row or wallust, in versions.md's order -- the shell
+    # tools folded into one line where the first of them sits.
+    $rows  = @(Get-DoctorVersionRows | Where-Object { -not (Test-DoctorPinnedWingetRow $_) -and $_.InstallId -notlike '*wallust*' })
+    $tools = @(Get-DoctorShellToolIds)
+    $toolsShown = $false
+    foreach ($row in $rows) {
+        if ($tools -contains $row.InstallId) {
+            if (-not $toolsShown) {
+                $toolsShown = $true
+                Get-DoctorShellToolsResult @($rows | Where-Object { $tools -contains $_.InstallId })
+            }
+            continue
+        }
+        Get-DoctorPackageResult $row
+    }
+}
+
 # --- The checks, in report order ------------------------------------------------------------
+# Each check: Id, Name (for "couldn't check"), Run (gets the run's context), and Late = waits
+# on a background job -- run after every other check, so the jobs have the longest head start.
+# The report keeps this order whatever order they ran in. The first group has no title: it
+# prints right under the header.
 function Get-DoctorGroups {
     @(
+        [pscustomobject]@{ Title = $null; Checks = @(
+            @{ Id = 'update';        Name = 'Update check';  Late = $true; Run = { param($c) Get-DoctorUpdateResult $c.Git $c.Head } }
+            @{ Id = 'local-changes'; Name = 'Local changes'; Late = $true; Run = { param($c) Get-DoctorLocalChangesResult $c.Git } }
+        ) }
         [pscustomobject]@{ Title = 'Repo and command'; Checks = @(
             @{ Id = 'path';    Name = '710sRice command'; Run = { Test-DoctorPath } }
             @{ Id = 'envvars'; Name = 'Config env vars';  Run = { Test-DoctorEnvVars } }
             @{ Id = 'weather'; Name = 'Weather widget';   Run = { Test-DoctorWeather } }
+        ) }
+        [pscustomobject]@{ Title = 'Packages and pins'; Checks = @(
+            @{ Id = 'pkg:pinned'; Name = 'Pinned packages'; Run = { Test-DoctorPinnedPackages } }
+            @{ Id = 'pins';       Name = 'winget pins';     Late = $true; Run = { param($c) Test-DoctorPins $c } }
+            @{ Id = 'wallust';    Name = 'wallust';         Run = { Test-DoctorWallust } }
+            @{ Id = 'pkg:other';  Name = 'Packages';        Run = { Test-DoctorOtherPackages } }
         ) }
     )
 }
@@ -304,25 +457,32 @@ function Invoke-RiceDoctor {
     Write-Host ''
     Write-Host '  Checking...' -ForegroundColor DarkGray
 
-    $gitState = Start-DoctorGitJobs
-    $header   = Get-DoctorHeader $gitState
-    $groups   = foreach ($g in Get-DoctorGroups) {
-        [pscustomobject]@{ Title = $g.Title; Results = @(foreach ($c in $g.Checks) { Invoke-DoctorCheck $c }) }
+    # The slow outside calls start first, in the background; the Late checks collect them.
+    $ctx = [pscustomobject]@{ Git = Start-DoctorGitJobs; Winget = Start-DoctorWingetJob; Head = $null }
+    $header   = Get-DoctorHeader $ctx.Git
+    $ctx.Head = $header.Head
+    $groups   = @(Get-DoctorGroups)
+    $results  = @{}
+    foreach ($late in $false, $true) {
+        for ($g = 0; $g -lt $groups.Count; $g++) {
+            for ($i = 0; $i -lt $groups[$g].Checks.Count; $i++) {
+                $check = $groups[$g].Checks[$i]
+                if ([bool]$check.Late -ne $late) { continue }
+                $results["$g/$i"] = @(Invoke-DoctorCheck $check $ctx)
+            }
+        }
     }
-    $top = @(
-        Get-DoctorUpdateResult $gitState $header.Head
-        Get-DoctorLocalChangesResult $gitState
-    ) | Where-Object { $_ }
 
     Write-Host ''
     Write-Host "== $($header.Title) ==" -ForegroundColor Cyan
-    $top | ForEach-Object { Write-DoctorResult $_ }
-    foreach ($g in $groups) {
-        Write-Host "`n-- $($g.Title) --" -ForegroundColor Cyan
-        $g.Results | ForEach-Object { Write-DoctorResult $_ }
+    $all = [System.Collections.Generic.List[object]]::new()
+    for ($g = 0; $g -lt $groups.Count; $g++) {
+        if ($groups[$g].Title) { Write-Host "`n-- $($groups[$g].Title) --" -ForegroundColor Cyan }
+        for ($i = 0; $i -lt $groups[$g].Checks.Count; $i++) {
+            foreach ($r in $results["$g/$i"]) { Write-DoctorResult $r; $all.Add($r) }
+        }
     }
 
-    $all      = @($top) + @($groups | ForEach-Object { $_.Results })
     $problems = @($all | Where-Object { $_.Status -eq 'XX' }).Count
     $warnings = @($all | Where-Object { $_.Status -eq '!!' }).Count
     $look     = "$(Get-DoctorPlural $warnings 'thing' 'things') worth a look (!!)."

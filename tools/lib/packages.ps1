@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Package helpers shared by install.ps1, uninstall.ps1, tools\install-wallust.ps1 and (Stage 3)
+  Package helpers shared by install.ps1, uninstall.ps1, tools\install-wallust.ps1 and
   `710sRice doctor`. Dot-sourced -- never run directly.
 
 .DESCRIPTION
@@ -10,7 +10,8 @@
 
   Dot-source AFTER tools\lib\activation.ps1: Invoke-WingetAsUser uses its Get-TaskFullName
   and $script:TaskFolder, Stop-PinnedApp its Find-AhkWindow / Send-AhkQuit and the caller's
-  $Root. (install-wallust.ps1 only needs Get-VersionsTable, which stands alone.)
+  $Root, the ShareX probe its Get-ShareXExe. (install-wallust.ps1 only needs
+  Get-VersionsTable, which stands alone.)
 #>
 
 function Get-VersionsTable {
@@ -121,8 +122,10 @@ function Invoke-WingetAsUser {
 # What's actually installed, read locally -- no winget call (a `winget list` per package is
 # 1-2 s each). Strings as the Dell reports them (2026-09-26 reading): komorebi's exes carry
 # no version resource at all, so komorebic --version is asked; the rest are exe
-# ProductVersions. Only the pinned rows have probes so far -- the upgrade step's need;
-# `710sRice doctor` (Stage 3) adds the rest here.
+# ProductVersions. A probe returns the version, '' for "installed, no version to read", or
+# nothing for "not installed". The five pinned rows' probes are the upgrade step's (it reads
+# no others); `710sRice doctor` reads them all. wallust (github-release) isn't here: doctor
+# checks it the way install's wallust step does.
 
 function Get-ExeProductVersion {
     param([string]$Path)
@@ -131,6 +134,27 @@ function Get-ExeProductVersion {
     $s = "$($v.ProductVersion)".Trim()
     if (-not $s) { $s = "$($v.FileVersion)".Trim() }
     $s
+}
+
+function Find-ExeOnPath {
+    # The first $Name in a folder on this process's PATH, or $null. A plain scan: Get-Command
+    # took 614 ms for the five shell tools on the Dell (it looks through modules as well).
+    param([Parameter(Mandatory)][string]$Name)
+    foreach ($dir in "$env:Path" -split [IO.Path]::PathSeparator) {
+        if ([string]::IsNullOrWhiteSpace($dir)) { continue }
+        try { $p = [IO.Path]::Combine([Environment]::ExpandEnvironmentVariables($dir.Trim().Trim('"')), $Name) } catch { continue }
+        if ([IO.File]::Exists($p)) { return $p }
+    }
+    $null
+}
+
+function Get-InstalledFontNames {
+    # Every font Windows has registered, machine-wide and for this user -- the value names
+    # ("JetBrainsMono NF Bold (TrueType)", ...).
+    foreach ($key in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts', 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts') {
+        $k = Get-Item -LiteralPath $key -ErrorAction SilentlyContinue
+        if ($k) { $k.GetValueNames() }
+    }
 }
 
 $script:PackageProbes = @{
@@ -161,6 +185,24 @@ $script:PackageProbes = @{
         $exe = @("$env:ProgramFiles\Everything\Everything.exe", "${env:ProgramFiles(x86)}\Everything\Everything.exe") |
                Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
         Get-ExeProductVersion $exe
+    }
+    # --- Unpinned rows (installed is what counts; a version only where it's cheap) ---------
+    'ShareX.ShareX' = { Get-ExeProductVersion (Get-ShareXExe) }
+    # The wt.exe alias Windows keeps for it. Its version sits behind Get-AppxPackage (1.2 s
+    # on the Dell) -- not worth it for an unpinned row.
+    'Microsoft.WindowsTerminal' = { if (Test-Path -LiteralPath "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe") { '' } }
+    # PowerShell 7 is what's running this.
+    '9MZ1SNWT0N5D' = { if ($PSVersionTable.PSVersion.Major -ge 7) { "$($PSVersionTable.PSVersion)" } }
+    'DEVCOM.JetBrainsMonoNerdFont' = { if (@(Get-InstalledFontNames | Where-Object { $_ -like 'JetBrainsMono NF*' }).Count) { '' } }
+    # Only starship's exe carries a version; the other four are there or not.
+    'Starship.Starship'  = { Get-ExeProductVersion (Find-ExeOnPath 'starship.exe') }
+    'junegunn.fzf'       = { if (Find-ExeOnPath 'fzf.exe') { '' } }
+    'ajeetdsouza.zoxide' = { if (Find-ExeOnPath 'zoxide.exe') { '' } }
+    'eza-community.eza'  = { if (Find-ExeOnPath 'eza.exe') { '' } }
+    'sharkdp.bat'        = { if (Find-ExeOnPath 'bat.exe') { '' } }
+    'PSFzf' = {
+        $m = Get-Module -ListAvailable -Name PSFzf -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
+        if ($m) { "$($m.Version)" }
     }
 }
 

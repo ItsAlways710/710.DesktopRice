@@ -78,6 +78,7 @@ $Commands = [ordered]@{
                              return
                          }
                          . (Join-Path $Root 'tools\lib\activation.ps1')
+                         . (Join-Path $Root 'tools\lib\packages.ps1')
                          . (Join-Path $Root 'tools\lib\doctor.ps1')
                          $script:RiceExit = Invoke-RiceDoctor
                      } }
