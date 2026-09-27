@@ -40,7 +40,13 @@
   absent - a fresh clone, or a machine install.ps1 hasn't been run on yet - the key is
   simply omitted from the compiled output, and komorebi falls back to whatever order
   Windows enumerates that session.
+
+  -Check (`710sRice doctor`): compile everything in memory exactly as a real run would, and
+  compare with the komorebi.json on disk -- never write it. Exit 0 = current, 3 = it would
+  change (or doesn't exist yet); a source that won't compile throws, as a real run does.
+  Warnings (a rule this compile skips) come out on the warning stream either way.
 #>
+param([switch]$Check)
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)  # tools/.. = repo root
@@ -113,7 +119,9 @@ function Get-RuleExactKey {
 function Get-AscLayer {
     param([string[]]$Disabled = @())
     if (-not (Test-Path $AscPath)) { return @() }
-    $asc = Get-Content $AscPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+    # Named in the error: the parser's own message doesn't say which file it was reading.
+    try { $asc = Get-Content $AscPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable }
+    catch { throw "vendor\asc\applications.json isn't valid JSON: $($_.Exception.Message)" }
     $categories = Get-AllCategories
     $skip = @($Disabled | Where-Object { $_ } | ForEach-Object { $_.ToLowerInvariant() })
     $out = [System.Collections.Generic.List[object]]::new()
@@ -287,7 +295,8 @@ function Merge-Rules {
 
 try {
     if (-not (Test-Path $BasePath)) { throw "Missing $BasePath - nothing to compile onto." }
-    $base = Get-Content $BasePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    try { $base = Get-Content $BasePath -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch { throw "config\komorebi\base.json isn't valid JSON: $($_.Exception.Message)" }
 
     $userRules   = Get-UserRulesLayer -Path $RulesPath -Source 'user:rules.toml'
     $localRules  = Get-UserRulesLayer -Path $LocalRulesPath -Source 'local:rules.local.toml'
@@ -335,7 +344,9 @@ try {
     $existing = if (Test-Path $OutPath) { Get-Content -Path $OutPath -Raw } else { $null }
     # Line endings normalized on both sides, so a CRLF/LF difference alone never
     # counts as "changed".
-    if ($null -ne $existing -and ($existing -replace "`r`n", "`n").TrimEnd() -ceq ($json -replace "`r`n", "`n").TrimEnd()) {
+    $unchanged = $null -ne $existing -and ($existing -replace "`r`n", "`n").TrimEnd() -ceq ($json -replace "`r`n", "`n").TrimEnd()
+    if ($Check) { exit $(if ($unchanged) { 0 } else { 3 }) }   # read-only: the answer, nothing written
+    if ($unchanged) {
         Write-Host "Unchanged $OutPath (left alone -- komorebi reloads on every write)"
     } else {
         $json | Set-Content -Path $OutPath -Encoding UTF8

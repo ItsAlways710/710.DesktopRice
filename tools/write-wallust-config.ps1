@@ -14,7 +14,11 @@
 
   Exit codes: 0 = written, or already current; 1 = template missing, unusable repo path,
   or the write failed.
+
+  -Check (`710sRice doctor`): the same comparison, nothing written. Exit 0 = current,
+  3 = it would be written (missing, or generated for another location); 1 as above.
 #>
+param([switch]$Check)
 $ErrorActionPreference = 'Stop'
 $Root     = Split-Path -Parent $PSScriptRoot
 $dir      = Join-Path $Root 'config\wallust'
@@ -38,6 +42,7 @@ if ((Test-Path $target) -and
     Write-Host "wallust.toml already current for $Root"
     exit 0
 }
+if ($Check) { exit 3 }   # read-only: it would be written
 try {
     [System.IO.File]::WriteAllText($target, $content, [System.Text.UTF8Encoding]::new($false))
     Write-Host "wallust.toml written for $Root"

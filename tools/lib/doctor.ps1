@@ -48,8 +48,10 @@ function New-DoctorResult {
 function Write-DoctorResult {
     param($Result)
     $color = switch ($Result.Status) { 'OK' { 'Green' } 'XX' { 'Red' } '!!' { 'Yellow' } default { 'Cyan' } }
-    Write-Host "  [$($Result.Status)] $($Result.Text)" -ForegroundColor $color
-    foreach ($d in $Result.Detail) { Write-Host "         $d" -ForegroundColor DarkGray }
+    # Control characters out: a parser's message can quote the byte it choked on (a NUL, say).
+    $clean = { param($s) "$s" -replace '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '' }
+    Write-Host "  [$($Result.Status)] $(& $clean $Result.Text)" -ForegroundColor $color
+    foreach ($d in $Result.Detail) { Write-Host "         $(& $clean $d)" -ForegroundColor DarkGray }
     if ($Result.Fix -and $Result.Status -in 'XX', '!!') { Write-Host "       fix: $($Result.Fix)" -ForegroundColor Yellow }
 }
 
@@ -518,7 +520,7 @@ function Test-DoctorPaused {
     # komorebi paused (SUPER+P) -- a plain fact, but it explains a lot: nothing tiles, and a bar
     # (re)started now never connects. Its own check, so a komorebic hiccup can't hide the lines above.
     if (-not (Get-Process komorebi -ErrorAction SilentlyContinue)) { return }
-    $kc = (Get-Command komorebic.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    $kc = Get-DoctorKomorebic
     if (-not $kc) { return }
     $text = @(& $kc state 2>$null) -join "`n"
     if (-not $text.Trim()) { return }   # no answer: nothing to say about a pause
@@ -648,6 +650,149 @@ function Test-DoctorTilingMode {
     New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task and the running komorebi agree"
 }
 
+# --- e. Generated configs ------------------------------------------------------------------------
+# The files install and the stack generate. komorebi.json and wallust.toml are asked of their
+# own writers in read-only mode (-Check), so doctor never carries a second copy of how
+# they're made. Monitor serials are never printed -- counts only (a serial is a hardware
+# identifier; one was scrubbed from this repo's history).
+
+function Get-DoctorKomorebic {
+    # komorebic.exe on PATH, else where winget installs it; $null when neither.
+    $kc = (Get-Command komorebic.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    if (-not $kc -and $env:ProgramFiles) {
+        $p = [IO.Path]::Combine($env:ProgramFiles, 'komorebi', 'bin', 'komorebic.exe')
+        if (Test-Path -LiteralPath $p) { $kc = $p }
+    }
+    $kc
+}
+
+function Test-DoctorKomorebiJson {
+    # compile-komorebi-rules.ps1 -Check: a real compile, in memory, against the file on disk.
+    # Its warnings are rules the compile skips -- a rule that silently never applies.
+    $out  = Join-Path $Root 'config\komorebi\komorebi.json'
+    $global:LASTEXITCODE = 0
+    try {
+        $stream = @(& (Join-Path $Root 'tools\compile-komorebi-rules.ps1') -Check 3>&1 6>$null)
+    } catch {
+        return New-DoctorResult -Id 'komorebi-json' -Status 'XX' -Text "komorebi.json won't compile" `
+            -Detail $_.Exception.Message -Fix 'fix the file named above, then 710sRice reload' -NeedsYou
+    }
+    $code = $LASTEXITCODE
+    switch ($code) {
+        0 { New-DoctorResult -Id 'komorebi-json' -Status 'OK' -Text 'komorebi.json is current with its sources' }
+        3 {
+            $text = if (Test-Path -LiteralPath $out) { 'komorebi.json is out of date with its sources' } else { 'komorebi.json is missing' }
+            New-DoctorResult -Id 'komorebi-json' -Status 'XX' -Text $text -Fix '710sRice reload'
+        }
+        default { New-DoctorResult -Id 'komorebi-json' -Status '!!' -Text "komorebi.json -- couldn't check (the compiler exited $code)" }
+    }
+    $warnings = @($stream | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object { $_.Message })
+    if ($warnings.Count) {
+        # Your rules (Quick add's file) have their own menu item; anything else is named in the warning.
+        $fix = if (-not @($warnings | Where-Object { $_ -notlike 'rules.local.toml:*' }).Count) {
+            'fix the line shown (Tiling > Edit my rules... opens rules.local.toml), then 710sRice reload'
+        } else { 'fix what the lines above name, then 710sRice reload' }
+        New-DoctorResult -Id 'komorebi-json-warnings' -Status '!!' -Text 'komorebi.json compiles, with warnings' -Detail $warnings -Fix $fix
+    }
+}
+
+function Get-DoctorLfSha256 {
+    # sha256 of a text file's bytes with CRLF turned into LF -- the file as the repo stores it.
+    # Git for Windows' default (core.autocrlf) checks text files out with CRLF, so a raw hash
+    # would never match a pin taken from the LF file; line endings don't change what it says.
+    # Decode/encode round-trips a valid UTF-8 file byte for byte, a BOM included.
+    param([Parameter(Mandatory)][string]$Path)
+    $text = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Path)) -replace "`r`n", "`n"
+    [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($text))).ToLowerInvariant()
+}
+
+function Test-DoctorAscPin {
+    # vendor\asc\applications.json -- the community rules, pinned to one upstream commit -- as
+    # pinned: pin.toml's sha256. Changed = someone edited a vendored file; re-pinning is a
+    # deliberate maintainer step, so this is worth knowing, not a problem repair touches.
+    $file = Join-Path $Root 'vendor\asc\applications.json'
+    $pin  = Join-Path $Root 'vendor\asc\pin.toml'
+    $fix  = 'git checkout -- vendor\asc\applications.json'
+    $want = if ((Test-Path -LiteralPath $pin) -and (Get-Content -LiteralPath $pin -Raw) -match '(?m)^\s*sha256\s*=\s*"([0-9a-fA-F]{64})"') { $Matches[1].ToLowerInvariant() }
+    if (-not $want) { return New-DoctorResult -Id 'asc' -Status '!!' -Text "ASC rules file -- couldn't check (vendor\asc\pin.toml has no sha256)" }
+    if (-not (Test-Path -LiteralPath $file)) { return New-DoctorResult -Id 'asc' -Status '!!' -Text 'ASC rules file is missing (vendor\asc\applications.json)' -Fix $fix }
+    if ((Get-DoctorLfSha256 $file) -eq $want) { return New-DoctorResult -Id 'asc' -Status 'OK' -Text 'ASC rules file matches its pin' }
+    New-DoctorResult -Id 'asc' -Status '!!' -Text "ASC rules file doesn't match its pin (vendor\asc\pin.toml)" -Fix $fix
+}
+
+function Test-DoctorDisplayIndex {
+    # display-index.local.json: which physical monitor is komorebi's 0, 1, ... It's written
+    # from a live `komorebic monitor-information` -- by install, or by komorebi's launcher on
+    # the first start without one -- so the connected monitors can only be compared while
+    # komorebi runs. A monitor in the file but not connected is normal (a laptop off its dock).
+    $file = Join-Path $Root 'config\komorebi\display-index.local.json'
+    $fix  = @{ Fix = '710sRice install -Only monitors, then 710sRice reload'; Step = 'monitors' }
+    $running = [bool](Get-Process komorebi -ErrorAction SilentlyContinue)
+    if (-not (Test-Path -LiteralPath $file)) {
+        if ($running) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is missing' @fix }
+        return New-DoctorResult -Id 'display-index' -Status '..' -Text 'display-index.local.json not written yet -- komorebi writes it when it next starts'
+    }
+    try { $map = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable }
+    catch { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json isn't valid JSON" @fix }
+    if (-not $map -or -not $map.Count) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is empty' @fix }
+    $mapped = @($map.Values | ForEach-Object { "$_" })
+    if (-not $running) {
+        return New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $(Get-DoctorPlural $map.Count 'monitor' 'monitors') mapped (komorebi isn't running -- not compared)"
+    }
+    $kc = Get-DoctorKomorebic
+    if (-not $kc) { return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json -- couldn't check (komorebic.exe not found)" }
+    $raw = @(& $kc monitor-information 2>$null) -join "`n"
+    if (-not $raw.Trim()) { return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json -- couldn't check (komorebic monitor-information said nothing)" }
+    # Monitors without a serial can't be mapped at all (write-display-index.ps1 leaves them out).
+    $connected = @(@($raw | ConvertFrom-Json) | ForEach-Object { "$($_.serial_number_id)" } | Where-Object { $_.Trim() })
+    $missing   = @($connected | Where-Object { $mapped -notcontains $_ })
+    if ($missing.Count) {
+        return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json doesn't list $($missing.Count) of the $($connected.Count) connected monitors" @fix
+    }
+    $which = switch ($connected.Count) { 1 { 'the connected monitor' } 2 { 'both connected monitors' } default { "all $($connected.Count) connected monitors" } }
+    New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $which mapped"
+}
+
+function Test-DoctorWallustToml {
+    # write-wallust-config.ps1 -Check: wallust.toml is generated with this clone's own path in
+    # it (wallust's template targets are absolute), so a moved clone needs it written again.
+    $global:LASTEXITCODE = 0
+    $stream = @(& (Join-Path $Root 'tools\write-wallust-config.ps1') -Check 3>&1 6>$null)
+    $code = $LASTEXITCODE
+    switch ($code) {
+        0 { return New-DoctorResult -Id 'wallust-toml' -Status 'OK' -Text 'wallust.toml generated for this clone' }
+        3 { return New-DoctorResult -Id 'wallust-toml' -Status 'XX' -Text "wallust.toml isn't generated for this clone (missing, or from a moved clone)" -Fix '710sRice install -Only wallust' -Step 'wallust' }
+    }
+    # 1: it can't be generated here at all (no template, or a path wallust.toml can't hold).
+    $why = @($stream | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object { $_.Message })
+    New-DoctorResult -Id 'wallust-toml' -Status 'XX' -Text "wallust.toml can't be generated for this clone" -Detail $why `
+        -Fix 'deal with what the line above says, then 710sRice install -Only wallust' -NeedsYou
+}
+
+function Test-DoctorThemeFiles {
+    # What wallust writes from the current wallpaper (config\wallust\wallust.toml's
+    # [templates]): the palette apply-wallust-outputs.ps1 reads (color1/3/5/6 -- borders,
+    # stack tabs), the bar's colours and starship's. Rebuilt from the current wallpaper by the
+    # palette step, which never changes the wallpaper itself.
+    $colors = Join-Path $Root 'config\wallust\generated\colors.json'
+    $problems = @()
+    if (-not (Test-Path -LiteralPath $colors)) { $problems += 'colors.json is missing' }
+    else {
+        $c = $null
+        try { $c = Get-Content -LiteralPath $colors -Raw | ConvertFrom-Json -AsHashtable } catch { $problems += "colors.json isn't valid JSON" }
+        if ($c) {
+            $gone = @('color1', 'color3', 'color5', 'color6' | Where-Object { "$($c[$_])" -notmatch '^#[0-9A-Fa-f]{6}$' })
+            if ($gone.Count) { $problems += "colors.json has no $($gone -join '/')" }
+        }
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $Root 'config\yasb\wallust_colors.css'))) { $problems += 'wallust_colors.css is missing' }
+    if (-not (Test-Path -LiteralPath (Join-Path $Root 'config\pwsh\starship.toml')))      { $problems += 'starship.toml is missing' }
+    if ($problems.Count) {
+        return New-DoctorResult -Id 'theme-files' -Status 'XX' -Text "Theme files: $($problems -join '; ')" -Fix '710sRice install -Only palette' -Step 'palette'
+    }
+    New-DoctorResult -Id 'theme-files' -Status 'OK' -Text 'Theme files: colors.json (color1/3/5/6), wallust_colors.css, starship.toml'
+}
+
 # --- The checks, in report order ------------------------------------------------------------
 # Each check: Id, Name (for "couldn't check"), Run (gets the run's context), and Late = waits
 # on a background job -- run after every other check, so the jobs have the longest head start.
@@ -677,6 +822,13 @@ function Get-DoctorGroups {
         [pscustomobject]@{ Title = 'Tasks and tiling mode'; Checks = @(
             @{ Id = 'tasks';  Name = 'Tasks';       Run = { Test-DoctorTasks } }
             @{ Id = 'tiling'; Name = 'Tiling mode'; Run = { Test-DoctorTilingMode } }
+        ) }
+        [pscustomobject]@{ Title = 'Generated configs'; Checks = @(
+            @{ Id = 'komorebi-json'; Name = 'komorebi.json';            Run = { Test-DoctorKomorebiJson } }
+            @{ Id = 'asc';           Name = 'ASC rules file';           Run = { Test-DoctorAscPin } }
+            @{ Id = 'display-index'; Name = 'display-index.local.json'; Run = { Test-DoctorDisplayIndex } }
+            @{ Id = 'wallust-toml';  Name = 'wallust.toml';             Run = { Test-DoctorWallustToml } }
+            @{ Id = 'theme-files';   Name = 'Theme files';              Run = { Test-DoctorThemeFiles } }
         ) }
     )
 }
