@@ -205,28 +205,24 @@ the way sign-in would (komorebi elevated, with no UAC prompt). See
 
 ```powershell
 git pull
-710sRice install
+710sRice doctor -repair
 ```
 
-Re-running the installer is always safe. A plain re-run keeps whatever you had: a
-full-time (`-Activate`) machine stays full-time, and your elevated-tiling choice is
-remembered. It installs what's missing, re-registers the sign-in tasks, and recompiles the
-rules. One thing to know: **every run applies the default wallpaper and theme again**, so
-pick yours with SUPER+W afterwards. There's no separate update checker, by design:
-`710sRice doctor` tells you when GitHub has a newer version, when you ask it.
+Repair fixes whatever the pull changed and keeps your wallpaper and theme: it moves pinned
+packages up to a new pin in [versions.md](versions.md) (closing each app first and starting
+it again afterwards), and picks up changed rules, launchers, the profile hook and Flow's
+settings. There's no separate update checker, by design: `710sRice doctor` tells you when
+GitHub has a newer version, when you ask it.
+
+Re-running the installer (`710sRice install`) is always safe too. A plain re-run keeps
+whatever you had: a full-time (`-Activate`) machine stays full-time, and your
+elevated-tiling choice is remembered. It installs what's missing, re-registers the sign-in
+tasks, and recompiles the rules. One thing to know: **every run applies the default
+wallpaper and theme again**, so pick yours with SUPER+W afterwards. It never moves a package
+that's already installed; `710sRice install -Only upgrade` does that for a new pin.
 
 `710sRice install -SkipPackages` skips the winget step and redoes everything else (config,
 theme, Flow setup), which is quicker when only the repo changed.
-
-A plain install never moves a package that's already installed. When a `git pull` brings a
-new pin in [versions.md](versions.md), move the pinned packages to it with:
-
-```powershell
-710sRice install -Only upgrade
-```
-
-It closes each app it upgrades first and starts it again afterwards. Anything already at its
-pin, or newer, is left alone.
 
 ## The 710sRice command
 
@@ -239,6 +235,7 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | `710sRice install` | Install or update; `-Activate` makes it full-time, `-SkipPackages` skips winget, `-Only <step>` runs just those [steps](#install-steps) *(admin)* |
 | `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
 | `710sRice doctor` | Health check: what's wrong, and the command that fixes each thing. Changes nothing; also says when GitHub has a newer version |
+| `710sRice doctor -repair` | Fix what doctor finds, then check again. Never touches your wallpaper, theme or choices *(admin)* |
 | `710sRice start` / `stop` | Start or stop the stack |
 | `710sRice restart` | Stop the stack and start it again (SUPER+Shift+R only restarts what it has to) |
 | `710sRice reload` | Reload the whole stack, same as SUPER+Shift+R |
@@ -284,7 +281,8 @@ way it already does (full-time or on demand). It doesn't take any other switch. 
 710sRice install -Only palette    # the bar or Terminal lost their colours
 ```
 
-`710sRice install -?` lists the steps too.
+`710sRice install -?` lists the steps too. `710sRice doctor -repair` runs them for whatever
+doctor finds, never `theme`.
 
 ## Run on demand
 
@@ -509,15 +507,13 @@ tested", so if something odd shows up around admin windows, that's the first thi
   in Settings > Personalization > Taskbar.
 - **Changed a weather or wallpaper variable?** Restart the bar: `710sRice reload bar`.
 - **Something not right?** `710sRice doctor` (or **Doctor** in the main menu, SUPER+Alt+Space)
-  checks the install and names the fix for each problem it finds. SUPER+Shift+R (or
-  `710sRice reload`) reloads the whole stack and re-applies the config. `710sRice logs` opens
-  the folder with every log.
+  checks the install and names the fix for each problem it finds; `710sRice doctor -repair`
+  runs those fixes for you. SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and
+  re-applies the config. `710sRice logs` opens the folder with every log.
 
 ## Future plans
 
-- **`710sRice doctor -repair`:** run the fixes doctor names, for you -- the
-  [install steps](#install-steps) behind each problem, never the theme reset. Then
-  **`710sRice update`** to pull and repair in one go.
+- **`710sRice update`:** pull and repair in one go.
 - **More commands:** set the weather key and location, point the wallpaper gallery at a
   folder, add or remove a game for game mode, and turn taskbar auto-hide on or off.
 - **A proper README pass:** screenshots and a short demo.
