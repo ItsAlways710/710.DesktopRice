@@ -204,15 +204,23 @@ the way sign-in would (komorebi elevated, with no UAC prompt). See
 ### Updating
 
 ```powershell
-git pull
-710sRice doctor -repair
+710sRice update
 ```
 
-Repair fixes whatever the pull changed and keeps your wallpaper and theme: it moves pinned
-packages up to a new pin in [versions.md](versions.md) (closing each app first and starting
-it again afterwards), and picks up changed rules, launchers, the profile hook and Flow's
-settings. There's no separate update checker, by design: `710sRice doctor` tells you when
-GitHub has a newer version, when you ask it.
+It pulls the newest version from GitHub, then runs `710sRice doctor -repair` from it (one UAC
+prompt). Repair keeps your wallpaper and theme: it moves pinned packages up to a new pin in
+[versions.md](versions.md) (closing each app first and starting it again afterwards), and
+picks up changed rules, launchers, the profile hook, Flow's settings, the bar's config,
+`710.ahk` and the theme templates. Update won't pull over your own edits to tracked files
+(those belong in `user.ahk`, `rules.local.toml` or `user.ps1` -- see
+[Make it yours](#make-it-yours)), and if your copy and GitHub have both moved, it tells you
+what to run instead. Nothing new? It says so and runs a health check.
+
+There's no separate update checker, by design: `710sRice doctor` tells you when GitHub has a
+newer version, when you ask it.
+
+From a copy older than the `update` command, or if you'd rather run git yourself,
+`git pull` and then `710sRice doctor -repair` does the same thing by hand.
 
 Re-running the installer (`710sRice install`) is always safe too. A plain re-run keeps
 whatever you had: a full-time (`-Activate`) machine stays full-time, and your
@@ -232,10 +240,11 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | Command | What it does |
 | --- | --- |
 | `710sRice` | The command list. `710sRice <command> -?` shows one command's options |
-| `710sRice install` | Install or update; `-Activate` makes it full-time, `-SkipPackages` skips winget, `-Only <step>` runs just those [steps](#install-steps) *(admin)* |
+| `710sRice install` | Install (safe to run again); `-Activate` makes it full-time, `-SkipPackages` skips winget, `-Only <step>` runs just those [steps](#install-steps) *(admin)* |
 | `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
 | `710sRice doctor` | Health check: what's wrong, and the command that fixes each thing. Changes nothing; also says when GitHub has a newer version |
 | `710sRice doctor -repair` | Fix what doctor finds, then check again. Never touches your wallpaper, theme or choices *(admin)* |
+| `710sRice update` | Get the newest version from GitHub, then repair from it. Keeps your wallpaper, theme and choices *(admin)* |
 | `710sRice start` / `stop` | Start or stop the stack |
 | `710sRice restart` | Stop the stack and start it again (SUPER+Shift+R only restarts what it has to) |
 | `710sRice reload` | Reload the whole stack, same as SUPER+Shift+R |
@@ -381,7 +390,7 @@ keys, Esc to go back.
 
 ## Make it yours
 
-Three optional files are yours alone. Git ignores them, so `git pull` never touches them:
+Three optional files are yours alone. Git ignores them, so neither `710sRice update` nor `git pull` touches them:
 
 - `config/ahk/user.ahk` — your own hotkeys. It's loaded after `710.ahk` if it exists, and
   SUPER+K lists its hotkeys too. Reload with SUPER+Shift+R.
@@ -513,7 +522,6 @@ tested", so if something odd shows up around admin windows, that's the first thi
 
 ## Future plans
 
-- **`710sRice update`:** pull and repair in one go.
 - **More commands:** set the weather key and location, point the wallpaper gallery at a
   folder, add or remove a game for game mode, and turn taskbar auto-hide on or off.
 - **A proper README pass:** screenshots and a short demo.

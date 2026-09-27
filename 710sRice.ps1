@@ -69,7 +69,7 @@ $Commands = [ordered]@{
                      Run = { Show-RiceHelp } }
     # More: shown by `install -?` only -- the steps from tools\lib\steps.ps1.
     'install'   = @{ Usage = 'install [-Activate] [-SkipPackages] [-ElevatedTiling | -NoElevatedTiling] | -Only <step>,...'
-                     Help = 'Install or update (safe to re-run); -Activate = start at sign-in; -Only = just those steps'; Admin = 'Required'
+                     Help = 'Install (safe to run again); -Activate = start at sign-in; -Only = just those steps'; Admin = 'Required'
                      More = "Steps: $($InstallStepOrder -join ', ')"
                      Run = { Invoke-RiceScript 'install.ps1' @args } }
     'uninstall' = @{ Usage = 'uninstall [-DryRun] [-Force] [-Keep <id>,<id>...]'
