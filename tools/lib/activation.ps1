@@ -287,6 +287,14 @@ public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, stri
     if (-not $ok) { throw "SystemParametersInfo returned false (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
 }
 
+function Get-CurrentWallpaper {
+    <# The desktop wallpaper that's up now: HKCU\Control Panel\Desktop\WallPaper -- the value
+       both SystemParametersInfo (Set-DesktopWallpaper) and the IDesktopWallpaper COM API
+       that YASB's wallpaper widget uses keep current. scripts\Sync-LockScreen.ps1 reads the
+       same value. $null when none is set. Used by install's palette step. #>
+    (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue).WallPaper
+}
+
 function Save-OriginalWallpaper {
     <# One-time snapshot of the wallpaper as it stood before install.ps1 Section 4 ever
        set the repo's default -- called from there, right before the first Set-

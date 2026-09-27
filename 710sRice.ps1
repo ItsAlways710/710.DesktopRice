@@ -60,7 +60,7 @@ $Commands = [ordered]@{
     # More: shown by `install -?` only. Keep it in step with install.ps1's $StepOrder.
     'install'   = @{ Usage = 'install [-Activate] [-SkipPackages] [-ElevatedTiling | -NoElevatedTiling] | -Only <step>,...'
                      Help = 'Install or update (safe to re-run); -Activate = start at sign-in; -Only = just those steps'; Admin = 'Required'
-                     More = 'Steps: packages, envvars, weather, path, wallust, theme, monitors, defender, profile, terminal, flow, compile, tasks, windows'
+                     More = 'Steps: packages, envvars, weather, path, wallust, theme, palette, monitors, defender, profile, terminal, flow, compile, tasks, windows'
                      Run = { Invoke-RiceScript 'install.ps1' @args } }
     'uninstall' = @{ Usage = 'uninstall [-DryRun] [-Force] [-Keep <id>,<id>...]'
                      Help = 'Undo everything install did; -DryRun shows the plan first'; Admin = 'Required'

@@ -33,10 +33,11 @@
     updates" feature by design (see claude/winarchy-decoupling-plan.md).
 
   STEPS. Each of the above is a named step, always run in this order:
-    packages  envvars  weather  path  wallust  theme  monitors  defender  profile
-    terminal  flow  compile  tasks  windows
-  A plain run does every step (windows only with -Activate) -- the same run as always,
-  default wallpaper and theme included. -Only <step>[,<step>...] runs just those, in the
+    packages  envvars  weather  path  wallust  theme  palette  monitors  defender
+    profile  terminal  flow  compile  tasks  windows
+  A plain run does every step but palette (windows only with -Activate) -- the same run as
+  always, default wallpaper and theme included. palette re-applies the CURRENT wallpaper's
+  colours instead (no wallpaper change) and only runs when named. -Only <step>[,<step>...] runs just those, in the
   same order, in whatever mode the machine is already in (a full-time machine's tasks stay
   sign-in tasks; windows does nothing on an on-demand machine); it takes no other switch
   and starts nothing afterwards. `710sRice doctor` names the step that fixes what it
@@ -116,8 +117,11 @@ if ($ElevatedTiling -and $NoElevatedTiling) {
 # Every step, in the one order they ever run in (see STEPS above). The step bodies are
 # further down, in $Steps; this part only decides which of them run -- before anything is
 # touched, so a bad command line changes nothing.
-$StepOrder = @('packages', 'envvars', 'weather', 'path', 'wallust', 'theme', 'monitors',
+$StepOrder = @('packages', 'envvars', 'weather', 'path', 'wallust', 'theme', 'palette', 'monitors',
                'defender', 'profile', 'terminal', 'flow', 'compile', 'tasks', 'windows')
+# Steps a plain run never includes -- only -Only runs them. palette: a plain run's theme step
+# already themes everything (from the default wallpaper).
+$NamedOnlySteps = @('palette')
 $OnlyRun = $PSBoundParameters.ContainsKey('Only')
 if ($OnlyRun) {
     # Through the 710sRice shim or its admin relaunch, `-Only path,envvars` arrives as ONE
@@ -137,9 +141,10 @@ if ($OnlyRun) {
     }
     $RunSteps = @($StepOrder | Where-Object { $wanted -contains $_ })
 } else {
-    # A plain run: every step, but windows only with -Activate -- a plain re-run has never
-    # touched the taskbar or hardening. (-SkipPackages is the packages step's own business.)
-    $RunSteps = @($StepOrder | Where-Object { $_ -ne 'windows' -or $Activate })
+    # A plain run: every step but the named-only ones, and windows only with -Activate -- a
+    # plain re-run has never touched the taskbar or hardening. (-SkipPackages is the packages
+    # step's own business.)
+    $RunSteps = @($StepOrder | Where-Object { $NamedOnlySteps -notcontains $_ -and ($_ -ne 'windows' -or $Activate) })
 }
 
 function Step-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -ForegroundColor Green }
@@ -414,6 +419,33 @@ $Steps['theme'] = {
             Step-Ok "Default theme applied (details above)."
         } catch {
             Step-Warn "Could not apply the default theme: $($_.Exception.Message)"
+        }
+    }
+}
+
+$Steps['palette'] = {
+    # --- palette: the current wallpaper's colours, re-applied (named-only) ---------------
+    # The opposite of theme: no wallpaper change. Runs exactly what YASB's wallpaper widget
+    # runs after every change (its two run_after lines in config\yasb\config.yaml) on the
+    # wallpaper that's up now (Get-CurrentWallpaper -- the value Sync-LockScreen.ps1 reads).
+    # Same image, same palette (wallust caches it per image), so on a healthy machine nothing
+    # visibly changes -- it's the fix for missing or stale generated theme files
+    # (colors.json, wallust_colors.css, starship.toml, Terminal's scheme). It never falls
+    # back to the default wallpaper: that's the theme step, the reset.
+    Write-Host "`n-- Palette (current wallpaper) --" -ForegroundColor Cyan
+    $currentWallpaper = Get-CurrentWallpaper
+    if (-not $currentWallpaper -or -not (Test-Path -LiteralPath $currentWallpaper)) {
+        Step-Warn "The current wallpaper ($(if ($currentWallpaper) { $currentWallpaper } else { 'none set' })) is gone -- pick one with SUPER+W; that re-themes everything from it."
+    } elseif (-not (Test-Path $wallustExe) -or -not (Test-Path (Join-Path $Root 'config\wallust\wallust.toml'))) {
+        Step-Warn "wallust isn't set up (no wallust.exe or wallust.toml) -- add the wallust step: 710sRice install -Only wallust,palette"
+    } else {
+        try {
+            & $wallustExe run $currentWallpaper --config-dir (Join-Path $Root 'config\wallust') 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "wallust run exited with code $LASTEXITCODE" }
+            & (Join-Path $Root 'tools\apply-wallust-outputs.ps1')
+            Step-Ok "Palette re-applied from the current wallpaper ($(Split-Path -Leaf $currentWallpaper)) -- details above."
+        } catch {
+            Step-Warn "Could not re-apply the palette: $($_.Exception.Message)"
         }
     }
 }
