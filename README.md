@@ -43,8 +43,8 @@ You don't have to set anything up ahead of time. The installer asks for two valu
 - `YASB_WEATHER_LOCATION` — a zip/postal code or city name
 
 It only asks for the ones that aren't set yet, never prints what's stored, and Enter skips.
-Skip them and the widget shows an error until they're set; run `710sRice install` again or
-set them yourself:
+Skip them and the widget shows an error until they're set; run `710sRice install -Only weather`
+or set them yourself:
 
 ```powershell
 setx YASB_WEATHER_API_KEY "your-key"
@@ -122,6 +122,8 @@ Either way, the installer:
 - Sets komorebi up to run **elevated**, so windows running as administrator tile like
   everything else. See [Admin windows](#admin-windows), including how to opt out
   (`710sRice tiling normal`) and why you might.
+
+Each of these is a step you can also run on its own; see [Install steps](#install-steps).
 
 ### Full-time: `-Activate`
 
@@ -215,6 +217,16 @@ pick yours with SUPER+W afterwards. There's no separate update checker, by desig
 `710sRice install -SkipPackages` skips the winget step and redoes everything else (config,
 theme, Flow setup), which is quicker when only the repo changed.
 
+A plain install never moves a package that's already installed. When a `git pull` brings a
+new pin in [versions.md](versions.md), move the pinned packages to it with:
+
+```powershell
+710sRice install -Only upgrade
+```
+
+It closes each app it upgrades first and starts it again afterwards. Anything already at its
+pin, or newer, is left alone.
+
 ## The 710sRice command
 
 Run it from any PowerShell 7 window. Commands marked *(admin)* ask for admin rights with a
@@ -223,7 +235,7 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | Command | What it does |
 | --- | --- |
 | `710sRice` | The command list. `710sRice <command> -?` shows one command's options |
-| `710sRice install` | Install or update; `-Activate` makes it full-time, `-SkipPackages` skips winget *(admin)* |
+| `710sRice install` | Install or update; `-Activate` makes it full-time, `-SkipPackages` skips winget, `-Only <step>` runs just those [steps](#install-steps) *(admin)* |
 | `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
 | `710sRice start` / `stop` | Start or stop the stack |
 | `710sRice reload` | Reload the whole stack, same as SUPER+Shift+R |
@@ -234,6 +246,42 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 
 The scripts behind it (`install.ps1`, `uninstall.ps1`, `scripts\Start-All.ps1` and so on)
 still exist and work on their own; the command just gives them one name.
+
+### Install steps
+
+The installer is a set of steps, always run in this order. A plain `710sRice install` runs
+them all, except `upgrade` and `palette`, which only run when you name them (and `windows`
+only runs with `-Activate`).
+
+| Step | What it does |
+| --- | --- |
+| `packages` | Installs what's missing from [versions.md](versions.md), pinned ones at their pin |
+| `upgrade` | Moves a pinned package that's older than its pin up to it |
+| `envvars` | Points komorebi and YASB at this repo's config |
+| `weather` | Asks for the weather key and location, if they aren't set |
+| `path` | Puts the `710sRice` command on your PATH |
+| `wallust` | Installs wallust at its pinned version |
+| `theme` | Sets the default wallpaper and themes everything from it |
+| `palette` | Re-themes everything from the wallpaper you have now (no wallpaper change) |
+| `monitors` | Records which monitor is which, for komorebi |
+| `defender` | Adds the Windows Defender exclusions |
+| `profile` | Hooks the PowerShell profile in |
+| `terminal` | Makes PowerShell 7 Windows Terminal's default |
+| `flow` | Sets up Flow Launcher |
+| `compile` | Rebuilds `komorebi.json` from the rules |
+| `tasks` | Registers the scheduled tasks, for whichever way this machine runs |
+| `windows` | The Windows settings of a full-time install (taskbar, hardening, Startup delay) |
+
+`-Only` runs just the steps you name, in that same order, and leaves the machine running the
+way it already does (full-time or on demand). It doesn't take any other switch. For example:
+
+```powershell
+710sRice install -Only path       # put the 710sRice command back on PATH
+710sRice install -Only upgrade    # after a pin bump in versions.md
+710sRice install -Only palette    # the bar or Terminal lost their colours
+```
+
+`710sRice install -?` lists the steps too.
 
 ## Run on demand
 
@@ -461,8 +509,9 @@ tested", so if something odd shows up around admin windows, that's the first thi
 ## Future plans
 
 - **`710sRice doctor`** (in progress): a read-only health check of the install, what's
-  wrong and how to fix it, plus whether a newer version is out. Then `710sRice doctor
-  -repair` to fix what it finds, and `710sRice update` to pull and repair in one go.
+  wrong and how to fix it, plus whether a newer version is out. Each problem names the
+  [install step](#install-steps) that fixes it. Then `710sRice doctor -repair` to run those
+  steps for you, and `710sRice update` to pull and repair in one go.
 - **More commands:** set the weather key and location, point the wallpaper gallery at a
   folder, add or remove a game for game mode, and turn taskbar auto-hide on or off.
 - **A proper README pass:** screenshots and a short demo.
