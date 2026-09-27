@@ -2,7 +2,9 @@
 '
 ' Used by tools\lib\activation.ps1's Get-AutostartComponents (via ConvertTo-HiddenLaunch)
 ' as the Scheduled Task's own Action for the powershell-hosted autostart components
-' (komorebi/yasb/ahk). WHY: Task Scheduler launching powershell.exe directly
+' (komorebi/yasb/ahk) and, since 2026-09-27, the elevated lock-screen-sync task (its
+' pwsh -WindowStyle Hidden popped an admin window on every wallpaper change -- plan doc
+' item 46). WHY: Task Scheduler launching powershell.exe directly
 ' with -WindowStyle Hidden still shows a brief console flash at every logon -- confirmed
 ' live on Dell, 3-4 flashes at every boot (one per powershell-hosted component). Windows
 ' allocates the console as part of process creation, before PowerShell's own startup code
@@ -50,7 +52,7 @@
 ' objShell.Run below is fire-and-forget (bWaitOnReturn=False, by design, see above), Task
 ' Scheduler reports success (0) even when the launch itself silently fails, or the launched
 ' script never reaches its own first log line. Every invocation writes a line to
-' run-hidden.log (shared across all four autostart components, same %LOCALAPPDATA%\
+' run-hidden.log (shared by every task that launches through here, same %LOCALAPPDATA%\
 ' 710.DesktopRice\ folder the launched scripts already log to and the spec files live in)
 ' right before calling Run, and a second line if Run itself throws, or if the spec file
 ' itself can't be read -- so a future silent failure shows up as either "no launch line at

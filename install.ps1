@@ -175,8 +175,9 @@ $Steps['packages'] = {
     # pin: installed at exactly that version and winget-pinned, so a general
     # `winget upgrade --all` elsewhere on the machine can't move it out from under this
     # repo's tested config. A `latest` row is installed unpinned and takes its own updates
-    # (PowerShell 7 among them -- every script here only needs >= 7.0, and the tasks launch
-    # it through the version-independent WindowsApps alias, Get-PwshPath). Source `msstore`
+    # (PowerShell 7 among them -- every script here only needs >= 7.0, and no scheduled task
+    # names a pwsh path: they start Windows PowerShell, whose path never moves, and whatever
+    # needs PS7 looks it up when it runs). Source `msstore`
     # = winget from the Store source (PowerShell 7's Store/MSIX build -- see versions.md).
     # The github-release row (wallust) is the wallust step's; psgallery rows are below.
     $versionRows = @(Get-VersionsTable -Path (Join-Path $Root 'versions.md'))

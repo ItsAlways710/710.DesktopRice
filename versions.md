@@ -105,9 +105,10 @@ from its pinned Codeberg release, SHA256-verified. See that script and the Palet
 of the plan doc.
 
 **PowerShell 7** — **unpinned since 2026-09-23** (was pinned at `7.6.6`; winget's catalog
-reported it as `7.6.6.0`). Persisted launch paths (autostart spec files, the lock-screen
-task) use the version-independent `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe` alias
-(`Get-PwshPath`), so Store updates can't strand them; the one versioned path left is the
+reported it as `7.6.6.0`). No scheduled task names a pwsh path — they all start Windows
+PowerShell (`powershell.exe`), whose path never moves, and whatever needs PS7 looks it up
+when it runs — so Store updates can't strand them (the lock-screen task was the last one
+that did, through the WindowsApps alias, until 2026-09-27); the one versioned path left is the
 Defender exclusion, which matches the real image path — re-run `install.ps1` elevated after
 a PowerShell update to refresh it. Original notes follow. Dell's existing install is the
 Microsoft Store/MSIX build

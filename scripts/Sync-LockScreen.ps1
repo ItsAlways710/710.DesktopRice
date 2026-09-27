@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
   Syncs the Windows lock screen image to whatever the desktop wallpaper currently is.
@@ -10,6 +9,12 @@
   every time wallust regenerates a palette, which itself is triggered whenever the
   wallpaper changes (see that script and tools\lib\activation.ps1's
   Register-LockScreenSyncTask).
+
+  Runs under Windows PowerShell 5.1 (powershell.exe), started hidden through
+  tools\lib\run-hidden.vbs like the component tasks' launchers -- so no #Requires -Version
+  7.0 here, and it must stay 5.1-safe. Until 2026-09-27 the task ran it in pwsh directly,
+  and every wallpaper change popped an admin window (plan doc item 46; activation.ps1's
+  Get-LockScreenSyncLaunch).
 
   Reads the CURRENT desktop wallpaper straight from HKCU\Control Panel\Desktop\WallPaper
   -- the same legacy value both SystemParametersInfo(SPI_SETDESKWALLPAPER) and the modern

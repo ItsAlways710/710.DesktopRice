@@ -362,24 +362,6 @@ function Get-ShareXExe {
 }
 
 # --- Windows Defender exclusions (unconditional -- not gated behind -Activate) ------
-function Get-PwshPath {
-    <# pwsh.exe path for anything that gets PERSISTED -- a Scheduled Task action or a
-       run-hidden launch spec -- and must keep working after PowerShell updates itself.
-       For the Store/MSIX build (Dell's), `Get-Command pwsh` in an elevated shell resolves
-       to the versioned package folder (...\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__
-       8wekyb3d8bbwe\pwsh.exe, seen live 2026-09-23 after re-registering autostart from an
-       admin shell), which disappears on the next Store update and would silently stop
-       lock-screen sync from launching. The per-user App Execution Alias
-       under %LOCALAPPDATA%\Microsoft\WindowsApps is what the Store keeps pointed at the
-       current version, whatever shell registered the task -- prefer it. MSI installs
-       (Program Files\PowerShell\7\pwsh.exe, not versioned) have no alias there and fall
-       through to Get-Command. NOT for Get-DefenderExclusionPaths: Defender matches the
-       real image path, which IS the versioned folder. #>
-    $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
-    if (Test-Path $alias) { return $alias }
-    (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
-}
-
 function Get-DefenderExclusionPaths {
     <# Ported from winarchy's Get-WinarchyDefenderExclusionPaths. Covers the same two lag
        sources: frequent I/O from ShareX/Everything, and Defender scanning komorebic.exe /
@@ -734,7 +716,9 @@ $script:TaskFolder = '710.DesktopRice'
 
 function ConvertTo-HiddenLaunch {
     <# Rewraps an Exe/Arguments pair so the Scheduled Task launches it via
-       tools\lib\run-hidden.vbs (WScript.Shell.Run, windowStyle 0) instead of directly.
+       tools\lib\run-hidden.vbs (WScript.Shell.Run, windowStyle 0) instead of directly. Used
+       by the component tasks (Get-AutostartComponents) and, since 2026-09-27, the elevated
+       lock-screen-sync task (Get-LockScreenSyncLaunch).
 
        Why: Task Scheduler launching a console-subsystem host (powershell.exe) directly
        with -WindowStyle Hidden still briefly flashes a console at every logon -- confirmed
@@ -1302,7 +1286,9 @@ function New-OnDemandElevatedTaskXml {
        AllowHardTerminate=true and a 1-minute ExecutionTimeLimit rather than New-TaskXml's
        false/unlimited -- this runs a single quick registry write, not a long-lived daemon,
        so a runaway instance should be killable and shouldn't be able to block later runs
-       (IgnoreNew) indefinitely. #>
+       (IgnoreNew) indefinitely. (The lock-screen task starts its script through
+       run-hidden.vbs since 2026-09-27, which returns at once -- so both now bound only that
+       launch, not the sync itself; see Get-LockScreenSyncLaunch.) #>
     param([Parameter(Mandatory)][string]$Description, [Parameter(Mandatory)][string]$Command,
           [string]$Arguments = '', [Parameter(Mandatory)][string]$User)
     $u = [System.Security.SecurityElement]::Escape($User)
@@ -1342,23 +1328,40 @@ function New-OnDemandElevatedTaskXml {
 "@
 }
 
+function Get-LockScreenSyncLaunch {
+    <# What the lock-screen-sync task runs: scripts\Sync-LockScreen.ps1 in a hidden Windows
+       PowerShell (powershell.exe, System32), started through tools\lib\run-hidden.vbs --
+       exactly the chain the component tasks use (ConvertTo-HiddenLaunch, spec file
+       launch-lock-screen-sync.txt), proven hidden at every sign-in, komorebi's elevated task
+       included. No console window ever exists. Until 2026-09-27 the task ran `pwsh
+       -WindowStyle Hidden` directly (through the WindowsApps alias since 584093b), and every
+       wallpaper change popped an admin window: Windows makes the console before pwsh gets far
+       enough to hide it (plan doc item 46; the race ConvertTo-HiddenLaunch explains). The
+       script is a few registry writes that run the same under 5.1, so the task doesn't need
+       PS7 at all -- the same host and path as the components' specs, nothing that moves when
+       PowerShell 7 updates. Exe / Arguments (the task's action), Spec / SpecLines.
+       -NoWrite: the same answer without writing the spec file -- for `710sRice doctor`,
+       which compares it with the registered task. #>
+    param([switch]$NoWrite)
+    $ps     = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $script = Join-Path $Root 'scripts\Sync-LockScreen.ps1'
+    ConvertTo-HiddenLaunch -NoWrite:$NoWrite -Key 'lock-screen-sync' -Exe $ps `
+        -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`""
+}
+
 function Register-LockScreenSyncTask {
     <# Registers the on-demand elevated 'lock-screen-sync' task (see
        New-OnDemandElevatedTaskXml and scripts\Sync-LockScreen.ps1). No LogonTrigger -- it
        never fires on its own; tools\apply-wallust-outputs.ps1 fires it with `schtasks /Run`
-       every time the wallpaper (and so the wallust palette) changes. Requires an elevated
-       shell to REGISTER (same as Set-DefenderExclusions); once registered, later RUNS need
-       no further elevation (see New-OnDemandElevatedTaskXml). Idempotent (/F overwrites).
-       Warn-and-skip if not elevated or pwsh is missing -- never fails the install; the lock
-       screen just won't sync until install.ps1 is re-run from an admin shell with PS7
-       present. #>
+       every time the wallpaper (and so the wallust palette) changes. Its action is
+       Get-LockScreenSyncLaunch's: wscript + run-hidden.vbs, never a visible window. Requires
+       an elevated shell to REGISTER (same as Set-DefenderExclusions); once registered, later
+       RUNS need no further elevation (see New-OnDemandElevatedTaskXml). Idempotent (/F
+       overwrites, the spec file is rewritten). Warn-and-skip if not elevated -- never fails
+       the install; the lock screen just won't sync until install.ps1 is re-run from an admin
+       shell. #>
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Step-Warn 'Lock-screen sync needs an elevated shell to register -- re-run install.ps1 from an admin PowerShell to enable it.'
-        return
-    }
-    $pwsh = Get-PwshPath
-    if (-not $pwsh) {
-        Step-Warn 'Lock-screen sync: pwsh.exe not found on PATH -- skipping (install PowerShell 7 first).'
         return
     }
     # One-time snapshot of PersonalizationCSP as it stood before this task can ever fire
@@ -1374,12 +1377,12 @@ function Register-LockScreenSyncTask {
         LockScreenImagePath   = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImagePath'
         LockScreenImageUrl    = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImageUrl'
     }
-    $script = Join-Path $Root 'scripts\Sync-LockScreen.ps1'
     $user = "$env:USERDOMAIN\$env:USERNAME"
     $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) '710-task-lock-screen-sync.xml'
     try {
+        $launch = Get-LockScreenSyncLaunch   # writes launch-lock-screen-sync.txt
         $xml = New-OnDemandElevatedTaskXml -Description '710.DesktopRice: syncs the lock screen image to the current wallpaper (on-demand, fired by apply-wallust-outputs.ps1)' `
-            -Command $pwsh -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`"" -User $user
+            -Command $launch.Exe -Arguments $launch.Arguments -User $user
         Set-Content -Path $xmlPath -Value $xml -Encoding Unicode
         $full = Get-TaskFullName -TaskName 'lock-screen-sync'
         & schtasks.exe /Create /TN $full /XML $xmlPath /F *> $null
@@ -1396,9 +1399,11 @@ function Unregister-LockScreenSyncTask {
     <# Reverts Register-LockScreenSyncTask -- called from uninstall.ps1. Only deletes the
        Scheduled Task itself; the actual PersonalizationCSP registry values are a separate
        concern, reverted by Restore-LockScreen below (uninstall.ps1 calls both). Mirrors
-       Unregister-Autostart: no elevation check, best-effort, ignores the exit code. #>
+       Unregister-Autostart: no elevation check, best-effort, ignores the exit code. Its
+       launch spec (Get-LockScreenSyncLaunch) goes with it. #>
     $full = Get-TaskFullName -TaskName 'lock-screen-sync'
     & schtasks.exe /Delete /TN $full /F *> $null
+    Remove-Item (Join-Path $env:LOCALAPPDATA '710.DesktopRice\launch-lock-screen-sync.txt') -Force -ErrorAction SilentlyContinue
 }
 
 function Restore-LockScreen {

@@ -638,9 +638,20 @@ function Test-DoctorTasks {
         New-DoctorResult -Id $id -Status 'OK' -Text "$name's task ($kind)"
     }
 
+    # The lock-screen sync task, on a full-time machine: there, and running what install would
+    # register now. One registered before 2026-09-27 ran pwsh directly and popped an admin
+    # window on every wallpaper change (plan doc item 46) -- `-Only tasks` re-registers it, so
+    # repair (and an update) fixes existing installs by itself.
     if ($fullTime) {
-        if (Test-Task -TaskName 'lock-screen-sync') { New-DoctorResult -Id 'task:lock-screen-sync' -Status 'OK' -Text 'Lock-screen sync task' }
-        else { New-DoctorResult -Id 'task:lock-screen-sync' -Status 'XX' -Text 'Lock-screen sync task is missing (full-time machine)' @tasksFix }
+        $lockId = 'task:lock-screen-sync'
+        $lock   = Get-ComponentTaskInfo -TaskName 'lock-screen-sync'
+        $want   = Get-LockScreenSyncLaunch -NoWrite
+        $drift  = if ($lock -and $want) { @(Get-DoctorTaskDrift $want $lock) } else { @() }
+        if (-not $lock) { New-DoctorResult -Id $lockId -Status 'XX' -Text 'Lock-screen sync task is missing (full-time machine)' @tasksFix }
+        elseif ($drift.Count) {
+            New-DoctorResult -Id $lockId -Status 'XX' -Text "Lock-screen sync task doesn't match what install would register now" -Detail $drift @tasksFix
+        }
+        else { New-DoctorResult -Id $lockId -Status 'OK' -Text 'Lock-screen sync task' }
     }
 }
 
