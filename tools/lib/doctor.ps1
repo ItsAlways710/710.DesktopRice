@@ -108,11 +108,21 @@ function Wait-DoctorProcess {
     [pscustomobject]@{ TimedOut = $false; ExitCode = $Job.Process.ExitCode; Out = "$($Job.Out.Result)"; Err = "$($Job.Err.Result)" }
 }
 
+function ConvertTo-DoctorGitText {
+    # A line of git's as it can be shown: control characters out, the user's profile folders
+    # hidden (ConvertTo-SafeText -- git names the repo's full path in some messages: "detected
+    # dubious ownership in repository at 'C:/Users/<name>/...'") and the remote's URL left out
+    # ("unable to access 'https://github.com/<owner>/...'" -- a fork's carries its owner's name).
+    param([string]$Text)
+    (ConvertTo-SafeText ("$Text" -replace '[\x00-\x1F\x7F]', '')) -replace "'?\w+://[^\s']+'?", 'origin'
+}
+
 function Get-DoctorFirstLine {
-    # The first non-empty line of $Text, git's "fatal: " / "error: " prefix dropped.
+    # The first non-empty line of $Text, git's "fatal: " / "error: " prefix dropped, made safe to
+    # show (ConvertTo-DoctorGitText).
     param([string]$Text)
     $line = @("$Text" -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }) | Select-Object -First 1
-    "$line" -replace '^(fatal|error): ', ''
+    ConvertTo-DoctorGitText ("$line" -replace '^(fatal|error): ', '')
 }
 
 # --- git: the header, the update line, local changes -------------------------------------------
@@ -179,8 +189,8 @@ function Get-DoctorUpdateResult {
     if (-not $Head)   { return New-DoctorResult -Id 'update' -Status '..' -Text "Couldn't check for updates (can't read this clone's commit)" }
     if ($remote -eq $Head) { return New-DoctorResult -Id 'update' -Status 'OK' -Text 'Up to date with GitHub' }
 
-    # Repair after the pull, not install: install puts the default wallpaper and theme back.
-    $newer = @{ Id = 'update'; Status = '!!'; Text = 'Newer version on GitHub'; Fix = 'git pull, then 710sRice doctor -repair' }
+    # `710sRice update` pulls, then repairs from the new version (tools\lib\update.ps1).
+    $newer = @{ Id = 'update'; Status = '!!'; Text = 'Newer version on GitHub'; Fix = '710sRice update' }
     if (-not (Invoke-DoctorGit $GitState.Git @('cat-file', '-e', "$remote^{commit}")).Ok) { return New-DoctorResult @newer }
     $rl = Invoke-DoctorGit $GitState.Git @('rev-list', '--left-right', '--count', "$Head...$remote")
     $counts = "$($rl.Lines)".Trim() -split '\s+'
@@ -196,12 +206,13 @@ function Get-DoctorUpdateResult {
     }
     New-DoctorResult -Id 'update' -Status '!!' -Text "Your copy and GitHub have both moved -- a git pull won't fast-forward" `
         -Detail "$(Get-DoctorPlural $ahead 'commit' 'commits') here that GitHub doesn't have, $behind on GitHub that $(if ($behind -eq 1) { "isn't" } else { "aren't" }) here" `
-        -Fix 'git pull --rebase'
+        -Fix 'git pull --rebase, then 710sRice doctor -repair'   # update won't merge or rebase for you
 }
 
 function Get-DoctorLocalChangesResult {
-    # Tracked files edited in place. A pull that touches one of them refuses to run, so the
-    # user's own tweaks belong in the files git ignores (user.ahk, rules.local.toml, user.ps1).
+    # Tracked files edited in place. `710sRice update` refuses to pull over any of them (git
+    # itself only refuses when an incoming commit touches one), so the user's own tweaks belong
+    # in the files git ignores (user.ahk, rules.local.toml, user.ps1). update reuses this check.
     param($GitState)
     if ($GitState.Reason) { return $null }   # the update line already said why
     $r = Wait-DoctorProcess -Job $GitState.Status -TimeoutSeconds 10
@@ -213,7 +224,7 @@ function Get-DoctorLocalChangesResult {
     $shown = @($files | Select-Object -First 8)
     if ($files.Count -gt $shown.Count) { $shown += "... and $($files.Count - $shown.Count) more" }
     New-DoctorResult -Id 'local-changes' -Status '!!' `
-        -Text "$(Get-DoctorPlural $files.Count 'tracked file' 'tracked files') changed locally -- git pull can refuse to update" `
+        -Text "$(Get-DoctorPlural $files.Count 'tracked file' 'tracked files') changed locally -- 710sRice update won't pull over $(if ($files.Count -eq 1) { 'it' } else { 'them' })" `
         -Detail $shown -Fix 'move your edits into user.ahk / rules.local.toml / user.ps1, or git stash'
 }
 

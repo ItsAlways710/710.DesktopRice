@@ -47,6 +47,26 @@ function ConvertTo-SafePath {
     $out
 }
 
+function ConvertTo-SafeText {
+    # ConvertTo-SafePath for a whole message rather than one path: the user's profile folders
+    # ANYWHERE in $Text become %LOCALAPPDATA% / %APPDATA% / %USERPROFILE%, written with either
+    # slash -- git's messages use C:/Users/<name>/... ("detected dubious ownership in repository
+    # at '...'"). The longer folders go first, so %LOCALAPPDATA% wins over %USERPROFILE%; a folder
+    # only matches as a whole (C:\Users\bob never eats part of C:\Users\bobby).
+    param([string]$Text)
+    $out = "$Text"
+    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+        $dir = [Environment]::GetEnvironmentVariable($v)
+        if (-not $dir) { continue }
+        $dir = $dir.TrimEnd('\', '/')
+        foreach ($form in @($dir, ($dir -replace '\\', '/')) | Select-Object -Unique) {
+            $out = [regex]::Replace($out, "$([regex]::Escape($form))(?=[\\/'`"\s:;,)]|$)", "%$v%",
+                                    [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        }
+    }
+    $out
+}
+
 # --- Registry backup (reg.exe export) -----------------------------------------------
 function Backup-RegistryKey {
     <# Exports one registry key (reg.exe export format) to backups/<timestamp>-<label>/.

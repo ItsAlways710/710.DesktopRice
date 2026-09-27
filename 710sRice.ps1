@@ -31,7 +31,9 @@
   Exit codes: help 0; unknown command, an error or a declined UAC prompt 1; otherwise the
   called script's own (relayed from the admin window when it ran there) -- for reload, read
   from reload-stack.log, since 710.ahk is the one that runs it; for doctor, the number of
-  problems it found; for doctor -repair, the number still left.
+  problems it found; for doctor -repair, the number still left; for update, 1 when it refused
+  (nothing changed) or its repair didn't run, else doctor's count (nothing to pull) or
+  repair's (pulled).
 
   Never run this hidden (AHK, scheduled tasks). When its window was opened just for it (the
   Run dialog, an Explorer double-click, the elevated relaunch) it ends with "Press Enter to
@@ -45,6 +47,7 @@
   710sRice uninstall -DryRun -Keep AutoHotkey.AutoHotkey,ShareX.ShareX
   710sRice doctor                     # what's wrong, and the command that fixes each thing
   710sRice doctor -repair             # ...and fix it (never the wallpaper or theme)
+  710sRice update                     # the newest version from GitHub, then doctor -repair
   710sRice reload bar                 # just the bar, e.g. after a weather setting change
   710sRice tiling normal              # komorebi stops running as admin (next start)
 #>
@@ -59,7 +62,8 @@ $Root = $PSScriptRoot
 # beats 'reload': the dispatcher tries the first two words before the first one). Usage is the
 # help line's left side; Admin is 'Required' (the command asks for UAC itself) or 'Any'; Run gets
 # the arguments that follow the name, with their switch marks intact. Hidden rows work but
-# stay out of the help list (bare `tiling` = `tiling status`).
+# stay out of the help list (bare `tiling` = `tiling status`). AsksAdmin tags a row that runs as
+# you but asks for UAC part-way (update's repair) with (admin) in help, like a Required row.
 $Commands = [ordered]@{
     'help'      = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'
                      Run = { Show-RiceHelp } }
@@ -89,6 +93,9 @@ $Commands = [ordered]@{
     # doctor -repair: doctor's checks, then the fix behind every [XX] that doesn't need you
     # (tools\lib\repair.ps1, loaded only here), then the checks again. Admin: one UAC prompt,
     # the work happens in the admin window. Exit code = the problems left.
+    # ALSO update's hand-off (tools\lib\update.ps1): every update's first half, however old,
+    # starts `710sRice.ps1 --elevated doctor -repair` or `710sRice.ps1 doctor -repair` from the
+    # files it just pulled -- keep this row's name and the --elevated marker working, always.
     'doctor -repair' = @{ Usage = 'doctor -repair'; Help = 'Fix what doctor finds -- never your wallpaper, theme or choices'; Admin = 'Required'
                      Run = {
                          if ($args.Count) {
@@ -102,6 +109,26 @@ $Commands = [ordered]@{
                          . (Join-Path $Root 'tools\lib\doctor.ps1')
                          . (Join-Path $Root 'tools\lib\repair.ps1')
                          $script:RiceExit = Invoke-RiceRepair
+                     } }
+    # update: pull as you (tools\lib\update.ps1 -- loaded here, BEFORE the pull; nothing is loaded
+    # after it), then doctor -repair in a new process started from the pulled files. The row runs
+    # in any window; the repair asks for UAC itself (AsksAdmin: help says (admin)).
+    'update'    = @{ Usage = 'update'; Help = 'Get the newest version from GitHub, then repair -- keeps your wallpaper, theme and choices'; Admin = 'Any'; AsksAdmin = $true
+                     Run = {
+                         if ($args.Count) {
+                             Write-RiceError "Unknown option '$($args[0])' for update"
+                             Show-RiceCommandHelp 'update'
+                             $script:RiceExit = 1
+                             return
+                         }
+                         . (Join-Path $Root 'tools\lib\activation.ps1')
+                         . (Join-Path $Root 'tools\lib\packages.ps1')
+                         . (Join-Path $Root 'tools\lib\doctor.ps1')
+                         . (Join-Path $Root 'tools\lib\update.ps1')
+                         $r = Invoke-RiceUpdate
+                         # A statement of its own, not an assignment: the repair's output goes
+                         # straight to the console (see Invoke-RiceUpdateHandOff).
+                         if ($r.HandOff) { Invoke-RiceUpdateHandOff } else { $script:RiceExit = $r.Exit }
                      } }
     'start'     = @{ Usage = 'start'; Help = 'Start the stack'; Admin = 'Any'
                      Run = { Invoke-RiceScript 'scripts\Start-All.ps1' @args } }
@@ -425,7 +452,7 @@ function Invoke-RiceElevated {
     Write-Host "  [$(if ($p.ExitCode -eq 0) { 'OK' } else { '!!' })] Admin window finished (exit $($p.ExitCode))" -ForegroundColor $color
 }
 
-function Get-RiceAdminTag { param($Command) if ($Command.Admin -eq 'Required') { '   (admin)' } else { '' } }
+function Get-RiceAdminTag { param($Command) if ($Command.Admin -eq 'Required' -or $Command.AsksAdmin) { '   (admin)' } else { '' } }
 
 function Show-RiceHelp {
     $col = 26
