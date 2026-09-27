@@ -526,6 +526,128 @@ function Test-DoctorPaused {
     if ($state.is_paused) { New-DoctorResult -Id 'paused' -Status '..' -Text 'komorebi is paused -- SUPER+P resumes' }
 }
 
+# --- d. Tasks and tiling mode --------------------------------------------------------------------
+# Every component starts through its scheduled task -- with a sign-in trigger on a full-time
+# (-Activate'd) machine, without one on an on-demand machine -- and install's tasks step
+# (`710sRice install -Only tasks`) re-registers them all in the machine's mode, which fixes
+# nearly everything here. The mode itself is install's own rule (Test-FullTimeMachine). The
+# task's command is compared with what install would register now (Get-AutostartComponents
+# -NoWrite: the same answer, nothing written); a difference is reported by part, never with
+# the paths -- the launch files live under %LOCALAPPDATA%, whose path carries the user name.
+
+function Get-DoctorComponentName {
+    param([string]$Key)
+    switch ($Key) { 'komorebi' { 'komorebi' } 'yasb' { 'YASB' } 'sharex' { 'ShareX' } 'ahk' { '710.ahk' } default { $Key } }
+}
+
+function Test-DoctorSameText { param([string]$A, [string]$B) [string]::Equals("$A".Trim(), "$B".Trim(), [StringComparison]::OrdinalIgnoreCase) }
+
+function Get-DoctorTaskDrift {
+    # What differs between a component's task as registered and what install would register
+    # now: the task's command, and (for the three launched through run-hidden.vbs) its
+    # launch-<key>.txt. Nothing = they match.
+    param($Component, $Task)
+    if (-not (Test-DoctorSameText $Task.Command $Component.Exe) -or -not (Test-DoctorSameText $Task.Arguments $Component.Arguments)) {
+        "its task's command differs"
+    }
+    if ($Component.Spec) {
+        $leaf = Split-Path -Leaf $Component.Spec
+        if (-not (Test-Path -LiteralPath $Component.Spec)) { "$leaf is missing" }
+        else {
+            $lines = @(Get-Content -LiteralPath $Component.Spec -ErrorAction Stop)
+            if ($lines.Count -ne 2 -or -not (Test-DoctorSameText $lines[0] $Component.SpecLines[0]) -or -not (Test-DoctorSameText $lines[1] $Component.SpecLines[1])) {
+                "$leaf differs"
+            }
+        }
+    }
+}
+
+function Test-DoctorTasks {
+    # The mode line, one line per component's task (the worst thing found), and the lock-screen
+    # sync task on a full-time machine.
+    $components = @(Get-AutostartComponents -NoWrite)
+    if (-not $components.Count) { return }   # nothing installed: group b says so
+    $tasksFix = @{ Fix = '710sRice install -Only tasks'; Step = 'tasks' }
+    $fullTime = Test-FullTimeMachine
+    $infos = @{}
+    foreach ($c in $components) { $infos[$c.Key] = Get-ComponentTaskInfo -TaskName $c.TaskName }
+    $names = { param($list) ($list | ForEach-Object { Get-DoctorComponentName $_.Key }) -join ', ' }
+
+    # Mode. Full-time with a task that has no sign-in trigger = mixed (install's rule makes the
+    # whole machine full-time, so the tasks step gives every task its trigger back).
+    $signIn   = @($components | Where-Object { $infos[$_.Key] -and $infos[$_.Key].AtLogOn })
+    $noSignIn = @($components | Where-Object { $infos[$_.Key] -and -not $infos[$_.Key].AtLogOn })
+    if ($fullTime -and $noSignIn.Count) {
+        $text = if ($signIn.Count) { "Mode: mixed -- $(& $names $signIn) start at sign-in; $(& $names $noSignIn) $(if ($noSignIn.Count -eq 1) { "doesn't" } else { "don't" })" }
+                else { "Mode: mixed -- the lock-screen sync task (or a Startup shortcut) says full-time, but no task starts at sign-in" }
+        New-DoctorResult -Id 'mode' -Status 'XX' -Text $text @tasksFix
+    } elseif ($fullTime) {
+        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: full-time (starts at sign-in)'
+    } else {
+        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: on demand (710sRice start)'
+    }
+
+    $startup = [Environment]::GetFolderPath('Startup')
+    foreach ($c in $components) {
+        $name = Get-DoctorComponentName $c.Key
+        $id   = "task:$($c.Key)"
+        $t    = $infos[$c.Key]
+        if (-not $t) { New-DoctorResult -Id $id -Status 'XX' -Text "$name has no task" @tasksFix; continue }
+        if ($c.Key -ne 'komorebi' -and $t.RunLevel -eq 'HighestAvailable') {
+            New-DoctorResult -Id $id -Status 'XX' -Text "$name's task runs elevated -- only komorebi's may" @tasksFix; continue
+        }
+        $drift = @(Get-DoctorTaskDrift $c $t)
+        if ($drift.Count) {
+            New-DoctorResult -Id $id -Status 'XX' -Text "$name's task doesn't match what install would register now (a moved clone or a moved exe?)" -Detail $drift @tasksFix
+            continue
+        }
+        # A Startup shortcut from before the tasks (or Register-Autostart's fallback) next to a
+        # working task. The tasks step removes them (Register-Autostart; a shortcut makes the
+        # machine full-time by install's rule, so that's the path it takes).
+        if (Test-Path -LiteralPath ([IO.Path]::Combine($startup, $c.LnkName))) {
+            $why = if ($t.AtLogOn) { "$name starts twice at sign-in" } else { "it starts $name at sign-in on its own" }
+            New-DoctorResult -Id $id -Status 'XX' -Text "Startup folder still has `"$($c.LnkName)`" next to $name's task -- $why" @tasksFix
+            continue
+        }
+        if (-not $t.Enabled) {
+            New-DoctorResult -Id $id -Status '!!' -Text "$name's task is disabled in Task Scheduler" `
+                -Fix "re-enable it in Task Scheduler (Task Scheduler Library > 710.DesktopRice > $($c.TaskName))"
+            continue
+        }
+        $kind = @(if ($t.AtLogOn) { 'sign-in' } else { 'on demand' }; if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' }) -join ', '
+        New-DoctorResult -Id $id -Status 'OK' -Text "$name's task ($kind)"
+    }
+
+    if ($fullTime) {
+        if (Test-Task -TaskName 'lock-screen-sync') { New-DoctorResult -Id 'task:lock-screen-sync' -Status 'OK' -Text 'Lock-screen sync task' }
+        else { New-DoctorResult -Id 'task:lock-screen-sync' -Status 'XX' -Text 'Lock-screen sync task is missing (full-time machine)' @tasksFix }
+    }
+}
+
+function Test-DoctorTilingMode {
+    # Three answers that should agree: the saved mode, komorebi's task, the running komorebi.
+    # The saved mode reaches the task through `710sRice tiling <mode>` (or install), and the
+    # task reaches komorebi at its next start -- `710sRice restart`.
+    $saved = Get-TilingMode
+    $mode  = if (Test-Path -LiteralPath (Get-TilingModePath)) { $saved } else { "$saved (the default)" }
+    $t = Get-ComponentTaskInfo -TaskName 'komorebi'
+    if (-not $t) { return New-DoctorResult -Id 'tiling' -Status '..' -Text "Tiling mode: $mode -- komorebi has no task yet" }
+    $taskMode = if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' } else { 'normal' }
+    if ($taskMode -ne $saved) {
+        return New-DoctorResult -Id 'tiling' -Status 'XX' -Text "Tiling mode: $saved is saved, but komorebi's task runs $(if ($taskMode -eq 'elevated') { 'elevated' } else { 'non-elevated' })" `
+            -Fix "710sRice tiling $saved"
+    }
+    $running = Get-ProcessElevation -Name 'komorebi'
+    if ($running -notin 'elevated', 'normal') {
+        return New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task agrees ($(if ($running -eq 'not running') { "komorebi isn't running" } else { "couldn't read the running komorebi" }))"
+    }
+    if ($running -ne $taskMode) {
+        return New-DoctorResult -Id 'tiling' -Status '!!' -Text "Tiling mode: $saved -- but the running komorebi $(if ($running -eq 'elevated') { 'is elevated' } else { "isn't" }) (it started before the change)" `
+            -Fix '710sRice restart'
+    }
+    New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task and the running komorebi agree"
+}
+
 # --- The checks, in report order ------------------------------------------------------------
 # Each check: Id, Name (for "couldn't check"), Run (gets the run's context), and Late = waits
 # on a background job -- run after every other check, so the jobs have the longest head start.
@@ -551,6 +673,10 @@ function Get-DoctorGroups {
         [pscustomobject]@{ Title = 'Stack'; Checks = @(
             @{ Id = 'stack';  Name = 'Stack';                 Run = { Test-DoctorStack } }
             @{ Id = 'paused'; Name = "komorebi's pause state"; Run = { Test-DoctorPaused } }
+        ) }
+        [pscustomobject]@{ Title = 'Tasks and tiling mode'; Checks = @(
+            @{ Id = 'tasks';  Name = 'Tasks';       Run = { Test-DoctorTasks } }
+            @{ Id = 'tiling'; Name = 'Tiling mode'; Run = { Test-DoctorTilingMode } }
         ) }
     )
 }

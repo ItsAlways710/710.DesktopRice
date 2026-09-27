@@ -762,23 +762,30 @@ function ConvertTo-HiddenLaunch {
        reboot days later, etc.), so it has to be static/persistent, not a live variable --
        same %LOCALAPPDATA%\710.DesktopRice\ folder every other autostart log/state file
        already lives in. #>
+    # -NoWrite: work out the same answer without writing the spec file -- `710sRice doctor`
+    # compares it with the registered task and the file on disk, and writes nothing.
     param(
         [Parameter(Mandatory)][string]$Key,
         [Parameter(Mandatory)][string]$Exe,
-        [Parameter(Mandatory)][string]$Arguments
+        [Parameter(Mandatory)][string]$Arguments,
+        [switch]$NoWrite
     )
     $wscript = Join-Path $env:WINDIR 'System32\wscript.exe'
     $vbs = Join-Path $Root 'tools\lib\run-hidden.vbs'
     $specDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
-    New-Item -ItemType Directory -Path $specDir -Force | Out-Null
     $spec = Join-Path $specDir "launch-$Key.txt"
-    # ASCII, no BOM -- every value written here is a plain Windows path or powershell.exe
-    # flag, so there's nothing here that needs Unicode; a BOM would otherwise land as a
-    # stray leading character on run-hidden.vbs's own ForReading (ASCII/ANSI) ReadLine.
-    Set-Content -LiteralPath $spec -Value @($Exe, $Arguments) -Encoding ASCII
+    if (-not $NoWrite) {
+        New-Item -ItemType Directory -Path $specDir -Force | Out-Null
+        # ASCII, no BOM -- every value written here is a plain Windows path or powershell.exe
+        # flag, so there's nothing here that needs Unicode; a BOM would otherwise land as a
+        # stray leading character on run-hidden.vbs's own ForReading (ASCII/ANSI) ReadLine.
+        Set-Content -LiteralPath $spec -Value @($Exe, $Arguments) -Encoding ASCII
+    }
     [pscustomobject]@{
         Exe       = $wscript
         Arguments = "//B `"$vbs`" `"$spec`""
+        Spec      = $spec
+        SpecLines = @($Exe, $Arguments)
     }
 }
 
@@ -790,7 +797,11 @@ function Get-AutostartComponents {
        Each item: Key, TaskName, LnkName, Exe, Arguments, Delay (ISO-8601 duration, for the
        LogonTrigger's Delay). The 3 powershell-hosted components (all but ShareX, which
        launches its own GUI exe directly and has no console to begin with) go through
-       ConvertTo-HiddenLaunch -- see that function for why. #>
+       ConvertTo-HiddenLaunch -- see that function for why; their items also carry Spec (the
+       launch-<key>.txt path) and SpecLines (what goes in it).
+       -NoWrite: the same answer without writing any launch-<key>.txt -- for `710sRice doctor`
+       (read-only) and Get-AutostartStatus, which only need the names. #>
+    param([switch]$NoWrite)
     $items = [System.Collections.Generic.List[object]]::new()
     $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
@@ -800,12 +811,13 @@ function Get-AutostartComponents {
     $komorebiExe = Get-KomorebiExe
     if ($komorebiExe) {
         $launcher = Join-Path $Root 'scripts\Start-Komorebi.ps1'
-        $hidden = ConvertTo-HiddenLaunch -Key 'komorebi' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
+        $hidden = ConvertTo-HiddenLaunch -NoWrite:$NoWrite -Key 'komorebi' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
         $items.Add([pscustomobject]@{
             Key = 'komorebi'; TaskName = 'komorebi'; LnkName = '710.DesktopRice komorebi.lnk'
             Exe = $hidden.Exe
             Arguments = $hidden.Arguments
             Delay = 'PT0S'
+            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines
         })
     }
 
@@ -814,12 +826,13 @@ function Get-AutostartComponents {
     if ($yasbc) {
         $launcher = Join-Path $Root 'scripts\Start-Yasb.ps1'
         $yasbHome = Join-Path $Root 'config\yasb'
-        $hidden = ConvertTo-HiddenLaunch -Key 'yasb' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -YasbExe `"$yasbc`" -YasbConfigHome `"$yasbHome`""
+        $hidden = ConvertTo-HiddenLaunch -NoWrite:$NoWrite -Key 'yasb' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -YasbExe `"$yasbc`" -YasbConfigHome `"$yasbHome`""
         $items.Add([pscustomobject]@{
             Key = 'yasb'; TaskName = 'yasb'; LnkName = '710.DesktopRice YASB.lnk'
             Exe = $hidden.Exe
             Arguments = $hidden.Arguments
             Delay = 'PT0S'
+            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines
         })
     }
 
@@ -832,6 +845,7 @@ function Get-AutostartComponents {
             Exe = $sharexExe
             Arguments = '-silent'
             Delay = 'PT0S'
+            Spec = $null; SpecLines = $null
         })
     }
 
@@ -840,12 +854,13 @@ function Get-AutostartComponents {
     if ($ahkExe) {
         $launcher = Join-Path $Root 'scripts\Start-Ahk.ps1'
         $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
-        $hidden = ConvertTo-HiddenLaunch -Key 'ahk' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -AhkExe `"$ahkExe`" -ScriptPath `"$ahkScript`""
+        $hidden = ConvertTo-HiddenLaunch -NoWrite:$NoWrite -Key 'ahk' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -AhkExe `"$ahkExe`" -ScriptPath `"$ahkScript`""
         $items.Add([pscustomobject]@{
             Key = 'ahk'; TaskName = 'ahk'; LnkName = '710.DesktopRice hotkeys.lnk'
             Exe = $hidden.Exe
             Arguments = $hidden.Arguments
             Delay = 'PT0S'
+            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines
         })
     }
 
@@ -1056,15 +1071,28 @@ function Stop-RetiredWindowSlots {
 
 function Get-ComponentTaskInfo {
     <# A component's task as registered: $null when there is none, else AtLogOn (it has a
-       sign-in trigger -- an -Activate'd machine; an on-demand install's tasks have none) and
-       RunLevel ('HighestAvailable' = runs elevated, 'LeastPrivilege'). Read from
-       `schtasks /Query /XML`, like Test-Task -AtLogOn, so it works from a normal window too. #>
+       sign-in trigger -- an -Activate'd machine; an on-demand install's tasks have none),
+       RunLevel ('HighestAvailable' = runs elevated, 'LeastPrivilege'), Enabled (not switched
+       off in Task Scheduler), and the Command / Arguments it runs (`710sRice doctor` compares
+       them with what install would register now). Read from `schtasks /Query /XML`, like
+       Test-Task -AtLogOn, so it works from a normal window too. #>
     param([Parameter(Mandatory)][string]$TaskName)
     $xml = & schtasks.exe /Query /TN (Get-TaskFullName -TaskName $TaskName) /XML 2>&1
     if ($LASTEXITCODE -ne 0) { return $null }
     $text = $xml -join "`n"
     $runLevel = if ($text -match '<RunLevel>(\w+)</RunLevel>') { $Matches[1] } else { 'LeastPrivilege' }
-    [pscustomobject]@{ AtLogOn = ($text -match '<LogonTrigger>'); RunLevel = $runLevel }
+    # The XML's own UTF-16 declaration means nothing to an already-decoded string -- dropped
+    # before parsing. Element access by name ignores the task namespace.
+    $doc = $null
+    try { $doc = [xml]($text -replace '^\s*<\?xml[^>]*\?>', '') } catch { }
+    $exec = if ($doc) { @($doc.Task.Actions.Exec)[0] } else { $null }
+    [pscustomobject]@{
+        AtLogOn   = ($text -match '<LogonTrigger>')
+        RunLevel  = $runLevel
+        Enabled   = -not ($doc -and "$($doc.Task.Settings.Enabled)".Trim() -eq 'false')
+        Command   = if ($exec) { "$($exec.Command)" } else { $null }
+        Arguments = if ($exec) { "$($exec.Arguments)" } else { $null }
+    }
 }
 
 function Initialize-ProcessTokenNative {
@@ -1115,15 +1143,26 @@ function Get-ProcessElevation {
 }
 
 function Get-AutostartStatus {
-    <# Key -> bool (task registered or fallback .lnk present), per component. #>
+    <# Key -> bool (task registered or fallback .lnk present), per component. Reads only:
+       the names are all it needs, so no launch-<key>.txt is rewritten on the way. #>
     $startup = [Environment]::GetFolderPath('Startup')
     $status = @{}
-    foreach ($c in Get-AutostartComponents) {
+    foreach ($c in Get-AutostartComponents -NoWrite) {
         $hasTask = Test-Task -TaskName $c.TaskName -AtLogOn
         $hasLnk = Test-Path (Join-Path $startup $c.LnkName)
         $status[$c.Key] = ($hasTask -or $hasLnk)
     }
     $status
+}
+
+function Test-FullTimeMachine {
+    # install's long-standing rule for "this machine was -Activate'd": any component with a
+    # sign-in task (or its Startup-shortcut fallback), or the lock-screen sync task. install's
+    # tasks step keeps such a machine full-time and -Only windows only acts on one;
+    # `710sRice doctor` reads its mode line from the same rule. Moved here from install.ps1
+    # (2026-09-27) so the two can't drift. Read-only.
+    $autostart = Get-AutostartStatus
+    (@($autostart.Values | Where-Object { $_ }).Count -gt 0) -or (Test-Task -TaskName 'lock-screen-sync')
 }
 
 function Register-OnDemandTasks {

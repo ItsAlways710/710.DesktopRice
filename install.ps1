@@ -168,14 +168,6 @@ if ($OnlyRun) { Step-Info "Running only: $($RunSteps -join ', ')" }
 # run without it (-Only theme), so it's found here rather than in either.
 $wallustExe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
 
-function Test-FullTimeMachine {
-    # install's long-standing rule for "this machine was -Activate'd": any component with a
-    # sign-in task (or its Startup-shortcut fallback), or the lock-screen sync task. The
-    # tasks step keeps such a machine full-time; -Only windows only acts on one.
-    $autostart = Get-AutostartStatus
-    (@($autostart.Values | Where-Object { $_ }).Count -gt 0) -or (Test-Task -TaskName 'lock-screen-sync')
-}
-
 $Steps = [ordered]@{}
 
 $Steps['packages'] = {
