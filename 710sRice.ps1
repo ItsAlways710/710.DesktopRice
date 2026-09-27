@@ -40,6 +40,7 @@
   710sRice                            # the command list
   710sRice install -?                 # one command's usage
   .\710sRice.ps1 install -Activate    # the very first install, from the repo folder
+  710sRice install -Only tasks        # just re-register the scheduled tasks
   710sRice uninstall -DryRun -Keep AutoHotkey.AutoHotkey,ShareX.ShareX
   710sRice reload bar                 # just the bar, e.g. after a weather setting change
   710sRice tiling normal              # komorebi stops running as admin (next start)
@@ -56,8 +57,10 @@ $Root = $PSScriptRoot
 $Commands = [ordered]@{
     'help'      = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'
                      Run = { Show-RiceHelp } }
-    'install'   = @{ Usage = 'install [-Activate] [-SkipPackages] [-ElevatedTiling | -NoElevatedTiling]'
-                     Help = 'Install or update (safe to re-run); -Activate = start it at every sign-in'; Admin = 'Required'
+    # More: shown by `install -?` only. Keep it in step with install.ps1's $StepOrder.
+    'install'   = @{ Usage = 'install [-Activate] [-SkipPackages] [-ElevatedTiling | -NoElevatedTiling] | -Only <step>,...'
+                     Help = 'Install or update (safe to re-run); -Activate = start at sign-in; -Only = just those steps'; Admin = 'Required'
+                     More = 'Steps: packages, envvars, weather, path, wallust, theme, monitors, defender, profile, terminal, flow, compile, tasks, windows'
                      Run = { Invoke-RiceScript 'install.ps1' @args } }
     'uninstall' = @{ Usage = 'uninstall [-DryRun] [-Force] [-Keep <id>,<id>...]'
                      Help = 'Undo everything install did; -DryRun shows the plan first'; Admin = 'Required'
@@ -378,6 +381,7 @@ function Show-RiceCommandHelp {
     Write-Host ''
     Write-Host "  710sRice $($c.Usage)$(Get-RiceAdminTag $c)"
     Write-Host "    $($c.Help)"
+    if ($c.More) { Write-Host "    $($c.More)" }
     Write-Host ''
 }
 
