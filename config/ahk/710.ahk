@@ -1047,8 +1047,9 @@ ToggleGameMode() {
 ;  - Armed only once yasb.exe has actually been seen running. Getting YASB up at
 ;    boot is Start-Yasb.ps1's job (it retries for a full minute); this is the
 ;    crash net for afterwards.
-;  - Gives up pointing at yasb-autostart.log (no doctor yet). Every relaunch and
-;    the give-up get their own line in that log, so it tells the story.
+;  - Gives up with a toast pointing at `710sRice doctor`, which reads the story
+;    back out of yasb-autostart.log -- every relaunch and the give-up get their
+;    own line there.
 ; A 5s check only counts as a miss when yasb.exe is gone AND nothing is already
 ; bringing it back: winget running (an install/upgrade), or a Start-Yasb.ps1
 ; launcher still alive (boot, SUPER+Shift+R, or our own previous relaunch still
@@ -1078,7 +1079,7 @@ YasbWatch() {
     if (YasbRelaunches.Length >= 3) {
         SetTimer(YasbWatch, 0)
         YasbLog('watchdog: YASB died again after 3 relaunches in 5 min -- stopped relaunching until AHK restarts.')
-        TrayTip('The bar keeps crashing -- stopped relaunching it.`nSee %LOCALAPPDATA%\710.DesktopRice\yasb-autostart.log', '710sRice')
+        TrayTip('The bar keeps crashing -- stopped relaunching it.`nRun 710sRice doctor for what happened.', '710sRice')
         return
     }
     YasbRelaunches.Push(A_TickCount)
@@ -1091,7 +1092,7 @@ YasbWatch() {
         ; removed) -- nothing sane to relaunch with.
         SetTimer(YasbWatch, 0)
         YasbLog('watchdog: schtasks /Run failed (' code ') -- is the \710.DesktopRice\yasb task registered? Re-run 710sRice install. Watchdog off.')
-        TrayTip("Couldn't relaunch the bar (no yasb task? re-run 710sRice install) -- watchdog off.`nSee %LOCALAPPDATA%\710.DesktopRice\yasb-autostart.log", '710sRice')
+        TrayTip("Couldn't relaunch the bar -- watchdog off.`nRun 710sRice doctor.", '710sRice')
     }
 }
 
@@ -1387,8 +1388,8 @@ EditMyRules(*) {
 ; Ported from winarchy's SetupTray()/WinarchyCaptureItems()/
 ; WinarchyTilingItems(). Themes and Bar submenus are dropped (both
 ; eliminated entirely elsewhere in this repo -- see the plan doc's Palette
-; and YASB sections); Doctor is left out rather than wired to nothing,
-; since it isn't built yet in this repo. Capture's action strings are Sharex()'s real ShareX CLI switches,
+; and YASB sections); Doctor runs `710sRice doctor` in a new Terminal window
+; (RunDoctor, below). Capture's action strings are Sharex()'s real ShareX CLI switches,
 ; matching this file's own 8 already-wired capture hotkeys exactly (not
 ; winarchy's old Winarchy('screenshot ...') CLI pass-through, and not the 5
 ; extra ShareX actions winarchy exposes that this repo never wired a hotkey
@@ -1433,8 +1434,22 @@ MainMenuItems() {
         {text: 'Game mode ' OnOff(GameFlag),                         action: (*) => ToggleGameMode()},
         {text: 'Stay awake ' OnOff(AwakeFlag), hint: 'SUPER+Ctrl+W', action: (*) => ToggleStayAwake()},
         {text: 'Reload stack',             hint: 'SUPER+Shift+R',    action: (*) => ReloadStack()},
+        {text: 'Doctor',                                             action: (*) => RunDoctor()},
         {text: 'System',                   hint: 'SUPER+Esc',        sub: SysMenuItems},
         {text: 'Quit 710sRice',                                      action: (*) => QuitStack()} ]
+}
+
+; Doctor: `710sRice doctor` in a new Terminal window on the cursor's monitor, left at
+; a PS7 prompt afterwards so the fix it names can be typed right there. The full path
+; to 710sRice.ps1 -- AHK's PATH is from sign-in, it may not know the command -- run
+; inside that pwsh (-Command), so it's an ordinary shell to 710sRice ("Press Enter to
+; close" is only for windows opened for the command alone). Single quotes in a clone
+; path are doubled for PowerShell's '...' string.
+RunDoctor() {
+    global RepoRoot
+    ps1 := StrReplace(RepoRoot '\710sRice.ps1', "'", "''")
+    LaunchOnCursorMonitor('wt.exe -w new pwsh.exe -NoLogo -NoExit -Command "& ' "'" ps1 "'" ' doctor"'
+        , 'ahk_class CASCADIA_HOSTING_WINDOW_CLASS')
 }
 
 OpenMainMenu(*) {
