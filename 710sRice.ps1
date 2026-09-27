@@ -240,13 +240,33 @@ function Write-RiceReloadResult {
     if ($Code -ne 0) { $Lines | ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray } }
 }
 
+function Wait-RiceAhkReloaded {
+    # 710.ahk's ReloadStack() writes reload-stack.log's done. line, shows its toast, waits 1.5 s
+    # and only then Reload()s itself -- into a new process. Waits (up to 10 s) for 710.ahk's
+    # window to belong to a process other than $OldPid, so whatever runs next meets the reloaded
+    # 710.ahk: `doctor -repair`'s re-check caught the old one once and called a `710.ahk changed
+    # since it started` it had just fixed "still broken" (2026-09-27, the update test).
+    # $true once it has, or when there was nothing to wait for.
+    param([Parameter(Mandatory)][string]$ScriptPath, $OldPid)
+    if (-not $OldPid) { return $true }
+    $deadline = (Get-Date).AddSeconds(10)
+    do {
+        $now = try { Get-AhkWindowProcessId -ScriptPath $ScriptPath } catch { $null }
+        if ($now -and $now -ne $OldPid) { return $true }
+        Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $deadline)
+    $false
+}
+
 function Invoke-RiceReload {
     # `reload` = SUPER+Shift+R: 710.ahk runs its own ReloadStack() (toasts, double-press guard,
     # its Reload() at the end), we read the result from reload-stack.log -- only what's written
     # after the post, so an older run can't pass for this one. A reload already running when we
-    # post: AHK ignores ours and we report that one, which is the one that counts anyway.
+    # post: AHK ignores ours and we report that one, which is the one that counts anyway. Then
+    # we wait for that Reload() too (Wait-RiceAhkReloaded): "Stack reloaded" means all of it.
     $ahk    = Join-Path $Root 'config\ahk\710.ahk'
     $offset = if (Test-Path -LiteralPath $RiceReloadLog) { (Get-Item -LiteralPath $RiceReloadLog).Length } else { 0 }
+    $ahkPid = try { Get-AhkWindowProcessId -ScriptPath $ahk } catch { $null }
     if (Send-AhkMessage -ScriptPath $ahk -Name '710sRice.ReloadStack') {
         Step-Info 'Reloading (same as SUPER+Shift+R)...'
         $deadline = (Get-Date).AddMinutes(2)
@@ -255,11 +275,14 @@ function Invoke-RiceReload {
             Start-Sleep -Milliseconds 250
             $outcome = Get-RiceReloadOutcome (Read-RiceLogFrom $RiceReloadLog $offset)
         }
+        # A failed rule compile (1) ends ReloadStack() before its Reload(): nothing to wait for.
+        $reloaded = if ($outcome -and $outcome.Code -ne 1) { Wait-RiceAhkReloaded $ahk $ahkPid } else { $true }
         if ($outcome) { Write-RiceReloadResult $outcome.Code $outcome.Lines }
         else {
             Step-Warn 'No result in reload-stack.log after 2 minutes -- check its toasts and the log.'
             $script:RiceExit = 2
         }
+        if (-not $reloaded) { Step-Warn "710.ahk hasn't reloaded itself 10 s after the stack did -- give it a moment (SUPER+Shift+R if its hotkeys act up)." }
         return
     }
     # No 710.ahk: run the script ourselves. Safe from any window (it starts things only through
