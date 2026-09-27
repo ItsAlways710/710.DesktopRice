@@ -1,26 +1,37 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Downloads and installs the pinned wallust binary from its Codeberg release.
 
 .DESCRIPTION
-    wallust has no winget or scoop package, so this is the real mechanism
-    install.ps1 will use for it. This script IS that logic, standalone, until
-    install.ps1 exists and folds it in directly. Pinned deliberately (not
-    "latest") since wallust is alpha software feeding live colors into
-    komorebi borders, YASB, and Windows Terminal.
+    wallust has no winget or scoop package, so this is how it gets installed -- by
+    install.ps1's wallust step, or run on its own. Pinned deliberately (not "latest")
+    since wallust is alpha software feeding live colors into komorebi borders, YASB, and
+    Windows Terminal. The pin is versions.md's wallust row (the one list of versions,
+    read through tools\lib\packages.ps1); install.ps1 passes it in as -Version.
 
     The extracted binary lands in tools/bin/wallust/, inside the repo tree but
-    gitignored — never committed, always re-downloadable byte-for-byte.
+    gitignored -- never committed, always re-downloadable byte-for-byte.
 #>
+param(
+    # The release to install. Omitted (run on its own): versions.md's wallust row.
+    [string]$Version
+)
 
 $ErrorActionPreference = "Stop"
 
-$WallustVersion = "4.1.0-alpha"
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $Version) {
+    . (Join-Path $RepoRoot 'tools\lib\packages.ps1')
+    $row = @(Get-VersionsTable -Path (Join-Path $RepoRoot 'versions.md')) | Where-Object { $_.InstallId -like '*wallust*' } | Select-Object -First 1
+    if (-not $row) { throw "versions.md has no wallust row -- no version to install" }
+    $Version = $row.Version
+}
+$WallustVersion = $Version
 $AssetName      = "wallust-$WallustVersion-x86_64-pc-windows-gnu.tar.gz"
 $SumsName       = "wallust-$WallustVersion-SHA256SUMS.txt"
 $BaseUrl        = "https://codeberg.org/explosion-mental/wallust/releases/download/$WallustVersion"
 
-$RepoRoot  = Split-Path -Parent $PSScriptRoot
 $TargetDir = Join-Path $RepoRoot "tools\bin\wallust"
 $TempDir   = Join-Path $env:TEMP "wallust-install-$WallustVersion"
 

@@ -104,36 +104,9 @@ function Invoke-ActivationRevert {
 # must be defined before this dot-source -- activation.ps1 uses ours rather than its own
 # copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
-
-function Get-VersionsTable {
-    # Hand-rolled parser for versions.md's one real table -- not a general Markdown
-    # parser, scoped to exactly that file's fixed column layout (see versions.md's own
-    # "table format is load-bearing" note: Component | Version | Source | Install ID |
-    # Pre-existing? | Last touched). Returns an array of @{ Component; Version; Source;
-    # InstallId; PreExisting; LastTouched }; PreExisting is $true for "yes" or "yes ?".
-    param([string]$Path)
-    if (-not (Test-Path $Path)) { return @() }
-    $rows = [System.Collections.Generic.List[object]]::new()
-    $inTable = $false
-    foreach ($line in Get-Content $Path -Encoding UTF8) {
-        $trimmed = $line.Trim()
-        if (-not $trimmed.StartsWith('|')) { $inTable = $false; continue }
-        $cells = @($trimmed.Trim('|') -split '\|' | ForEach-Object { $_.Trim() })
-        if ($cells[0] -eq 'Component') { $inTable = $true; continue }   # header row
-        if ($cells[0] -match '^-+$') { continue }                       # separator row
-        if (-not $inTable) { continue }
-        if ($cells.Count -lt 6) { continue }
-        $rows.Add([pscustomobject]@{
-            Component   = $cells[0]
-            Version     = $cells[1]
-            Source      = $cells[2]
-            InstallId   = $cells[3]
-            PreExisting = ($cells[4] -match '^\s*yes')
-            LastTouched = $cells[5]
-        })
-    }
-    return @($rows)
-}
+# versions.md's table (Get-VersionsTable) and the winget helpers -- exit codes,
+# Format-WingetCode, Invoke-WingetAsUser -- shared with install.ps1 (after activation.ps1).
+. (Join-Path $Root 'tools\lib\packages.ps1')
 
 Write-Host "`n== 710.DesktopRice uninstall ==" -ForegroundColor Cyan
 if ($DryRun) { Step-Info "DRY RUN: nothing will be changed." }
@@ -143,65 +116,7 @@ $allRows = @(Get-VersionsTable -Path $versionsPath)
 if ($allRows.Count -eq 0) {
     Step-Warn "Could not read versions.md (or it has no table rows) -- package removal will be skipped entirely, to avoid guessing what's safe to remove. Env vars and pins will still be reverted."
 }
-$wingetRows = @($allRows | Where-Object { $_.Source -eq 'winget' })
-
-# Per-package winget source override -- kept in sync with install.ps1's own copy of this
-# table (see its comment for why PowerShell 7 needs this). Every InstallId not listed here
-# resolves through winget's default (community) source, matching today's un-annotated
-# behavior for every other row.
-$PackageSources = @{
-    '9MZ1SNWT0N5D' = 'msstore'   # PowerShell 7
-}
-
-# winget exit codes this script acts on (winget-cli's doc/.../winget/returnCodes.md).
-# PowerShell reads a 0x8... hex literal as a negative Int32 -- the same thing
-# $LASTEXITCODE holds for these -- so a plain -eq compares them correctly.
-$WingetNotInstalled    = 0x8A150014   # NO_APPLICATIONS_FOUND -- nothing by that ID is installed
-$WingetAdminProhibited = 0x8A15007D   # ADMIN_CONTEXT_ACTION_PROHIBITED -- see Invoke-WingetAsUser
-$WingetNoPin           = 0x8A150063   # PIN_DOES_NOT_EXIST
-
-function Format-WingetCode {
-    # 0x8A15007D reads better than -1978335107 in a warning, and matches winget's own docs.
-    param([int]$Code)
-    '0x{0:X8}' -f $Code
-}
-
-function Invoke-WingetAsUser {
-    <# Runs winget with $Arguments NON-elevated, through a one-shot LeastPrivilege
-       scheduled task (same trick as Restart-Explorer), waits for it to finish, and returns
-       winget's exit code -- or $null if it's still running after $TimeoutSeconds.
-
-       Why: winget refuses to touch a package installed for this user only (per-user
-       scope -- Flow Launcher is one, living under %LOCALAPPDATA%) when it's run from an
-       elevated shell: exit 0x8A15007D, ADMIN_CONTEXT_ACTION_PROHIBITED. This script has
-       to run elevated (Defender exclusions, lock screen), so found live on the
-       2026-09-24 reinstall test: Flow's uninstall failed on every run, while the line
-       below it still printed "uninstalled". The task runs as the same user, un-elevated,
-       so winget allows it. Its console window shows briefly while winget works. #>
-    param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSeconds = 180)
-    $winget   = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe'
-    $taskName = 'winget-as-user'
-    $task     = Get-TaskFullName -TaskName $taskName
-    $null = & schtasks.exe /Create /TN $task /TR "`"$winget`" $($Arguments -join ' ')" /SC ONCE /ST 23:59 /RL LIMITED /F 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "couldn't create the one-shot task to run winget un-elevated (schtasks exit $LASTEXITCODE)" }
-    try {
-        $null = & schtasks.exe /Run /TN $task 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "couldn't start the one-shot task to run winget un-elevated (schtasks exit $LASTEXITCODE)" }
-        # LastTaskResult reads 0x41303 ("has not yet run") until Task Scheduler actually
-        # starts it, then 0x41301 ("currently running"), then winget's own exit code.
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        do {
-            Start-Sleep -Milliseconds 500
-            $result = (Get-ScheduledTaskInfo -TaskPath "\$script:TaskFolder\" -TaskName $taskName).LastTaskResult
-        } while ($result -in 0x41301, 0x41303 -and (Get-Date) -lt $deadline)
-        if ($result -in 0x41301, 0x41303) { return $null }
-        # LastTaskResult is a UInt32; reinterpret the same bits as winget's signed code.
-        return [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$result), 0)
-    }
-    finally {
-        $null = & schtasks.exe /Delete /TN $task /F 2>&1
-    }
-}
+$wingetRows = @($allRows | Where-Object { Test-WingetRow $_ })   # winget + msstore rows
 
 # --- 1. Stop any running 710.DesktopRice processes -----------------------------------
 # Unconditional -- regardless of whether -Activate/autostart was ever used on this
@@ -332,9 +247,8 @@ Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
     # code, so it said "removed" no matter what. "No pin for that package" counts as
     # done -- the goal is no pin, however we got there.
     $failed = @()
-    foreach ($row in ($wingetRows | Where-Object { $_.Version -ne 'latest' })) {
-        $pinArgs = @('pin', 'remove', '--id', $row.InstallId)
-        if ($PackageSources.ContainsKey($row.InstallId)) { $pinArgs += @('--source', $PackageSources[$row.InstallId]) }
+    foreach ($row in ($wingetRows | Where-Object { Test-PinnedRow $_ })) {
+        $pinArgs = @('pin', 'remove', '--id', $row.InstallId) + @(Get-WingetSourceArgs $row)
         winget @pinArgs 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $WingetNoPin) {
             $failed += "$($row.InstallId) ($(Format-WingetCode $LASTEXITCODE))"
@@ -359,8 +273,7 @@ foreach ($row in $wingetRows) {
     # Not Invoke-Step: the result line depends on winget's exit code (this used to discard
     # it and print "uninstalled" regardless -- Flow Launcher was never actually removed).
     try {
-        $uninstallArgs = @('uninstall', '--id', $id, '--exact', '--silent', '--disable-interactivity')
-        if ($PackageSources.ContainsKey($id)) { $uninstallArgs += @('--source', $PackageSources[$id]) }
+        $uninstallArgs = @('uninstall', '--id', $id, '--exact', '--silent', '--disable-interactivity') + @(Get-WingetSourceArgs $row)
         winget @uninstallArgs 2>$null | Out-Null
         $code = $LASTEXITCODE
         $how  = ''

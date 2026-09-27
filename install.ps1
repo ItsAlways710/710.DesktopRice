@@ -4,10 +4,11 @@
   Idempotent installer for 710.DesktopRice.
 
 .DESCRIPTION
-  - Installs required components via winget. Core components (komorebi, YASB, AutoHotkey,
-    Flow Launcher) are pinned to the versions in versions.md and winget-pinned so a general
-    `winget upgrade --all` elsewhere on the machine can't silently move them out from under
-    this repo's tested config.
+  - Installs what versions.md lists (its table is the one list -- tools\lib\packages.ps1
+    reads it). Rows with a version number (komorebi, YASB, AutoHotkey, Flow Launcher,
+    Everything, wallust) are installed at that version, and the winget ones winget-pinned so
+    a general `winget upgrade --all` elsewhere on the machine can't silently move them out
+    from under this repo's tested config. `latest` rows install unpinned.
   - Registers KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (User scope)
     pointing at this repo, and mirrors them into the current process so the rest of this
     run sees them too. DESKTOPRICE_HOME (the repo root) is what config\yasb\config.yaml's
@@ -149,6 +150,8 @@ function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -Foreg
 # here, shared with uninstall.ps1's matching revert steps. Step-Ok/Info/Warn above must be
 # defined before this dot-source -- activation.ps1 uses ours rather than its own copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
+# versions.md's table and the winget helpers (after activation.ps1 -- see its header).
+. (Join-Path $Root 'tools\lib\packages.ps1')
 
 Write-Host "`n== 710.DesktopRice install ==" -ForegroundColor Cyan
 if ($OnlyRun) { Step-Info "Running only: $($RunSteps -join ', ')" }
@@ -169,51 +172,24 @@ $Steps = [ordered]@{}
 
 $Steps['packages'] = {
     # --- 1. Packages (winget) -----------------------------------------------------------
-    # Core = pinned (winget pin add, so a general `winget upgrade --all` elsewhere on the
-    # machine can't move these out from under a tested config). Versions mirror versions.md;
-    # if you bump one here, bump it there too.
-    $CorePins = [ordered]@{
-        'LGUG2Z.komorebi'             = '0.1.41'
-        'AmN.yasb'                    = '2.0.7'
-        'AutoHotkey.AutoHotkey'       = '2.0.28'
-        'Flow-Launcher.Flow-Launcher' = '2.1.3'
-        # Everything is the engine behind Flow's file search (SUPER+S: Explorer plugin on the
-        # Everything index) -- the two are one system now, so it's pinned like Flow: updating
-        # either should be a deliberate, tested step (user's call, 2026-09-23). Same versions
-        # winarchy pins for both (versions.lock.toml @ 90fbdfe).
-        'voidtools.Everything'        = '1.4.1.1032'
-    }
-    # Required, not pinned -- always installed at whatever winget currently offers.
-    # PowerShell 7 lives here, not in $CorePins: unpinned 2026-09-23 at the user's request so
-    # it can take its own updates (every script here only needs >= 7.0, and the autostart /
-    # lock-screen tasks launch it via the version-independent WindowsApps alias -- see
-    # tools\lib\activation.ps1's Get-PwshPath -- so an update can't break them).
-    $RequiredPackages = @(
-        '9MZ1SNWT0N5D',   # PowerShell 7 -- msstore source, see $PackageSources below
-        'ShareX.ShareX',
-        'Microsoft.WindowsTerminal',
-        'DEVCOM.JetBrainsMonoNerdFont',
-        'Starship.Starship',
-        'junegunn.fzf',
-        'ajeetdsouza.zoxide',
-        'eza-community.eza',
-        'sharkdp.bat'
-    )
-    # Per-package winget source override. Every package above resolves through winget's
-    # default (community) source except PowerShell 7 -- Dell's own install is the Store/MSIX
-    # build, which lives in the msstore source, not the traditional MSI package under
-    # Microsoft.PowerShell (see versions.md's PowerShell 7 note for how that was confirmed).
-    # uninstall.ps1 keeps a matching copy of this table; if you add another msstore-sourced
-    # package here, add it there too.
-    $PackageSources = @{
-        '9MZ1SNWT0N5D' = 'msstore'   # PowerShell 7
-    }
+    # versions.md is the one list of what's installed and at which version (read through
+    # tools\lib\packages.ps1; nothing here keeps a copy). A row with a version number is a
+    # pin: installed at exactly that version and winget-pinned, so a general
+    # `winget upgrade --all` elsewhere on the machine can't move it out from under this
+    # repo's tested config. A `latest` row is installed unpinned and takes its own updates
+    # (PowerShell 7 among them -- every script here only needs >= 7.0, and the tasks launch
+    # it through the version-independent WindowsApps alias, Get-PwshPath). Source `msstore`
+    # = winget from the Store source (PowerShell 7's Store/MSIX build -- see versions.md).
+    # The github-release row (wallust) is the wallust step's; psgallery rows are below.
+    $versionRows = @(Get-VersionsTable -Path (Join-Path $Root 'versions.md'))
+    $wingetRows  = @($versionRows | Where-Object { Test-WingetRow $_ })
 
     if (-not $SkipPackages) {
         Write-Host "`n-- Packages (winget) --" -ForegroundColor Cyan
-        $allPackages = [ordered]@{}
-        foreach ($id in $CorePins.Keys) { $allPackages[$id] = $CorePins[$id] }
-        foreach ($id in $RequiredPackages) { if (-not $allPackages.Contains($id)) { $allPackages[$id] = $null } }
+        if ($wingetRows.Count -eq 0) {
+            # Never guess what to install -- uninstall refuses the same way.
+            Write-Host "  [XX] versions.md has no package table -- nothing installed" -ForegroundColor Red
+        }
 
         # Some installers drop a Desktop shortcut (Flow Launcher and ShareX -- seen on the
         # 2026-09-24 reinstall test; Flow's installer has no option to skip it). Note which
@@ -230,11 +206,11 @@ $Steps['packages'] = {
         }
         $shortcutsBefore = @(Get-DesktopShortcuts)
 
-        foreach ($id in $allPackages.Keys) {
-            $pinVersion = $allPackages[$id]
-            $source = $PackageSources[$id]
-            $listArgs = @('list', '--id', $id, '--exact', '--accept-source-agreements')
-            if ($source) { $listArgs += @('--source', $source) }
+        foreach ($row in $wingetRows) {
+            $id = $row.InstallId
+            $pinVersion = if (Test-PinnedRow $row) { $row.Version } else { $null }
+            $sourceArgs = @(Get-WingetSourceArgs $row)
+            $listArgs = @('list', '--id', $id, '--exact', '--accept-source-agreements') + $sourceArgs
             $listed = (winget @listArgs 2>$null) | Out-String
             $alreadyInstalled = $listed -match [regex]::Escape($id)
             if ($alreadyInstalled) {
@@ -243,15 +219,14 @@ $Steps['packages'] = {
                 Step-Info "Installing $id ..."
                 $wingetArgs = @('install', '--id', $id, '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements')
                 if ($pinVersion) { $wingetArgs += @('--version', $pinVersion) }
-                if ($source) { $wingetArgs += @('--source', $source) }
+                $wingetArgs += $sourceArgs
                 winget @wingetArgs
                 if ($LASTEXITCODE -ne 0) {
                     Step-Warn "winget install $id exited with code $LASTEXITCODE -- check the output above."
                 }
             }
             if ($pinVersion) {
-                $pinArgs = @('pin', 'add', '--id', $id)
-                if ($source) { $pinArgs += @('--source', $source) }
+                $pinArgs = @('pin', 'add', '--id', $id) + $sourceArgs
                 winget @pinArgs 2>$null | Out-Null
             }
         }
@@ -269,20 +244,23 @@ $Steps['packages'] = {
         $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
                     [System.Environment]::GetEnvironmentVariable('Path', 'User')
 
-        # PSFzf: the PowerShell-side fzf keybindings/integration module, separate from the
-        # junegunn.fzf winget package above (that's just the fzf binary). PSGallery, not
-        # winget -- no pin, always latest, matching this project's own decided practice
-        # (mirrors winarchy's own real behavior: it never pinned this one either).
-        Write-Host "`n-- PSFzf (PowerShell module) --" -ForegroundColor Cyan
-        if (Get-Module -ListAvailable PSFzf) {
-            Step-Ok "PSFzf already installed"
-        } else {
-            Step-Info "Installing PSFzf (PSGallery) ..."
-            try {
-                Install-Module PSFzf -Scope CurrentUser -Force -ErrorAction Stop
-                Step-Ok "PSFzf installed"
-            } catch {
-                Step-Warn "Could not install PSFzf: $($_.Exception.Message)"
+        # PowerShell modules (PSGallery rows -- PSFzf: the PowerShell-side fzf
+        # keybindings/integration, separate from the junegunn.fzf winget package above,
+        # which is just the fzf binary). No pin, always latest, matching this project's own
+        # decided practice (winarchy never pinned it either).
+        foreach ($row in @($versionRows | Where-Object { $_.Source -eq 'psgallery' })) {
+            $module = $row.InstallId
+            Write-Host "`n-- $module (PowerShell module) --" -ForegroundColor Cyan
+            if (Get-Module -ListAvailable $module) {
+                Step-Ok "$module already installed"
+            } else {
+                Step-Info "Installing $module (PSGallery) ..."
+                try {
+                    Install-Module $module -Scope CurrentUser -Force -ErrorAction Stop
+                    Step-Ok "$module installed"
+                } catch {
+                    Step-Warn "Could not install $($module): $($_.Exception.Message)"
+                }
             }
         }
     } else {
@@ -364,20 +342,25 @@ $Steps['path'] = {
 $Steps['wallust'] = {
     # --- 3. wallust -----------------------------------------------------------------------
     Write-Host "`n-- wallust --" -ForegroundColor Cyan
-    $WallustPinnedVersion = '4.1.0-alpha'
+    # The pin is versions.md's wallust row (github-release: no winget package exists).
+    $wallustRow = @(Get-VersionsTable -Path (Join-Path $Root 'versions.md')) | Where-Object { $_.InstallId -like '*wallust*' } | Select-Object -First 1
+    $WallustPinnedVersion = if ($wallustRow) { $wallustRow.Version } else { $null }
     $wallustUpToDate = $false
-    if (Test-Path $wallustExe) {
+    if (-not $WallustPinnedVersion) {
+        Step-Warn 'versions.md has no wallust row -- wallust not checked or installed.'
+        $wallustUpToDate = $true   # nothing to install it at; the theme step says so if it's missing
+    } elseif (Test-Path $wallustExe) {
         try {
             $verOut = & $wallustExe --version 2>$null | Out-String
             if ($verOut -match [regex]::Escape($WallustPinnedVersion)) { $wallustUpToDate = $true }
         } catch { }
     }
     if ($wallustUpToDate) {
-        Step-Ok "wallust $WallustPinnedVersion already installed"
+        if ($WallustPinnedVersion) { Step-Ok "wallust $WallustPinnedVersion already installed" }
     } else {
         Step-Info "Installing wallust $WallustPinnedVersion ..."
         try {
-            & (Join-Path $Root 'tools\install-wallust.ps1')
+            & (Join-Path $Root 'tools\install-wallust.ps1') -Version $WallustPinnedVersion
             Step-Ok "wallust installed"
         } catch {
             Step-Warn "wallust install failed: $($_.Exception.Message) -- continuing without it. Re-run install.ps1, or tools\install-wallust.ps1 directly, once network access allows it."
