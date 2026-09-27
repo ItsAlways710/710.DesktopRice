@@ -1084,12 +1084,16 @@ public static extern bool CloseHandle(IntPtr handle);
 
 function Get-ProcessElevation {
     <# 'elevated', 'normal', 'not running' or 'unknown', for the first process called -Name
-       (`710sRice tiling status` asks about komorebi). Reads the process token's
+       (`710sRice tiling status` asks about komorebi) or the process -Id (doctor asks about
+       710.ahk's). Reads the process token's
        TokenElevation. From a NORMAL window Windows won't hand over an elevated process's
        token at all -- while a same-user normal process's token always opens -- so that
        refusal is itself the answer. From an admin window the token opens either way. #>
-    param([Parameter(Mandatory)][string]$Name)
-    $p = Get-Process -Name $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+    [CmdletBinding(DefaultParameterSetName = 'Name')]
+    param([Parameter(Mandatory, ParameterSetName = 'Name', Position = 0)][string]$Name,
+          [Parameter(Mandatory, ParameterSetName = 'Id')][int]$Id)
+    $p = if ($PSCmdlet.ParameterSetName -eq 'Id') { Get-Process -Id $Id -ErrorAction SilentlyContinue }
+         else { Get-Process -Name $Name -ErrorAction SilentlyContinue | Select-Object -First 1 }
     if (-not $p) { return 'not running' }
     try { Initialize-ProcessTokenNative } catch { return 'unknown' }
     # PROCESS_QUERY_LIMITED_INFORMATION (0x1000): allowed across elevation levels.
@@ -1493,8 +1497,22 @@ public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lp
 public static extern uint RegisterWindowMessage(string lpString);
 [DllImport("user32.dll", SetLastError = true)]
 public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+[DllImport("user32.dll")]
+public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 '@
     }
+}
+
+function Get-AhkWindowProcessId {
+    <# The process id behind 710.ahk's window (Find-AhkWindow), or $null when it isn't running.
+       How `710sRice doctor` tells which exe runs 710.ahk (UI Access or not) and reads its
+       elevation -- by the window, not by process name, so another AHK script can't pass for it. #>
+    param([Parameter(Mandatory)][string]$ScriptPath)
+    $hwnd = Find-AhkWindow -ScriptPath $ScriptPath
+    if ($hwnd -eq [IntPtr]::Zero) { return $null }
+    $procId = [uint32]0
+    [void][Win710.AhkWindow]::GetWindowThreadProcessId($hwnd, [ref]$procId)
+    if ($procId) { [int]$procId } else { $null }
 }
 
 # --- Shell profile hook ($PROFILE -> config\pwsh\profile.ps1) ------------------------

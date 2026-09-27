@@ -425,6 +425,107 @@ function Test-DoctorOtherPackages {
     }
 }
 
+# --- c. Is the stack running --------------------------------------------------------------------
+# The four components the stack starts (Flow isn't one: SUPER+Space cold-starts it). One line
+# each, carrying the worst thing found. Nothing running at all is a plain fact -- an on-demand
+# machine between sessions, or a full-time one after `710sRice stop` -- but some running and
+# some not means something died. Only komorebi may run as admin (the tiling mode's choice);
+# anything else elevated makes everything it launches elevated too. Log paths are given by
+# name only: the full path carries the Windows user name, and a report may get pasted into an
+# issue.
+
+function Get-DoctorLogDir { Join-Path $env:LOCALAPPDATA '710.DesktopRice' }
+
+function Get-DoctorYasbWatchdogNote {
+    # Why YASB is down, when 710.ahk's watchdog says so and nothing has happened since: its
+    # give-up line (or its "watchdog off" line), with no relaunch -- a '--- startup' line from
+    # Start-Yasb.ps1 -- after it. The watchdog writes into yasb-autostart.log; the tail is plenty.
+    $log = Join-Path (Get-DoctorLogDir) 'yasb-autostart.log'
+    if (-not (Test-Path -LiteralPath $log)) { return $null }
+    $note = $null
+    foreach ($line in @(Get-Content -LiteralPath $log -Tail 300 -ErrorAction SilentlyContinue)) {
+        if ($line -match '  --- startup') { $note = $null; continue }
+        if ($line -notmatch '^(\d{4}-\d\d-\d\d) (\d\d:\d\d):\d\d  watchdog: (.*)$') { continue }
+        $when = if ($Matches[1] -eq (Get-Date -Format 'yyyy-MM-dd')) { $Matches[2] } else { "$($Matches[1]) $($Matches[2])" }
+        $what = $Matches[3]
+        if ($what -match 'stopped relaunching') {
+            $note = "the watchdog gave up at $when after 3 relaunches -- the crash is in config\yasb\yasb.log"
+        } elseif ($what -match 'Watchdog off') {
+            $note = "the watchdog couldn't relaunch it at $when (its task didn't run) -- watchdog off"
+        }
+    }
+    $note
+}
+
+function Test-DoctorStack {
+    # One line per component (or one line for "nothing running").
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    $ahkExe    = Get-AhkExe
+    $parts = @(
+        [pscustomobject]@{ Key = 'komorebi'; Name = 'komorebi'; Log = 'komorebi-autostart.log'; Installed = [bool](Get-KomorebiExe) }
+        [pscustomobject]@{ Key = 'yasb';     Name = 'YASB';     Log = 'yasb-autostart.log';     Installed = [bool](Get-Command yasbc.exe -CommandType Application -ErrorAction SilentlyContinue) }
+        [pscustomobject]@{ Key = 'ahk';      Name = '710.ahk';  Log = 'ahk-autostart.log';      Installed = [bool]$ahkExe }
+        [pscustomobject]@{ Key = 'sharex';   Name = 'ShareX';   Log = $null;                    Installed = [bool](Get-ShareXExe) }
+    )
+    # What's running. 710.ahk by its window (Get-AhkWindowProcessId), the rest by name.
+    $ahkPid = Get-AhkWindowProcessId -ScriptPath $ahkScript
+    $procs = @{
+        komorebi = @(Get-Process komorebi -ErrorAction SilentlyContinue)
+        yasb     = @(Get-Process yasb -ErrorAction SilentlyContinue)
+        ahk      = @(if ($ahkPid) { Get-Process -Id $ahkPid -ErrorAction SilentlyContinue })
+        sharex   = @(Get-Process ShareX -ErrorAction SilentlyContinue)
+    }
+    # Not installed: group b already says so, and nothing here could start it.
+    $parts = @($parts | Where-Object Installed)
+    if (-not @($parts | Where-Object { $procs[$_.Key].Count }).Count) {
+        return New-DoctorResult -Id 'stack' -Status '..' -Text 'Stack not running -- 710sRice start starts it'
+    }
+    foreach ($c in $parts) {
+        $id = "stack:$($c.Key)"
+        $running = $procs[$c.Key]
+        if (-not $running.Count) {
+            $text   = "$($c.Name) isn't running$(if ($c.Key -eq 'sharex') { ' -- capture hotkeys do nothing without it' })"
+            $detail = if ($c.Key -eq 'yasb') { Get-DoctorYasbWatchdogNote } else { $null }
+            if (-not $detail -and $c.Log) { $detail = "its log: $($c.Log) (710sRice logs opens the folder)" }
+            New-DoctorResult -Id $id -Status 'XX' -Text $text -Detail $detail -Fix '710sRice start'
+            continue
+        }
+        if ($c.Key -eq 'yasb' -and $running.Count -gt 1) {
+            New-DoctorResult -Id $id -Status 'XX' -Text "$($running.Count) YASB processes -- two bars fight over komorebi's events" -Fix '710sRice reload bar'
+            continue
+        }
+        if ($c.Key -ne 'komorebi' -and (Get-ProcessElevation -Id $running[0].Id) -eq 'elevated') {
+            New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" -Fix '710sRice stop, then 710sRice start'
+            continue
+        }
+        if ($c.Key -eq 'ahk') {
+            # The UI Access build is what lets 710.ahk's hotkeys reach admin windows; the
+            # installer only makes it in a Program Files install (Get-AhkExe prefers it).
+            if ($running[0].ProcessName -eq 'AutoHotkey64_UIA') {
+                New-DoctorResult -Id $id -Status 'OK' -Text '710.ahk running (UI Access)'
+            } elseif ("$ahkExe" -like '*AutoHotkey64_UIA.exe') {
+                New-DoctorResult -Id $id -Status '!!' -Text "710.ahk is running without UI Access -- its hotkeys don't reach admin windows" -Fix '710sRice stop, then 710sRice start'
+            } else {
+                New-DoctorResult -Id $id -Status 'OK' -Text '710.ahk running'
+            }
+            continue
+        }
+        New-DoctorResult -Id $id -Status 'OK' -Text "$($c.Name) running"
+    }
+}
+
+function Test-DoctorPaused {
+    # komorebi paused (SUPER+P) -- a plain fact, but it explains a lot: nothing tiles, and a bar
+    # (re)started now never connects. Its own check, so a komorebic hiccup can't hide the lines above.
+    if (-not (Get-Process komorebi -ErrorAction SilentlyContinue)) { return }
+    $kc = (Get-Command komorebic.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    if (-not $kc) { return }
+    $text = @(& $kc state 2>$null) -join "`n"
+    if (-not $text.Trim()) { return }   # no answer: nothing to say about a pause
+    $state = $text | ConvertFrom-Json
+    if ($state.is_paused) { New-DoctorResult -Id 'paused' -Status '..' -Text 'komorebi is paused -- SUPER+P resumes' }
+}
+
 # --- The checks, in report order ------------------------------------------------------------
 # Each check: Id, Name (for "couldn't check"), Run (gets the run's context), and Late = waits
 # on a background job -- run after every other check, so the jobs have the longest head start.
@@ -446,6 +547,10 @@ function Get-DoctorGroups {
             @{ Id = 'pins';       Name = 'winget pins';     Late = $true; Run = { param($c) Test-DoctorPins $c } }
             @{ Id = 'wallust';    Name = 'wallust';         Run = { Test-DoctorWallust } }
             @{ Id = 'pkg:other';  Name = 'Packages';        Run = { Test-DoctorOtherPackages } }
+        ) }
+        [pscustomobject]@{ Title = 'Stack'; Checks = @(
+            @{ Id = 'stack';  Name = 'Stack';                 Run = { Test-DoctorStack } }
+            @{ Id = 'paused'; Name = "komorebi's pause state"; Run = { Test-DoctorPaused } }
         ) }
     )
 }
