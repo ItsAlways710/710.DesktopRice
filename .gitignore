@@ -85,3 +85,15 @@
 # restore from a real reg.exe export if a revert ever needs it. Local safety net, not
 # repo content.
 /backups/
+
+# YOUR palette profiles -- the palette editor (SUPER+Alt+Space > Palette profiles) saves them
+# here, profile0.json ... profile9.json. Machine-local like user.ahk: a `git pull` or
+# `710sRice update` never touches them, and uninstall leaves them. default.json (the Default
+# profile) is tracked and read-only.
+/config/palettes/profile*.json
+# Scheme files for the "Scheme file" palette source (pywal / terminal.sexy JSON) -- yours too.
+/config/palettes/schemes/
+
+# The menus' colours, written by tools\apply-wallust-outputs.ps1 from the active palette profile
+# (710.ahk reads it on every menu open). Regenerated on every theme change. Never commit.
+/config/ahk/menu-colors.css

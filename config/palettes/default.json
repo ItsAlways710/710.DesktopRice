@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "name": "Default",
+  "note": "Today's theme: the wallpaper through wallust's kmeans method, the colours where they have always gone. Ships with the repo and can't be edited -- the editor saves changes as a new profile. The terminal overrides are wallust 4.1's own Windows Terminal slot order, kept so Terminal looks exactly as it did when wallust wrote the scheme itself.",
+  "source": { "kind": "wallpaper", "method": "kmeans", "style": "dark", "saturation": 0, "colors16": false },
+  "roles": {
+    "base": "color1",
+    "panel": "color2",
+    "accent": "color3",
+    "hover": "color4",
+    "subtext": "color5",
+    "text": "color6",
+    "bright": "color7",
+    "alert": "#d35f5f"
+  },
+  "overrides": {
+    "terminal": {
+      "red": "color3", "green": "color1", "yellow": "color6", "purple": "color2", "cyan": "color5", "white": "color15",
+      "brightRed": "color11", "brightGreen": "color9", "brightYellow": "color14", "brightPurple": "color10", "brightCyan": "color13", "brightWhite": "color7",
+      "cursorColor": "color8", "selectionBackground": "color15"
+    }
+  },
+  "off": [],
+  "readable": { "terminal": "lighten", "ui": false },
+  "appMode": "dark"
+}
