@@ -9,8 +9,8 @@
   nothing keeps a second copy of a pin. A pin bump is one line in versions.md.
 
   Dot-source AFTER tools\lib\activation.ps1: Invoke-WingetAsUser uses its Get-TaskFullName
-  and $script:TaskFolder. (install-wallust.ps1 only needs Get-VersionsTable, which stands
-  alone.)
+  and $script:TaskFolder, Stop-PinnedApp its Find-AhkWindow / Send-AhkQuit and the caller's
+  $Root. (install-wallust.ps1 only needs Get-VersionsTable, which stands alone.)
 #>
 
 function Get-VersionsTable {
@@ -114,5 +114,178 @@ function Invoke-WingetAsUser {
     }
     finally {
         $null = & schtasks.exe /Delete /TN $task /F 2>&1
+    }
+}
+
+# --- Installed versions (the probes) ------------------------------------------------------
+# What's actually installed, read locally -- no winget call (a `winget list` per package is
+# 1-2 s each). Strings as the Dell reports them (2026-09-26 reading): komorebi's exes carry
+# no version resource at all, so komorebic --version is asked; the rest are exe
+# ProductVersions. Only the pinned rows have probes so far -- the upgrade step's need;
+# `710sRice doctor` (Stage 3) adds the rest here.
+
+function Get-ExeProductVersion {
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    $v = (Get-Item -LiteralPath $Path).VersionInfo
+    $s = "$($v.ProductVersion)".Trim()
+    if (-not $s) { $s = "$($v.FileVersion)".Trim() }
+    $s
+}
+
+$script:PackageProbes = @{
+    # `komorebic 0.1.41` (then tag / commit / build lines).
+    'LGUG2Z.komorebi' = {
+        $c = Get-Command komorebic.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $c) { $c = @(Get-Item "$env:ProgramFiles\komorebi\bin\komorebic.exe" -ErrorAction SilentlyContinue) | Select-Object -First 1 }
+        if (-not $c) { return $null }
+        $exe = if ($c.Source) { $c.Source } else { $c.FullName }
+        $line = @(& $exe --version 2>$null) | Select-Object -First 1
+        if ("$line" -match '(\d+(?:\.\d+)+)') { $Matches[1] } else { '' }
+    }
+    'AmN.yasb' = {
+        $exe = (Get-Command yasb.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+        if (-not $exe) { $exe = "$env:ProgramFiles\YASB\yasb.exe" }
+        Get-ExeProductVersion $exe
+    }
+    # The plain exe -- the UI Access one next to it is the same build.
+    'AutoHotkey.AutoHotkey' = {
+        $exe = @("$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
+                 "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe") |
+               Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        Get-ExeProductVersion $exe
+    }
+    # Flow's root Flow.Launcher.exe is its updater stub, but it carries the version too.
+    'Flow-Launcher.Flow-Launcher' = { Get-ExeProductVersion "$env:LOCALAPPDATA\FlowLauncher\Flow.Launcher.exe" }
+    'voidtools.Everything' = {
+        $exe = @("$env:ProgramFiles\Everything\Everything.exe", "${env:ProgramFiles(x86)}\Everything\Everything.exe") |
+               Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        Get-ExeProductVersion $exe
+    }
+}
+
+function Get-PackageVersion {
+    <# What's installed for a versions.md row: Probe ($false = no probe for this row yet),
+       Installed, and Version ('' when it's there but its version can't be read). #>
+    param($Row)
+    $probe = $script:PackageProbes[$Row.InstallId]
+    if (-not $probe) { return [pscustomobject]@{ Probe = $false; Installed = $false; Version = $null } }
+    $v = & $probe
+    [pscustomobject]@{ Probe = $true; Installed = ($null -ne $v); Version = $v }
+}
+
+function Compare-PinVersion {
+    <# -1 installed older than the pin, 0 at the pin, 1 newer; $null when they can't be
+       compared. Segment by segment as numbers, missing segments = 0, so 2.1.3 matches
+       2.1.3.0 (winget and exe versions often have a fourth part) -- and 2.0.2 is NOT 2.0.28,
+       which a plain "starts with" would say. A pin that isn't all numbers (wallust's
+       4.1.0-alpha) only ever matches exactly. #>
+    param([string]$Installed, [string]$Pin)
+    if (-not $Installed -or -not $Pin) { return $null }
+    if ($Pin -notmatch '^\d+(\.\d+)*$' -or $Installed -notmatch '^\d+(\.\d+)*$') {
+        if ($Installed -eq $Pin) { return 0 }
+        return $null
+    }
+    $a = @($Installed.Split('.') | ForEach-Object { [long]$_ })
+    $b = @($Pin.Split('.') | ForEach-Object { [long]$_ })
+    for ($i = 0; $i -lt [Math]::Max($a.Count, $b.Count); $i++) {
+        $x = if ($i -lt $a.Count) { $a[$i] } else { 0 }
+        $y = if ($i -lt $b.Count) { $b[$i] } else { 0 }
+        if ($x -lt $y) { return -1 }
+        if ($x -gt $y) { return 1 }
+    }
+    0
+}
+
+# --- Upgrading a pinned package to its pin (install's upgrade step) ---------------------
+# Each pinned app is stopped before winget touches it (a running app locks its files) and
+# started again afterwards through its own task -- only if it was running before, and never
+# directly from install's admin window (the task runs at its own level). Flow isn't
+# restarted: SUPER+Space cold-starts it. Everything is left to its own installer, which
+# stops and restarts its service itself.
+
+function Get-PinnedAppTask {
+    # The autostart task that starts this row's app, or $null (Flow, Everything).
+    param($Row)
+    switch ($Row.InstallId) {
+        'LGUG2Z.komorebi'       { 'komorebi' }
+        'AmN.yasb'              { 'yasb' }
+        'AutoHotkey.AutoHotkey' { 'ahk' }
+        default                 { $null }
+    }
+}
+
+function Stop-PinnedApp {
+    <# Stops this row's app if it's running; $true when it was. komorebi through its own
+       `komorebic stop` first (a clean stop saves its layouts), YASB and Flow killed (the YASB
+       watchdog in 710.ahk already holds off while winget.exe runs), 710.ahk asked to quit --
+       the same message tray Quit uses -- then killed if it's still there (install's admin
+       window can end the UI Access process; see Stop-RunningComponents). #>
+    param($Row)
+    switch ($Row.InstallId) {
+        'LGUG2Z.komorebi' {
+            if (-not (Get-Process komorebi -ErrorAction SilentlyContinue)) { return $false }
+            $komorebic = (Get-Command komorebic -ErrorAction SilentlyContinue)?.Source
+            if ($komorebic) { try { & $komorebic stop 2>$null | Out-Null } catch { } }
+            $deadline = (Get-Date).AddSeconds(5)
+            while ((Get-Process komorebi -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+            Stop-Process -Name komorebi -Force -ErrorAction SilentlyContinue
+            return $true
+        }
+        'AmN.yasb' {
+            if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) { return $false }
+            Stop-Process -Name yasb -Force -ErrorAction SilentlyContinue
+            return $true
+        }
+        'AutoHotkey.AutoHotkey' {
+            $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+            if ((Find-AhkWindow -ScriptPath $ahkScript) -eq [IntPtr]::Zero) { return $false }
+            [void](Send-AhkQuit -ScriptPath $ahkScript)
+            $deadline = (Get-Date).AddSeconds(3)
+            while ((Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+            try {
+                Get-CimInstance Win32_Process -Filter "Name = 'AutoHotkey64.exe' OR Name = 'AutoHotkey64_UIA.exe'" -ErrorAction Stop |
+                    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($ahkScript) } |
+                    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            } catch { }
+            return $true
+        }
+        'Flow-Launcher.Flow-Launcher' {
+            if (-not (Get-Process Flow.Launcher -ErrorAction SilentlyContinue)) { return $false }
+            Stop-Process -Name Flow.Launcher -Force -ErrorAction SilentlyContinue
+            return $true
+        }
+        default { return $false }
+    }
+}
+
+function Invoke-PinnedUpgrade {
+    <# One pinned package, older than its pin, to exactly its pin: pin remove -> winget
+       upgrade --version <pin> -> pin add -- the route the AutoHotkey 2.0.28 bump took by hand
+       (2026-09-23). A per-user package (Flow) that winget refuses from an admin window runs
+       again as the user (Invoke-WingetAsUser). The pin always goes back on, even when the
+       upgrade fails -- a pinned package is never left unpinned. Returns winget's exit code
+       ($null = the un-elevated run was still going after 3 minutes). #>
+    param($Row)
+    $id  = $Row.InstallId
+    $src = @(Get-WingetSourceArgs $Row)
+    $pinRemove = @('pin', 'remove', '--id', $id) + $src
+    $pinAdd    = @('pin', 'add', '--id', $id) + $src
+    winget @pinRemove 2>$null | Out-Null
+    try {
+        $upgradeArgs = @('upgrade', '--id', $id, '--exact', '--version', $Row.Version, '--silent',
+                         '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity') + $src
+        # To the screen, not the output stream: this function returns winget's exit code and
+        # nothing else. (Its first Dell run returned winget's progress lines along with the
+        # code -- the upgrade itself went through, the report after it crashed; 2026-09-26.)
+        winget @upgradeArgs | Out-Host
+        $code = $LASTEXITCODE
+        if ($code -eq $WingetAdminProhibited) {
+            Step-Info "$id is installed for this user only -- upgrading it un-elevated ..."
+            $code = Invoke-WingetAsUser -Arguments $upgradeArgs
+        }
+        return $code
+    } finally {
+        winget @pinAdd 2>$null | Out-Null
     }
 }

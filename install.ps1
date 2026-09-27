@@ -33,11 +33,13 @@
     updates" feature by design (see claude/winarchy-decoupling-plan.md).
 
   STEPS. Each of the above is a named step, always run in this order:
-    packages  envvars  weather  path  wallust  theme  palette  monitors  defender
-    profile  terminal  flow  compile  tasks  windows
-  A plain run does every step but palette (windows only with -Activate) -- the same run as
-  always, default wallpaper and theme included. palette re-applies the CURRENT wallpaper's
-  colours instead (no wallpaper change) and only runs when named. -Only <step>[,<step>...] runs just those, in the
+    packages  upgrade  envvars  weather  path  wallust  theme  palette  monitors
+    defender  profile  terminal  flow  compile  tasks  windows
+  A plain run does every step but upgrade and palette (windows only with -Activate) -- the
+  same run as always, default wallpaper and theme included, and no installed package ever
+  moved. Those two only run when named: upgrade moves a pinned package that's older than its
+  versions.md pin up to it; palette re-applies the CURRENT wallpaper's colours (no
+  wallpaper change). -Only <step>[,<step>...] runs just those, in the
   same order, in whatever mode the machine is already in (a full-time machine's tasks stay
   sign-in tasks; windows does nothing on an on-demand machine); it takes no other switch
   and starts nothing afterwards. `710sRice doctor` names the step that fixes what it
@@ -117,11 +119,12 @@ if ($ElevatedTiling -and $NoElevatedTiling) {
 # Every step, in the one order they ever run in (see STEPS above). The step bodies are
 # further down, in $Steps; this part only decides which of them run -- before anything is
 # touched, so a bad command line changes nothing.
-$StepOrder = @('packages', 'envvars', 'weather', 'path', 'wallust', 'theme', 'palette', 'monitors',
-               'defender', 'profile', 'terminal', 'flow', 'compile', 'tasks', 'windows')
-# Steps a plain run never includes -- only -Only runs them. palette: a plain run's theme step
-# already themes everything (from the default wallpaper).
-$NamedOnlySteps = @('palette')
+$StepOrder = @('packages', 'upgrade', 'envvars', 'weather', 'path', 'wallust', 'theme', 'palette',
+               'monitors', 'defender', 'profile', 'terminal', 'flow', 'compile', 'tasks', 'windows')
+# Steps a plain run never includes -- only -Only runs them. upgrade: install never moves an
+# installed package unless asked (user, 2026-09-26: "upgrade must be named"). palette: a plain
+# run's theme step already themes everything (from the default wallpaper).
+$NamedOnlySteps = @('upgrade', 'palette')
 $OnlyRun = $PSBoundParameters.ContainsKey('Only')
 if ($OnlyRun) {
     # Through the 710sRice shim or its admin relaunch, `-Only path,envvars` arrives as ONE
@@ -270,6 +273,66 @@ $Steps['packages'] = {
         }
     } else {
         Step-Info "Skipping package installation (-SkipPackages)"
+    }
+}
+
+$Steps['upgrade'] = {
+    # --- upgrade: pinned packages older than their pin, to the pin (named-only) ----------
+    # Pinned winget rows only (a version number in versions.md): `latest` rows are unpinned
+    # so a normal `winget upgrade --all` moves them; wallust is the wallust step's job.
+    # Installed versions come from the local probes in tools\lib\packages.ps1 (doctor reads
+    # the same ones). Newer than the pin = left alone (the user's call -- e.g. a hand upgrade
+    # being tried before versions.md is bumped); older = stop the app, pin remove -> winget
+    # upgrade --version <pin> -> pin add, check, restart it through its task if it was
+    # running (Stop-PinnedApp / Invoke-PinnedUpgrade).
+    Write-Host "`n-- Upgrade pinned packages --" -ForegroundColor Cyan
+    $pinnedRows = @(@(Get-VersionsTable -Path (Join-Path $Root 'versions.md')) | Where-Object { (Test-WingetRow $_) -and (Test-PinnedRow $_) })
+    if ($pinnedRows.Count -eq 0) {
+        Write-Host "  [XX] versions.md has no pinned packages -- nothing to upgrade to" -ForegroundColor Red
+    }
+    foreach ($row in $pinnedRows) {
+        $name   = $row.Component
+        $before = Get-PackageVersion $row
+        if (-not $before.Probe) { Step-Warn "$($name): no version probe for $($row.InstallId) yet -- left alone"; continue }
+        if (-not $before.Installed) { Step-Info "$name isn't installed -- the packages step installs it (at its pin)"; continue }
+        $cmp = Compare-PinVersion $before.Version $row.Version
+        if ($null -eq $cmp) { Step-Warn "$($name): couldn't read its version ('$($before.Version)') -- left alone"; continue }
+        if ($cmp -eq 0) { Step-Ok "$name $($before.Version) -- at its pin"; continue }
+        if ($cmp -gt 0) { Step-Warn "$name $($before.Version) is newer than its pin $($row.Version) -- left alone"; continue }
+
+        Step-Info "$name $($before.Version) -> $($row.Version) ..."
+        # One package going wrong is that package's [XX], never the end of the step: the
+        # rest still get checked, and whatever was stopped still gets started again below.
+        $wasRunning = $false
+        try {
+            $wasRunning = Stop-PinnedApp $row
+            $code  = Invoke-PinnedUpgrade $row
+            $after = Get-PackageVersion $row
+            if ($null -ne $code -and $code -ne 0) {
+                Write-Host "  [XX] $($name): winget exited $(Format-WingetCode $code) -- still $($after.Version) (pin put back)" -ForegroundColor Red
+            } elseif ((Compare-PinVersion $after.Version $row.Version) -eq 0) {
+                Step-Ok "$name $($before.Version) -> $($after.Version)"
+            } elseif ($null -eq $code -and $after.Installed) {
+                Step-Warn "$($name): the un-elevated upgrade was still running after 3 minutes -- it reports $($after.Version) so far; check again once it's done."
+            } else {
+                Write-Host "  [XX] $($name): winget finished, but it reports '$($after.Version)', not $($row.Version)" -ForegroundColor Red
+            }
+        } catch {
+            # Invoke-PinnedUpgrade puts the pin back itself (finally), whatever went wrong.
+            Write-Host "  [XX] $($name): $($_.Exception.Message)" -ForegroundColor Red
+        }
+        $task = Get-PinnedAppTask $row
+        if ($wasRunning -and $task) {
+            if (Test-Task -TaskName $task) {
+                $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $task) 2>&1
+                if ($LASTEXITCODE -eq 0) { Step-Ok "$($name): started again through its task" }
+                else { Step-Warn "$($name): its task didn't start (schtasks exit $LASTEXITCODE) -- 710sRice start brings it back." }
+            } else {
+                Step-Warn "$($name) was running but has no task -- 710sRice start brings it back."
+            }
+        } elseif ($wasRunning) {
+            Step-Info "$name was closed for the upgrade -- it starts again the next time you open it."
+        }
     }
 }
 
