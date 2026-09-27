@@ -30,7 +30,8 @@
 
   Exit codes: help 0; unknown command, an error or a declined UAC prompt 1; otherwise the
   called script's own (relayed from the admin window when it ran there) -- for reload, read
-  from reload-stack.log, since 710.ahk is the one that runs it.
+  from reload-stack.log, since 710.ahk is the one that runs it; for doctor, the number of
+  problems it found.
 
   Never run this hidden (AHK, scheduled tasks). When its window was opened just for it (the
   Run dialog, an Explorer double-click, the elevated relaunch) it ends with "Press Enter to
@@ -42,6 +43,7 @@
   .\710sRice.ps1 install -Activate    # the very first install, from the repo folder
   710sRice install -Only tasks        # just re-register the scheduled tasks
   710sRice uninstall -DryRun -Keep AutoHotkey.AutoHotkey,ShareX.ShareX
+  710sRice doctor                     # what's wrong, and the command that fixes each thing
   710sRice reload bar                 # just the bar, e.g. after a weather setting change
   710sRice tiling normal              # komorebi stops running as admin (next start)
 #>
@@ -65,6 +67,20 @@ $Commands = [ordered]@{
     'uninstall' = @{ Usage = 'uninstall [-DryRun] [-Force] [-Keep <id>,<id>...]'
                      Help = 'Undo everything install did; -DryRun shows the plan first'; Admin = 'Required'
                      Run = { Invoke-RiceScript 'uninstall.ps1' @args } }
+    # doctor: read-only, any window. Its checks live in tools\lib\doctor.ps1, loaded only here;
+    # the exit code is the number of problems ([XX]) it found.
+    'doctor'    = @{ Usage = 'doctor'; Help = 'Health check -- each problem names the command that fixes it (changes nothing)'; Admin = 'Any'
+                     Run = {
+                         if ($args.Count) {
+                             Write-RiceError "Unknown option '$($args[0])' for doctor"
+                             Show-RiceCommandHelp 'doctor'
+                             $script:RiceExit = 1
+                             return
+                         }
+                         . (Join-Path $Root 'tools\lib\activation.ps1')
+                         . (Join-Path $Root 'tools\lib\doctor.ps1')
+                         $script:RiceExit = Invoke-RiceDoctor
+                     } }
     'start'     = @{ Usage = 'start'; Help = 'Start the stack'; Admin = 'Any'
                      Run = { Invoke-RiceScript 'scripts\Start-All.ps1' @args } }
     'stop'      = @{ Usage = 'stop'; Help = 'Stop the stack'; Admin = 'Any'
