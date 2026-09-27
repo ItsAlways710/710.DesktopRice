@@ -1568,14 +1568,32 @@ function Get-ShellProfilePath {
     Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\profile.ps1'
 }
 
-function Install-ShellProfile {
-    $profilePath = Get-ShellProfilePath
+function Get-ShellProfileBlock {
+    # The exact block install writes into $PROFILE for this clone -- one definition, read by
+    # Install-ShellProfile and by `710sRice doctor` (Get-ShellProfileHookState).
     $managed = Join-Path $Root 'config\pwsh\profile.ps1'
-    $block = @(
+    @(
         $script:ProfileMarkerStart
         ". '$managed'"
         $script:ProfileMarkerEnd
     ) -join "`r`n"
+}
+
+function Get-ShellProfileHookState {
+    <# Read-only, for doctor: 'installed' ($PROFILE holds this clone's block exactly as
+       Install-ShellProfile writes it), 'other' (a 710.DesktopRice block pointing somewhere
+       else -- a moved clone, say), or 'missing' (no block, or no profile file at all). #>
+    $profilePath = Get-ShellProfilePath
+    if (-not (Test-Path -LiteralPath $profilePath)) { return 'missing' }
+    $existing = Get-Content -LiteralPath $profilePath -Raw
+    $pattern = '(?s)' + [regex]::Escape($script:ProfileMarkerStart) + '.*?' + [regex]::Escape($script:ProfileMarkerEnd)
+    if ("$existing" -notmatch $pattern) { return 'missing' }
+    if (($Matches[0] -replace '\r?\n', "`r`n") -eq (Get-ShellProfileBlock)) { 'installed' } else { 'other' }
+}
+
+function Install-ShellProfile {
+    $profilePath = Get-ShellProfilePath
+    $block = Get-ShellProfileBlock
 
     $existing = if (Test-Path $profilePath) { Get-Content $profilePath -Raw } else { '' }
     $pattern = '(?s)' + [regex]::Escape($script:ProfileMarkerStart) + '.*?' + [regex]::Escape($script:ProfileMarkerEnd)

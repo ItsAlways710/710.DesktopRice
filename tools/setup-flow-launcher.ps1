@@ -51,7 +51,14 @@
 
     Requires Flow to have run at least once (so Settings.json exists). pwsh 7+ only
     (ConvertFrom-Json -AsHashtable).
+
+    -Check (`710sRice doctor`): the same comparison, nothing written -- no snapshot, no
+    settings, Flow left running. It outputs what's off, one object per item (Item, and Kind
+    'functional' -- the search keywords, the engine, the old plugin, auto-updates -- or
+    'preference' -- the query box, the tray icon, the update prompt), and exits 0 when all
+    is set, 3 when something isn't, 2 when Flow has never run (no Settings.json yet).
 #>
+param([switch]$Check)
 
 $ErrorActionPreference = 'Stop'
 
@@ -88,14 +95,20 @@ $everythingExe = @("$env:ProgramFiles\Everything\Everything.exe", "${env:Program
 
 if (-not (Test-Path $settingsPath)) {
     Write-Warning "Flow Launcher Settings.json not found at $settingsPath -- run Flow Launcher at least once first, then re-run this script."
-    exit 1
+    exit $(if ($Check) { 2 } else { 1 })
 }
+
+# What's off, item by item -- only -Check reports it; a normal run acts on the same findings.
+$findings = [System.Collections.Generic.List[object]]::new()
+function Add-Finding([string]$Item, [string]$Kind = 'functional') { $findings.Add([pscustomobject]@{ Item = $Item; Kind = $Kind }) }
 
 $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
 $plugins  = $settings['PluginSettings']['Plugins']
 $explorer = if (Test-Path $explorerPath) { Get-Content $explorerPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable }
 
 # --- Snapshots (once each, before anything below can change what they capture) ---------
+# Not under -Check: that writes nothing at all.
+if (-not $Check) {
 $programExisted = $plugins -and $plugins.ContainsKey($programPluginId)
 Save-OriginalStateOnce -Label 'flow-settings' -Data @{
     ProgramPluginId       = $programPluginId
@@ -124,6 +137,7 @@ Save-OriginalStateOnce -Label 'flow-explorer-settings' -Data @{
 Save-OriginalStateOnce -Label 'flow-querymode' -Data @{
     LastQueryMode = Get-Field $settings 'LastQueryMode'
 }
+}
 
 $settingsChanged = $false
 $explorerChanged = $false
@@ -136,10 +150,12 @@ function Add-Keyword([string]$PluginId, [string]$Keyword, [string]$Label) {
        repo's own 8a55240 fix, and exactly the bug winarchy fixed in a4dd1f7. #>
     if (-not $plugins -or -not $plugins.ContainsKey($PluginId)) {
         Write-Warning "Flow's $Label plugin settings not found (has Flow run at least once?) -- '$Keyword' keyword not applied."
+        Add-Finding "$Label plugin settings not found"
         return
     }
     $keywords = @(if ($null -eq $plugins[$PluginId]['ActionKeywords']) { @() } else { @($plugins[$PluginId]['ActionKeywords']) })
     if ($keywords -contains $Keyword) { return }
+    Add-Finding "'$Keyword' keyword missing"
     $plugins[$PluginId]['ActionKeywords'] = @($keywords) + $Keyword
     $script:settingsChanged = $true
     $todo.Add("$Label keyword '$Keyword'")
@@ -152,18 +168,21 @@ Add-Keyword $explorerPluginId 'f' 'Explorer'
 # --- Explorer plugin: file search on the Everything index ---------------------------------
 if (-not $explorer) {
     Write-Warning "Flow Explorer plugin settings not found at $explorerPath (has Flow run at least once?) -- file search keyword not applied."
+    Add-Finding 'Explorer plugin settings not found'
 } else {
     $desired = [ordered]@{ FileSearchActionKeyword = 'f'; FileSearchKeywordEnabled = $true }
     if ($everythingExe) { $desired['IndexSearchEngine'] = 1 }   # 1 = Everything (0 = Windows Search)
     else { Write-Warning 'voidtools Everything not installed -- Explorer file search left on its current engine (winget install voidtools.Everything).' }
+    $what = @{ FileSearchActionKeyword = "file search keyword isn't 'f'"; FileSearchKeywordEnabled = 'file search keyword is off'; IndexSearchEngine = "file search isn't on Everything" }
     foreach ($k in $desired.Keys) {
-        if ($explorer[$k] -ne $desired[$k]) { $explorer[$k] = $desired[$k]; $explorerChanged = $true }
+        if ($explorer[$k] -ne $desired[$k]) { $explorer[$k] = $desired[$k]; $explorerChanged = $true; Add-Finding $what[$k] }
     }
     if ($explorerChanged) { $todo.Add("Explorer file search ('f', engine $(if ($everythingExe) { 'Everything' } else { 'unchanged' }))") }
 }
 
 # --- Legacy standalone Everything plugin: settings entry + folder ---------------------------
 if ($plugins -and $plugins.ContainsKey($legacyEverythingPlugin)) {
+    Add-Finding 'old Everything plugin still in its settings'
     $plugins.Remove($legacyEverythingPlugin)
     $settingsChanged = $true
     $todo.Add('legacy Everything plugin settings entry removed')
@@ -177,8 +196,15 @@ $legacyDirs = @(if (Test-Path $pluginsDir) {
 
 # --- Identity: unified tray icon, no self-update nag --------------------------------------
 $identity = [ordered]@{ HideNotifyIcon = $true; AutoUpdates = $false; AutoUpdatePlugins = $false; DontPromptUpdateMsg = $true }
+$identityWhat = @{
+    HideNotifyIcon      = @('tray icon shown', 'preference')
+    AutoUpdates         = @('Flow updates itself', 'functional')
+    AutoUpdatePlugins   = @('plugins update themselves', 'functional')
+    DontPromptUpdateMsg = @('update prompt on', 'preference')
+}
 foreach ($k in $identity.Keys) {
     if (-not $settings.ContainsKey($k) -or $settings[$k] -ne $identity[$k]) {
+        Add-Finding $identityWhat[$k][0] $identityWhat[$k][1]
         $settings[$k] = $identity[$k]
         if (-not $todo.Contains('identity toggles')) { $todo.Add('identity toggles') }
         $settingsChanged = $true
@@ -187,9 +213,17 @@ foreach ($k in $identity.Keys) {
 
 # --- Query box: open empty (see header) ----------------------------------------------------
 if ($settings['LastQueryMode'] -ne 'Empty') {
+    Add-Finding 'the query box keeps the last search' 'preference'
     $settings['LastQueryMode'] = 'Empty'
     $settingsChanged = $true
     $todo.Add('query box opens empty')
+}
+
+if ($legacyDirs.Count) { Add-Finding 'old Everything plugin still installed' }
+if ($Check) {
+    # Read-only: report, touch nothing (Flow keeps running; no .bak, no settings written).
+    $findings
+    exit $(if ($findings.Count) { 3 } else { 0 })
 }
 
 if (-not $settingsChanged -and -not $explorerChanged -and $legacyDirs.Count -eq 0) {

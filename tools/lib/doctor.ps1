@@ -793,6 +793,171 @@ function Test-DoctorThemeFiles {
     New-DoctorResult -Id 'theme-files' -Status 'OK' -Text 'Theme files: colors.json (color1/3/5/6), wallust_colors.css, starship.toml'
 }
 
+# --- f. Integrations -----------------------------------------------------------------------------
+# The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
+# search), Windows Terminal (theme, default shell), the $PROFILE hook, Defender's exclusions,
+# and -- on a full-time machine -- the Windows settings -Activate applies.
+
+function ConvertTo-DoctorSafePath {
+    # A path as it can be shown in a report that may get pasted into an issue: the user's own
+    # profile folders as %LOCALAPPDATA% / %APPDATA% / %USERPROFILE%, never the user name.
+    param([string]$Path)
+    $out = "$Path"
+    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+        $dir = [Environment]::GetEnvironmentVariable($v)
+        if ($dir -and $out.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase)) { return "%$v%$($out.Substring($dir.Length))" }
+    }
+    $out
+}
+
+function Test-DoctorFlow {
+    # setup-flow-launcher.ps1 -Check: install's own flow step, asked what it would change.
+    # Functional items (the search keywords, the Everything engine, the old plugin, Flow
+    # updating itself) are [XX]; preferences (the query box, the tray icon, the update prompt)
+    # are [!!].
+    if (-not (Test-Path -LiteralPath "$env:LOCALAPPDATA\FlowLauncher\Flow.Launcher.exe")) { return }   # group b says so
+    $global:LASTEXITCODE = 0
+    $found = @(& (Join-Path $Root 'tools\setup-flow-launcher.ps1') -Check 3>$null 6>$null)
+    $code = $LASTEXITCODE
+    if ($code -eq 2) { return New-DoctorResult -Id 'flow' -Status '..' -Text "Flow Launcher hasn't run yet -- SUPER+Space starts it" }
+    if ($code -notin 0, 3) { return New-DoctorResult -Id 'flow' -Status '!!' -Text "Flow Launcher -- couldn't check (its setup script exited $code)" }
+    $functional = @($found | Where-Object { $_.Kind -eq 'functional' } | ForEach-Object Item)
+    $preference = @($found | Where-Object { $_.Kind -eq 'preference' } | ForEach-Object Item)
+    $fix = @{ Fix = '710sRice install -Only flow'; Step = 'flow' }
+    if ($functional.Count) { New-DoctorResult -Id 'flow' -Status 'XX' -Text "Flow Launcher setup: $($functional -join '; ')" @fix }
+    else { New-DoctorResult -Id 'flow' -Status 'OK' -Text 'Flow Launcher set up (file search on Everything with f, apps with app, old plugin gone, auto-updates off)' }
+    if ($preference.Count) { New-DoctorResult -Id 'flow-prefs' -Status '!!' -Text "Flow Launcher preferences: $($preference -join '; ')" @fix }
+    else { New-DoctorResult -Id 'flow-prefs' -Status 'OK' -Text 'Flow Launcher preferences (opens empty, tray icon hidden, no update prompt)' }
+}
+
+function Test-DoctorEverything {
+    # Flow's file search (SUPER+S) asks Everything's own app -- the tray process in this
+    # session. Its Windows service indexes, but doesn't answer searches.
+    $exe = @("$env:ProgramFiles\Everything\Everything.exe", "${env:ProgramFiles(x86)}\Everything\Everything.exe") |
+           Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $exe) { return }   # group b says so
+    $session = (Get-Process -Id $PID).SessionId
+    if (@(Get-Process Everything -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session }).Count) {
+        return New-DoctorResult -Id 'everything' -Status 'OK' -Text 'Everything running'
+    }
+    New-DoctorResult -Id 'everything' -Status '!!' -Text "Everything isn't running -- SUPER+S (Flow's file search) needs it" -Fix 'start Everything from the Start menu'
+}
+
+function Get-DoctorTerminalSettings {
+    # Windows Terminal's settings.json, from the same two places install and the palette look.
+    $path = @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+              "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json") |
+            Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($path) { Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable }
+}
+
+function Test-DoctorTerminal {
+    # Themed: the palette step sets profiles.defaults.colorScheme to wallust's own scheme.
+    # Default shell: the terminal step points defaultProfile at the PowerShell 7 profile.
+    $wt = Get-DoctorTerminalSettings
+    if (-not $wt) {
+        if (Test-Path -LiteralPath "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe") {
+            return New-DoctorResult -Id 'terminal' -Status '..' -Text "Windows Terminal hasn't been opened yet -- no settings to check"
+        }
+        return   # not installed: group b says so
+    }
+    $scheme  = if ($wt['profiles'] -is [hashtable] -and $wt['profiles']['defaults'] -is [hashtable]) { $wt['profiles']['defaults']['colorScheme'] }
+    $hasOurs = [bool](@($wt['schemes']) | Where-Object { $_ -is [hashtable] -and $_['name'] -eq 'wallust' })
+    if ($scheme -eq 'wallust' -and $hasOurs) { New-DoctorResult -Id 'terminal' -Status 'OK' -Text 'Windows Terminal themed (wallust)' }
+    else {
+        $why = if ($scheme -ne 'wallust') { "colorScheme isn't wallust" } else { 'no wallust scheme' }
+        New-DoctorResult -Id 'terminal' -Status 'XX' -Text "Windows Terminal isn't themed ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
+    }
+    $pwsh = @(if ($wt['profiles'] -is [hashtable]) { $wt['profiles']['list'] }) | Where-Object { $_ -is [hashtable] -and $_['source'] -eq 'Windows.Terminal.PowershellCore' } | Select-Object -First 1
+    if (-not $pwsh -or -not $pwsh['guid']) {
+        New-DoctorResult -Id 'terminal-default' -Status '!!' -Text 'Windows Terminal has no PowerShell 7 profile yet' -Fix 'open Terminal once, then 710sRice install -Only terminal'
+    } elseif ($wt['defaultProfile'] -eq $pwsh['guid']) {
+        New-DoctorResult -Id 'terminal-default' -Status 'OK' -Text 'Windows Terminal opens PowerShell 7'
+    } else {
+        New-DoctorResult -Id 'terminal-default' -Status '!!' -Text 'Windows Terminal opens something other than PowerShell 7' -Fix '710sRice install -Only terminal' -Step 'terminal'
+    }
+}
+
+function Test-DoctorProfileHook {
+    # $PROFILE's 710.DesktopRice block, compared with exactly what install writes for this clone.
+    $fix = @{ Fix = '710sRice install -Only profile'; Step = 'profile' }
+    switch (Get-ShellProfileHookState) {
+        'installed' { New-DoctorResult -Id 'profile' -Status 'OK' -Text 'Shell profile hook -> this clone' }
+        'other'     { New-DoctorResult -Id 'profile' -Status 'XX' -Text 'Shell profile hook points at another copy' @fix }
+        default     { New-DoctorResult -Id 'profile' -Status 'XX' -Text "Shell profile hook isn't installed" @fix }
+    }
+}
+
+function Test-DoctorDefender {
+    # Every path install excludes, and no earlier pwsh.exe of ours left behind -- the same two
+    # lists install's defender step works from. Windows only shows the exclusions to an admin.
+    if (-not (Test-IsAdmin)) { return New-DoctorResult -Id 'defender' -Status '..' -Text 'Defender exclusions: Windows only shows them to an admin -- not checked' }
+    try { $pref = Get-MpPreference -ErrorAction Stop }
+    catch { return New-DoctorResult -Id 'defender' -Status '..' -Text "Defender isn't in use here (another antivirus?) -- nothing to check" }
+    $current = @($pref.ExclusionPath)
+    $want    = @(Get-DefenderExclusionPaths)
+    $missing = @($want | Where-Object { $current -notcontains $_ })
+    $stale   = @(Get-StalePwshExclusions -Current $current)
+    if (-not $missing.Count -and -not $stale.Count) {
+        return New-DoctorResult -Id 'defender' -Status 'OK' -Text "Defender exclusions: all $($want.Count) in place"
+    }
+    $parts  = @(if ($missing.Count) { "$($missing.Count) missing" }; if ($stale.Count) { "$(Get-DoctorPlural $stale.Count 'old pwsh.exe' 'old pwsh.exes') left" })
+    $detail = @($missing | ForEach-Object { "missing: $(ConvertTo-DoctorSafePath $_)" }) + @($stale | ForEach-Object { "old: $(ConvertTo-DoctorSafePath $_)" })
+    New-DoctorResult -Id 'defender' -Status 'XX' -Text "Defender exclusions: $($parts -join ', ')" -Detail $detail -Fix '710sRice install -Only defender' -Step 'defender'
+}
+
+function Test-DoctorWindowsSettings {
+    # What -Activate applies on a full-time machine: taskbar auto-hide, the hardening values
+    # (Get-HardeningSettings), no Startup delay. Worth knowing when it drifts, but the fix
+    # restarts Explorer and a change may be deliberate -- so [!!]. TaskbarDa (the Widgets
+    # button) is left out: Windows refuses a script's write to it, so no fix could clear it
+    # (install already points at Settings for that one).
+    if (-not (Test-FullTimeMachine)) { return }
+    $drift = @()
+    try { if (-not (Test-TaskbarAutoHide)) { $drift += "taskbar doesn't auto-hide" } } catch { }
+    $hard = @(foreach ($s in Get-HardeningSettings) {
+        $path, $name, $value = $s
+        if ($name -eq 'TaskbarDa') { continue }
+        $item = Get-ItemProperty -Path $path -Name $name -ErrorAction Ignore
+        if ($null -eq $item -or $item.$name -ne $value) { $name }
+    })
+    if ($hard.Count) {
+        $shown = @($hard | Select-Object -First 4) -join ', '
+        $drift += "hardening: $shown$(if ($hard.Count -gt 4) { " and $($hard.Count - 4) more" })"
+    }
+    $delay = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' -Name StartupDelayInMSec -ErrorAction Ignore
+    if ($null -eq $delay -or $delay.StartupDelayInMSec -ne 0) { $drift += 'the Startup delay is back' }
+    if ($drift.Count) {
+        return New-DoctorResult -Id 'windows' -Status '!!' -Text "Windows settings drifted: $($drift -join '; ')" -Fix '710sRice install -Only windows' -Step 'windows'
+    }
+    New-DoctorResult -Id 'windows' -Status 'OK' -Text 'Windows settings (-Activate): taskbar auto-hides, hardening applied, no Startup delay'
+}
+
+# --- g. Conflicts and leftovers --------------------------------------------------------------------
+
+function Test-DoctorConflicts {
+    # Another window manager or hotkey owner running alongside: they fight over the same
+    # windows / keys. (winarchy's doctor checked whkd and seelen-ui by these names.)
+    $others = [ordered]@{ whkd = @('whkd', 'hotkey managers', 'keys'); 'seelen-ui' = @('Seelen UI', 'window managers', 'windows'); glazewm = @('GlazeWM', 'window managers', 'windows') }
+    $running = @($others.Keys | Where-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue })
+    foreach ($k in $running) {
+        $n, $what, $over = $others[$k]
+        New-DoctorResult -Id "conflict:$k" -Status '!!' -Text "$n is running -- two $what fight over the same $over" -Fix 'stop it and remove its autostart'
+    }
+    if (-not $running.Count) { New-DoctorResult -Id 'conflicts' -Status 'OK' -Text 'No other window or hotkey manager running (whkd, Seelen UI, GlazeWM)' }
+}
+
+function Test-DoctorKomorebiScripts {
+    # komorebi runs a komorebi.ps1 / komorebi.ahk it finds in its config folder at every start
+    # (and on reload-configuration) -- as admin in elevated tiling mode. Nothing of ours puts
+    # one there (plan doc item 37's accepted risk), so one showing up is worth a look.
+    $found = @('komorebi.ps1', 'komorebi.ahk' | Where-Object { Test-Path -LiteralPath (Join-Path $Root "config\komorebi\$_") })
+    foreach ($f in $found) {
+        New-DoctorResult -Id "leftover:$f" -Status '!!' -Text "config\komorebi\$f exists -- komorebi runs it at every start (as admin in elevated tiling mode)" -Fix 'delete it unless you put it there on purpose'
+    }
+    if (-not $found.Count) { New-DoctorResult -Id 'komorebi-scripts' -Status 'OK' -Text 'No komorebi.ps1 / komorebi.ahk in config\komorebi' }
+}
+
 # --- The checks, in report order ------------------------------------------------------------
 # Each check: Id, Name (for "couldn't check"), Run (gets the run's context), and Late = waits
 # on a background job -- run after every other check, so the jobs have the longest head start.
@@ -829,6 +994,18 @@ function Get-DoctorGroups {
             @{ Id = 'display-index'; Name = 'display-index.local.json'; Run = { Test-DoctorDisplayIndex } }
             @{ Id = 'wallust-toml';  Name = 'wallust.toml';             Run = { Test-DoctorWallustToml } }
             @{ Id = 'theme-files';   Name = 'Theme files';              Run = { Test-DoctorThemeFiles } }
+        ) }
+        [pscustomobject]@{ Title = 'Integrations'; Checks = @(
+            @{ Id = 'flow';       Name = 'Flow Launcher';        Run = { Test-DoctorFlow } }
+            @{ Id = 'everything'; Name = 'Everything';           Run = { Test-DoctorEverything } }
+            @{ Id = 'terminal';   Name = 'Windows Terminal';     Run = { Test-DoctorTerminal } }
+            @{ Id = 'profile';    Name = 'Shell profile hook';   Run = { Test-DoctorProfileHook } }
+            @{ Id = 'defender';   Name = 'Defender exclusions';  Run = { Test-DoctorDefender } }
+            @{ Id = 'windows';    Name = 'Windows settings';     Run = { Test-DoctorWindowsSettings } }
+        ) }
+        [pscustomobject]@{ Title = 'Conflicts and leftovers'; Checks = @(
+            @{ Id = 'conflicts';        Name = 'Other window / hotkey managers'; Run = { Test-DoctorConflicts } }
+            @{ Id = 'komorebi-scripts'; Name = 'komorebi.ps1 / komorebi.ahk';    Run = { Test-DoctorKomorebiScripts } }
         ) }
     )
 }
