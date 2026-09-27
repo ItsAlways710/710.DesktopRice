@@ -86,6 +86,10 @@ $Commands = [ordered]@{
                      Run = { Invoke-RiceScript 'scripts\Start-All.ps1' @args } }
     'stop'      = @{ Usage = 'stop'; Help = 'Stop the stack'; Admin = 'Any'
                      Run = { Invoke-RiceScript 'scripts\Stop-All.ps1' @args } }
+    # restart: stop + start, with a wait in between (Invoke-RiceRestart). activation.ps1 for
+    # Find-AhkWindow, loaded here for the same reason as reload's.
+    'restart'   = @{ Usage = 'restart'; Help = 'Stop the stack, then start it again (SUPER+Shift+R only reloads)'; Admin = 'Any'
+                     Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Invoke-RiceRestart } }
     # activation.ps1 (Send-AhkMessage) is loaded here, not at the top, so the other commands
     # -- help above all -- don't pay for parsing it. Dot-sourced into this block's scope,
     # which Invoke-RiceReload runs inside of.
@@ -242,6 +246,36 @@ function Invoke-RiceReloadBar {
     }
 }
 
+# --- restart --------------------------------------------------------------------------------------
+function Invoke-RiceRestart {
+    # `restart` = stop, then start: the whole stack, every time. SUPER+Shift+R (`reload`) no
+    # longer is that -- it restarts komorebi only when a rule was removed, and YASB only when
+    # it has to (Claude Desktop's extra title bar per bar restart, plan doc #40). In between, it
+    # waits until everything has really exited: each launcher leaves alone a component it still
+    # sees running, and Stop-All only gives each stop a few hundred ms. Something still up after
+    # 10 s (Stop-All has already said why) keeps running as it was; the rest start anyway.
+    Invoke-RiceScript 'scripts\Stop-All.ps1'
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    $stillUp = {
+        @(
+            if (Get-Process komorebi -ErrorAction SilentlyContinue) { 'komorebi' }
+            if (Get-Process yasb -ErrorAction SilentlyContinue) { 'YASB' }
+            if (Get-Process ShareX -ErrorAction SilentlyContinue) { 'ShareX' }
+            if ((Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero) { '710.ahk' }
+        )
+    }
+    $deadline = (Get-Date).AddSeconds(10)
+    while (@(& $stillUp).Count -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    $left = @(& $stillUp)
+    if ($left.Count) {
+        Step-Warn "Still running after 10 s: $($left -join ', ') -- starting the rest; $(if ($left.Count -eq 1) { 'it keeps' } else { 'those keep' }) running as before (not restarted)."
+    }
+    Invoke-RiceScript 'scripts\Start-All.ps1'
+    if ($script:RiceExit -eq 0) {
+        Step-Info 'Apps tiled through a layered rule (Claude Desktop) can pick up an extra title bar when the bar restarts -- relaunch the app if you see one.'
+    }
+}
+
 # --- logs / tiling ---------------------------------------------------------------------------------
 function Show-RiceLogs {
     # The folder every 710.DesktopRice log lives in: its path and logs here, newest first (which
@@ -295,7 +329,7 @@ function Show-RiceTilingStatus {
     if ($task -and (Get-RiceLevelText $task.RunLevel) -ne (Get-RiceLevelText $saved)) {
         Step-Warn "komorebi's task doesn't match the saved mode -- ``710sRice tiling $saved`` re-registers it."
     } elseif ($task -and $running -in 'elevated', 'normal' -and (Get-RiceLevelText $running) -ne (Get-RiceLevelText $task.RunLevel)) {
-        Step-Info 'Takes effect at komorebi''s next start: `710sRice stop`, then `710sRice start` (or sign out and in).'
+        Step-Info 'Takes effect at komorebi''s next start: `710sRice restart` (or sign out and in).'
     }
 }
 
@@ -320,7 +354,7 @@ function Set-RiceTilingMode {
     }
     $running = Get-ProcessElevation -Name 'komorebi'
     if ($running -in 'elevated', 'normal' -and (Get-RiceLevelText $running) -ne (Get-RiceLevelText $Mode)) {
-        Step-Info "komorebi is still running $(if ($running -eq 'elevated') { 'elevated' } else { 'non-elevated' }) -- the new mode takes effect at its next start: ``710sRice stop``, then ``710sRice start`` (or sign out and in)."
+        Step-Info "komorebi is still running $(if ($running -eq 'elevated') { 'elevated' } else { 'non-elevated' }) -- the new mode takes effect at its next start: ``710sRice restart`` (or sign out and in)."
     }
 }
 

@@ -495,7 +495,7 @@ function Test-DoctorStack {
             continue
         }
         if ($c.Key -ne 'komorebi' -and (Get-ProcessElevation -Id $running[0].Id) -eq 'elevated') {
-            New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" -Fix '710sRice stop, then 710sRice start'
+            New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" -Fix '710sRice restart'
             continue
         }
         if ($c.Key -eq 'ahk') {
@@ -504,7 +504,7 @@ function Test-DoctorStack {
             if ($running[0].ProcessName -eq 'AutoHotkey64_UIA') {
                 New-DoctorResult -Id $id -Status 'OK' -Text '710.ahk running (UI Access)'
             } elseif ("$ahkExe" -like '*AutoHotkey64_UIA.exe') {
-                New-DoctorResult -Id $id -Status '!!' -Text "710.ahk is running without UI Access -- its hotkeys don't reach admin windows" -Fix '710sRice stop, then 710sRice start'
+                New-DoctorResult -Id $id -Status '!!' -Text "710.ahk is running without UI Access -- its hotkeys don't reach admin windows" -Fix '710sRice restart'
             } else {
                 New-DoctorResult -Id $id -Status 'OK' -Text '710.ahk running'
             }

@@ -624,7 +624,7 @@ $Steps['tasks'] = {
         Step-Ok "Non-elevated tiling ($tilingWhy): admin windows float. Opt back in with -ElevatedTiling."
     }
     if ($tiling.Changed -and (Get-Process komorebi -ErrorAction SilentlyContinue)) {
-        Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run `710sRice stop` then `710sRice start`.'
+        Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run `710sRice restart`.'
     }
 
     # --- 11a. Tasks: every component's, in the machine's mode ------------------------------
