@@ -49,6 +49,9 @@
 #>
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
+# install's steps, in their order (install -? lists them; doctor's repair plan orders by them).
+# Plain variables -- nothing to slow help down.
+. (Join-Path $Root 'tools\lib\steps.ps1')
 
 # --- The commands -----------------------------------------------------------------------------
 # One row per command, shown in help in this order. The name is one word or two ('reload bar'
@@ -59,10 +62,10 @@ $Root = $PSScriptRoot
 $Commands = [ordered]@{
     'help'      = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'
                      Run = { Show-RiceHelp } }
-    # More: shown by `install -?` only. Keep it in step with install.ps1's $StepOrder.
+    # More: shown by `install -?` only -- the steps from tools\lib\steps.ps1.
     'install'   = @{ Usage = 'install [-Activate] [-SkipPackages] [-ElevatedTiling | -NoElevatedTiling] | -Only <step>,...'
                      Help = 'Install or update (safe to re-run); -Activate = start at sign-in; -Only = just those steps'; Admin = 'Required'
-                     More = 'Steps: packages, upgrade, envvars, weather, path, wallust, theme, palette, monitors, defender, profile, terminal, flow, compile, tasks, windows'
+                     More = "Steps: $($InstallStepOrder -join ', ')"
                      Run = { Invoke-RiceScript 'install.ps1' @args } }
     'uninstall' = @{ Usage = 'uninstall [-DryRun] [-Force] [-Keep <id>,<id>...]'
                      Help = 'Undo everything install did; -DryRun shows the plan first'; Admin = 'Required'

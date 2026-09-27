@@ -116,15 +116,13 @@ if ($ElevatedTiling -and $NoElevatedTiling) {
 }
 
 # --- The steps -------------------------------------------------------------------------
-# Every step, in the one order they ever run in (see STEPS above). The step bodies are
-# further down, in $Steps; this part only decides which of them run -- before anything is
-# touched, so a bad command line changes nothing.
-$StepOrder = @('packages', 'upgrade', 'envvars', 'weather', 'path', 'wallust', 'theme', 'palette',
-               'monitors', 'defender', 'profile', 'terminal', 'flow', 'compile', 'tasks', 'windows')
-# Steps a plain run never includes -- only -Only runs them. upgrade: install never moves an
-# installed package unless asked (user, 2026-09-26: "upgrade must be named"). palette: a plain
-# run's theme step already themes everything (from the default wallpaper).
-$NamedOnlySteps = @('upgrade', 'palette')
+# Every step, in the one order they ever run in (see STEPS above), and the two only -Only
+# runs -- from tools\lib\steps.ps1, the one list install, `710sRice install -?` and doctor's
+# repair plan all read. The step bodies are further down, in $Steps; this part only decides
+# which of them run -- before anything is touched, so a bad command line changes nothing.
+. (Join-Path $Root 'tools\lib\steps.ps1')
+$StepOrder      = $InstallStepOrder
+$NamedOnlySteps = $InstallNamedOnlySteps
 $OnlyRun = $PSBoundParameters.ContainsKey('Only')
 if ($OnlyRun) {
     # Through the 710sRice shim or its admin relaunch, `-Only path,envvars` arrives as ONE

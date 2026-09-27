@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
   `710sRice doctor` -- a read-only health report of this clone and its install. Dot-sourced
-  by 710sRice.ps1 after tools\lib\activation.ps1 and tools\lib\packages.ps1 (it uses both)
-  -- never run directly.
+  by 710sRice.ps1 after tools\lib\activation.ps1 and tools\lib\packages.ps1 (it uses both;
+  the dispatcher has already loaded tools\lib\steps.ps1) -- never run directly.
 
 .DESCRIPTION
   Read-only, and it has to stay that way: doctor changes nothing, starts or stops nothing and
@@ -11,9 +11,11 @@
 
   Every check returns one or more results (New-DoctorResult): a stable Id, a Status, the
   line's Text, Detail lines, a Fix -- a command to type -- and, when that fix is an install
-  step, its name in Step; NeedsYou marks a problem no command can fix for you. That's the
-  shape `710sRice doctor -repair` (Stage 4) plugs into: it runs the Step behind every [XX]
-  that doesn't need you.
+  step, its name in Step; Repair names what `710sRice doctor -repair` does that isn't an
+  install step (reload, reload-bar, restart, start:<key>, tiling:<mode>); NeedsYou marks a
+  problem no command can fix for you. Each check is written together with its fix, so a new
+  check extends repair by itself: Get-RepairPlan turns the [XX] results into what repair
+  runs, and doctor's closing lines preview the same plan.
 
     [XX]  broken -- counted: doctor's exit code is the number of them
     [!!]  worth knowing, with a fix; not counted (repair leaves these alone)
@@ -37,11 +39,12 @@ function New-DoctorResult {
         [string[]]$Detail = @(),
         [string]$Fix = '',
         [string]$Step = '',
+        [string]$Repair = '',
         [switch]$NeedsYou
     )
     [pscustomobject]@{
         Id = $Id; Status = $Status; Text = $Text; Detail = @($Detail | Where-Object { $_ })
-        Fix = $Fix; Step = $Step; NeedsYou = [bool]$NeedsYou
+        Fix = $Fix; Step = $Step; Repair = $Repair; NeedsYou = [bool]$NeedsYou
     }
 }
 
@@ -176,7 +179,8 @@ function Get-DoctorUpdateResult {
     if (-not $Head)   { return New-DoctorResult -Id 'update' -Status '..' -Text "Couldn't check for updates (can't read this clone's commit)" }
     if ($remote -eq $Head) { return New-DoctorResult -Id 'update' -Status 'OK' -Text 'Up to date with GitHub' }
 
-    $newer = @{ Id = 'update'; Status = '!!'; Text = 'Newer version on GitHub'; Fix = 'git pull, then 710sRice install' }
+    # Repair after the pull, not install: install puts the default wallpaper and theme back.
+    $newer = @{ Id = 'update'; Status = '!!'; Text = 'Newer version on GitHub'; Fix = 'git pull, then 710sRice doctor -repair' }
     if (-not (Invoke-DoctorGit $GitState.Git @('cat-file', '-e', "$remote^{commit}")).Ok) { return New-DoctorResult @newer }
     $rl = Invoke-DoctorGit $GitState.Git @('rev-list', '--left-right', '--count', "$Head...$remote")
     $counts = "$($rl.Lines)".Trim() -split '\s+'
@@ -489,15 +493,15 @@ function Test-DoctorStack {
             $text   = "$($c.Name) isn't running$(if ($c.Key -eq 'sharex') { ' -- capture hotkeys do nothing without it' })"
             $detail = if ($c.Key -eq 'yasb') { Get-DoctorYasbWatchdogNote } else { $null }
             if (-not $detail -and $c.Log) { $detail = "its log: $($c.Log) (710sRice logs opens the folder)" }
-            New-DoctorResult -Id $id -Status 'XX' -Text $text -Detail $detail -Fix '710sRice start'
+            New-DoctorResult -Id $id -Status 'XX' -Text $text -Detail $detail -Fix '710sRice start' -Repair "start:$($c.Key)"
             continue
         }
         if ($c.Key -eq 'yasb' -and $running.Count -gt 1) {
-            New-DoctorResult -Id $id -Status 'XX' -Text "$($running.Count) YASB processes -- two bars fight over komorebi's events" -Fix '710sRice reload bar'
+            New-DoctorResult -Id $id -Status 'XX' -Text "$($running.Count) YASB processes -- two bars fight over komorebi's events" -Fix '710sRice reload bar' -Repair 'reload-bar'
             continue
         }
         if ($c.Key -ne 'komorebi' -and (Get-ProcessElevation -Id $running[0].Id) -eq 'elevated') {
-            New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" -Fix '710sRice restart'
+            New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" -Fix '710sRice restart' -Repair 'restart'
             continue
         }
         if ($c.Key -eq 'ahk') {
@@ -637,7 +641,7 @@ function Test-DoctorTilingMode {
     $taskMode = if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' } else { 'normal' }
     if ($taskMode -ne $saved) {
         return New-DoctorResult -Id 'tiling' -Status 'XX' -Text "Tiling mode: $saved is saved, but komorebi's task runs $(if ($taskMode -eq 'elevated') { 'elevated' } else { 'non-elevated' })" `
-            -Fix "710sRice tiling $saved"
+            -Fix "710sRice tiling $saved" -Repair "tiling:$saved"
     }
     $running = Get-ProcessElevation -Name 'komorebi'
     if ($running -notin 'elevated', 'normal') {
@@ -682,7 +686,15 @@ function Test-DoctorKomorebiJson {
         0 { New-DoctorResult -Id 'komorebi-json' -Status 'OK' -Text 'komorebi.json is current with its sources' }
         3 {
             $text = if (Test-Path -LiteralPath $out) { 'komorebi.json is out of date with its sources' } else { 'komorebi.json is missing' }
-            New-DoctorResult -Id 'komorebi-json' -Status 'XX' -Text $text -Fix '710sRice reload'
+            # A running komorebi: reload -- the hot reload plus its layouts put back. Not
+            # running: just the compile step -- reload-stack.ps1 STARTS komorebi (and the bar)
+            # when it's down, and a stopped stack has no layouts to keep; komorebi reads the
+            # new file at its next start.
+            if (Get-Process komorebi -ErrorAction SilentlyContinue) {
+                New-DoctorResult -Id 'komorebi-json' -Status 'XX' -Text $text -Fix '710sRice reload' -Repair 'reload'
+            } else {
+                New-DoctorResult -Id 'komorebi-json' -Status 'XX' -Text $text -Fix '710sRice install -Only compile' -Step 'compile'
+            }
         }
         default { New-DoctorResult -Id 'komorebi-json' -Status '!!' -Text "komorebi.json -- couldn't check (the compiler exited $code)" }
     }
@@ -728,13 +740,18 @@ function Test-DoctorDisplayIndex {
     $file = Join-Path $Root 'config\komorebi\display-index.local.json'
     $fix  = @{ Fix = '710sRice install -Only monitors, then 710sRice reload'; Step = 'monitors' }
     $running = [bool](Get-Process komorebi -ErrorAction SilentlyContinue)
+    # A broken file (unreadable / empty): the monitors step can only rewrite it while komorebi
+    # runs, and komorebi's launcher only writes one that's MISSING -- so with komorebi down,
+    # nothing can fix it until the stack is started.
+    $broken = if ($running) { $fix + @{ Repair = 'reload' } }
+              else { @{ Fix = '710sRice start, then 710sRice doctor -repair'; NeedsYou = $true } }
     if (-not (Test-Path -LiteralPath $file)) {
-        if ($running) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is missing' @fix }
+        if ($running) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is missing' @fix -Repair 'reload' }
         return New-DoctorResult -Id 'display-index' -Status '..' -Text 'display-index.local.json not written yet -- komorebi writes it when it next starts'
     }
     try { $map = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable }
-    catch { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json isn't valid JSON" @fix }
-    if (-not $map -or -not $map.Count) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is empty' @fix }
+    catch { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json isn't valid JSON" @broken }
+    if (-not $map -or -not $map.Count) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is empty' @broken }
     $mapped = @($map.Values | ForEach-Object { "$_" })
     if (-not $running) {
         return New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $(Get-DoctorPlural $map.Count 'monitor' 'monitors') mapped (komorebi isn't running -- not compared)"
@@ -879,7 +896,7 @@ function Test-DoctorProfileHook {
 function Test-DoctorDefender {
     # Every path install excludes, and no earlier pwsh.exe of ours left behind -- the same two
     # lists install's defender step works from. Windows only shows the exclusions to an admin.
-    if (-not (Test-IsAdmin)) { return New-DoctorResult -Id 'defender' -Status '..' -Text 'Defender exclusions: Windows only shows them to an admin -- not checked' }
+    if (-not (Test-IsAdmin)) { return New-DoctorResult -Id 'defender' -Status '..' -Text 'Defender exclusions: Windows only shows them to an admin -- 710sRice doctor -repair checks them' }
     try { $pref = Get-MpPreference -ErrorAction Stop }
     catch { return New-DoctorResult -Id 'defender' -Status '..' -Text "Defender isn't in use here (another antivirus?) -- nothing to check" }
     $current = @($pref.ExclusionPath)
@@ -998,13 +1015,73 @@ function Get-DoctorGroups {
     )
 }
 
-# --- The run ----------------------------------------------------------------------------------
-function Invoke-RiceDoctor {
-    <# Runs every check and prints the report. Returns the number of [XX] -- 710sRice's exit
-       code. Everything else goes to the screen with Write-Host. #>
-    Write-Host ''
-    Write-Host '  Checking...' -ForegroundColor DarkGray
+# --- The repair plan -----------------------------------------------------------------------
+# What `710sRice doctor -repair` does about a report's [XX] lines -- asked by doctor's closing
+# lines (the preview) and by repair itself, so the two can't disagree. [!!] and [..] are
+# never touched: they're either the user's call or plain facts. (claude/cli-plan.md, Stage 4,
+# Topics 1-2.)
 
+function Get-RepairPlan {
+    <# The plan for a set of results. Steps (install's, in install's own order -- one
+       `install.ps1 -Only` run), Tiling, Restart / Start (component keys) / ReloadBar, Reload,
+       and Lines -- the plan as text, in the order repair runs it. Problems = every [XX];
+       Fixable = the ones the plan covers; NeedsYou / Unknown = the ones it leaves (Unknown: an
+       [XX] with no step and no repair action -- none today, a guard for future checks -- or a
+       step repair never runs). #>
+    param([object[]]$Results)
+    $problems = @($Results | Where-Object { $_.Status -eq 'XX' })
+    $plan = [pscustomobject]@{
+        Steps = @(); Tiling = $null; Restart = $false; Start = @(); ReloadBar = $false; Reload = $false; Lines = @()
+        Problems = $problems; Fixable = @(); NeedsYou = @(); Unknown = @()
+    }
+    $steps  = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $starts = [System.Collections.Generic.List[string]]::new()
+    foreach ($r in $problems) {
+        if ($r.NeedsYou) { $plan.NeedsYou += $r; continue }
+        $covered = $false
+        # theme is the default-wallpaper reset and weather needs someone at the keyboard: never
+        # repair's, whatever a check says.
+        if ($r.Step -and $r.Step -notin 'theme', 'weather') { [void]$steps.Add($r.Step); $covered = $true }
+        switch -Regex ($r.Repair) {
+            '^reload$'                 { $plan.Reload = $true; $covered = $true }
+            '^reload-bar$'             { $plan.ReloadBar = $true; $covered = $true }
+            '^restart$'                { $plan.Restart = $true; $covered = $true }
+            '^start:(\w+)$'            { if (-not $starts.Contains($Matches[1])) { $starts.Add($Matches[1]) }; $covered = $true }
+            '^tiling:(elevated|normal)$' { $plan.Tiling = $Matches[1]; $covered = $true }
+        }
+        if ($covered) { $plan.Fixable += $r } else { $plan.Unknown += $r }
+    }
+    # A restart stops and starts everything: it covers the starts and the bar, and a komorebi
+    # that restarts reads komorebi.json from disk -- so the compile step instead of a reload.
+    if ($plan.Restart) {
+        $starts.Clear(); $plan.ReloadBar = $false
+        if ($plan.Reload) { $plan.Reload = $false; [void]$steps.Add('compile') }
+    }
+    # The tasks step registers komorebi's task at the saved mode anyway.
+    if ($plan.Tiling -and $steps.Contains('tasks')) { $plan.Tiling = $null }
+    # install's order (tools\lib\steps.ps1 -- the dispatcher loads it; loaded here if not).
+    if (-not $InstallStepOrder) { . (Join-Path $Root 'tools\lib\steps.ps1') }
+    $plan.Steps = @($InstallStepOrder | Where-Object { $steps.Contains($_) })
+    # The stack's own order (komorebi first: the rest look for it), whatever order they came in.
+    $order = @('komorebi', 'yasb', 'ahk', 'sharex')
+    $plan.Start = @($starts | Sort-Object { $i = $order.IndexOf($_); if ($i -lt 0) { 99 } else { $i } })
+    $plan.Lines = @(
+        if ($plan.Steps.Count) { "710sRice install -Only $($plan.Steps -join ',')" }
+        if ($plan.Tiling)      { "710sRice tiling $($plan.Tiling)" }
+        if ($plan.Restart)     { '710sRice restart' }
+        if ($plan.Start.Count) {
+            "start $(@($plan.Start | ForEach-Object { Get-DoctorComponentName $_ }) -join ', ') ($(if ($plan.Start.Count -eq 1) { 'its task' } else { 'their tasks' }))"
+        }
+        if ($plan.ReloadBar)   { '710sRice reload bar' }
+        if ($plan.Reload)      { '710sRice reload' }
+    )
+    $plan
+}
+
+# --- The run ----------------------------------------------------------------------------------
+function Get-DoctorReport {
+    <# Runs every check; prints nothing. Header (Title, Head), Groups, and Results -- one list
+       per group, in report order -- plus All, every result in that order. #>
     # The slow outside calls start first, in the background; the Late checks collect them.
     $ctx = [pscustomobject]@{ Git = Start-DoctorGitJobs; Winget = Start-DoctorWingetJob; Head = $null }
     $header   = Get-DoctorHeader $ctx.Git
@@ -1020,25 +1097,42 @@ function Invoke-RiceDoctor {
             }
         }
     }
+    $byGroup = @(for ($g = 0; $g -lt $groups.Count; $g++) {
+        , @(for ($i = 0; $i -lt $groups[$g].Checks.Count; $i++) { $results["$g/$i"] })
+    })
+    [pscustomobject]@{ Header = $header; Groups = $groups; Results = $byGroup; All = @($byGroup | ForEach-Object { $_ }) }
+}
 
+function Write-DoctorReport {
+    <# Prints a report and its closing lines -- with, when there are problems repair can fix,
+       what `710sRice doctor -repair` would run (Get-RepairPlan: the same list repair prints
+       before it acts). Returns the number of [XX]. #>
+    param([Parameter(Mandatory)]$Report)
     Write-Host ''
-    Write-Host "== $($header.Title) ==" -ForegroundColor Cyan
-    $all = [System.Collections.Generic.List[object]]::new()
-    for ($g = 0; $g -lt $groups.Count; $g++) {
-        if ($groups[$g].Title) { Write-Host "`n-- $($groups[$g].Title) --" -ForegroundColor Cyan }
-        for ($i = 0; $i -lt $groups[$g].Checks.Count; $i++) {
-            foreach ($r in $results["$g/$i"]) { Write-DoctorResult $r; $all.Add($r) }
-        }
+    Write-Host "== $($Report.Header.Title) ==" -ForegroundColor Cyan
+    for ($g = 0; $g -lt $Report.Groups.Count; $g++) {
+        if ($Report.Groups[$g].Title) { Write-Host "`n-- $($Report.Groups[$g].Title) --" -ForegroundColor Cyan }
+        foreach ($r in $Report.Results[$g]) { Write-DoctorResult $r }
     }
 
-    $problems = @($all | Where-Object { $_.Status -eq 'XX' }).Count
-    $warnings = @($all | Where-Object { $_.Status -eq '!!' }).Count
+    $problems = @($Report.All | Where-Object { $_.Status -eq 'XX' }).Count
+    $warnings = @($Report.All | Where-Object { $_.Status -eq '!!' }).Count
     $look     = "$(Get-DoctorPlural $warnings 'thing' 'things') worth a look (!!)."
     Write-Host ''
     if ($problems) {
         $line = if ($problems -eq 1) { '1 problem -- its fix is above.' } else { "$problems problems -- each has its fix above." }
         if ($warnings) { $line += " $look" }
         Write-Host "  $line" -ForegroundColor Red
+        $plan = Get-RepairPlan $Report.All
+        if ($plan.Lines.Count) {
+            $left = $plan.NeedsYou.Count + $plan.Unknown.Count
+            $others = if ($left -eq 1) { 'the other one' } else { "the other $left" }
+            $what = if (-not $left) { if ($problems -eq 1) { 'it' } else { 'them' } }
+                    elseif (-not $plan.Unknown.Count) { "$($plan.Fixable.Count) of them ($(if ($left -eq 1) { 'the other needs you' } else { "the other $left need you" }))" }
+                    else { "$($plan.Fixable.Count) of them (it can't fix $others)" }
+            Write-Host "  710sRice doctor -repair would fix $($what):" -ForegroundColor Yellow
+            foreach ($l in $plan.Lines) { Write-Host "    $l" -ForegroundColor Yellow }
+        }
     } elseif ($warnings) {
         Write-Host "  No problems. $look" -ForegroundColor Yellow
     } else {
@@ -1046,4 +1140,12 @@ function Invoke-RiceDoctor {
     }
     Write-Host ''
     $problems
+}
+
+function Invoke-RiceDoctor {
+    <# `710sRice doctor`: runs every check and prints the report. Returns the number of [XX]
+       -- 710sRice's exit code. Everything else goes to the screen with Write-Host. #>
+    Write-Host ''
+    Write-Host '  Checking...' -ForegroundColor DarkGray
+    Write-DoctorReport (Get-DoctorReport)
 }
