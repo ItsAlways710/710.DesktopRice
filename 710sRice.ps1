@@ -31,7 +31,7 @@
   Exit codes: help 0; unknown command, an error or a declined UAC prompt 1; otherwise the
   called script's own (relayed from the admin window when it ran there) -- for reload, read
   from reload-stack.log, since 710.ahk is the one that runs it; for doctor, the number of
-  problems it found.
+  problems it found; for doctor -repair, the number still left.
 
   Never run this hidden (AHK, scheduled tasks). When its window was opened just for it (the
   Run dialog, an Explorer double-click, the elevated relaunch) it ends with "Press Enter to
@@ -44,6 +44,7 @@
   710sRice install -Only tasks        # just re-register the scheduled tasks
   710sRice uninstall -DryRun -Keep AutoHotkey.AutoHotkey,ShareX.ShareX
   710sRice doctor                     # what's wrong, and the command that fixes each thing
+  710sRice doctor -repair             # ...and fix it (never the wallpaper or theme)
   710sRice reload bar                 # just the bar, e.g. after a weather setting change
   710sRice tiling normal              # komorebi stops running as admin (next start)
 #>
@@ -84,6 +85,23 @@ $Commands = [ordered]@{
                          . (Join-Path $Root 'tools\lib\packages.ps1')
                          . (Join-Path $Root 'tools\lib\doctor.ps1')
                          $script:RiceExit = Invoke-RiceDoctor
+                     } }
+    # doctor -repair: doctor's checks, then the fix behind every [XX] that doesn't need you
+    # (tools\lib\repair.ps1, loaded only here), then the checks again. Admin: one UAC prompt,
+    # the work happens in the admin window. Exit code = the problems left.
+    'doctor -repair' = @{ Usage = 'doctor -repair'; Help = 'Fix what doctor finds -- never your wallpaper, theme or choices'; Admin = 'Required'
+                     Run = {
+                         if ($args.Count) {
+                             Write-RiceError "Unknown option '$($args[0])' for doctor -repair"
+                             Show-RiceCommandHelp 'doctor -repair'
+                             $script:RiceExit = 1
+                             return
+                         }
+                         . (Join-Path $Root 'tools\lib\activation.ps1')
+                         . (Join-Path $Root 'tools\lib\packages.ps1')
+                         . (Join-Path $Root 'tools\lib\doctor.ps1')
+                         . (Join-Path $Root 'tools\lib\repair.ps1')
+                         $script:RiceExit = Invoke-RiceRepair
                      } }
     'start'     = @{ Usage = 'start'; Help = 'Start the stack'; Admin = 'Any'
                      Run = { Invoke-RiceScript 'scripts\Start-All.ps1' @args } }

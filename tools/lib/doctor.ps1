@@ -1113,16 +1113,18 @@ function Get-DoctorReport {
 function Write-DoctorReport {
     <# Prints a report and its closing lines -- with, when there are problems repair can fix,
        what `710sRice doctor -repair` would run (Get-RepairPlan: the same list repair prints
-       before it acts). Returns the number of [XX]. #>
-    param([Parameter(Mandatory)]$Report)
+       before it acts). Returns the number of [XX]. -Title replaces the header's; -NoClosing
+       stops after the last group (repair prints its own closing lines). #>
+    param([Parameter(Mandatory)]$Report, [string]$Title, [switch]$NoClosing)
     Write-Host ''
-    Write-Host "== $($Report.Header.Title) ==" -ForegroundColor Cyan
+    Write-Host "== $(if ($Title) { $Title } else { $Report.Header.Title }) ==" -ForegroundColor Cyan
     for ($g = 0; $g -lt $Report.Groups.Count; $g++) {
         if ($Report.Groups[$g].Title) { Write-Host "`n-- $($Report.Groups[$g].Title) --" -ForegroundColor Cyan }
         foreach ($r in $Report.Results[$g]) { Write-DoctorResult $r }
     }
 
     $problems = @($Report.All | Where-Object { $_.Status -eq 'XX' }).Count
+    if ($NoClosing) { return $problems }
     $warnings = @($Report.All | Where-Object { $_.Status -eq '!!' }).Count
     $look     = "$(Get-DoctorPlural $warnings 'thing' 'things') worth a look (!!)."
     Write-Host ''
