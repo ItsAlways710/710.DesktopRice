@@ -9,10 +9,15 @@
   What it runs is doctor's own plan (Get-RepairPlan, doctor.ps1) -- the very list doctor's
   closing lines preview, printed again here before anything happens. No confirmation: typing
   -repair and saying yes to UAC were the two yeses (and `710sRice update` will run this
-  unattended). The plan, in order:
+  unattended). The plan, in order -- each part the very code of the 710sRice command it
+  names, run in place:
     1. the install steps, as ONE `install.ps1 -Only <steps>` run, in install's order
-    2. everything else in the plan (tiling, the stack, reload) -- not yet: commit 5 of Stage 4
-       adds them; until then they're listed as left for you
+    2. `tiling <mode>` (not when the tasks step ran: it registers komorebi's task anyway)
+    3. the stack: `restart`, or else each component that's down started through its task
+       (and waited for), then `reload bar` for two YASBs
+    4. `reload` -- after the starts, so 710.ahk is back to run it
+  then a note when the config env vars changed under a running komorebi / YASB, and a wait
+  for everything that was running when repair began to be up again before the re-check.
   Never: theme (the default-wallpaper reset) or weather (needs someone at the keyboard), and
   never an [!!] or [..] line -- those are the user's call, or plain facts.
 
@@ -52,9 +57,78 @@ function Write-RepairProblems {
     foreach ($l in $Plan.Lines) { Write-Host "    $l" -ForegroundColor Yellow }
 }
 
+# --- The stack: what's up, starting what's down -------------------------------------------------
+function Test-RepairKomorebiLauncherBusy {
+    # Start-Komorebi.ps1 still at work: its own steps after komorebi.exe appears (the 8 s
+    # survival check, the monitor map on a first start + the recompile komorebi hot-reloads,
+    # borders, refocus) aren't done -- checking now would catch them halfway, and a second
+    # round would race them. Same test reload-stack.ps1's Wait-KomorebiLauncher uses. Can't
+    # tell (no CIM) = not busy.
+    try {
+        [bool]@(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction Stop |
+                Where-Object { $_.CommandLine -and $_.CommandLine.Contains('Start-Komorebi.ps1') }).Count
+    } catch { $false }
+}
+
+function Get-RepairStackState {
+    # The stack components that are up right now, by key: komorebi / YASB / ShareX by process,
+    # 710.ahk by its window (its process name can't tell it from another AHK v2 script).
+    # komorebi counts once its launcher has finished too (Test-RepairKomorebiLauncherBusy).
+    $ahk = Join-Path $Root 'config\ahk\710.ahk'
+    @(
+        if ((Get-Process komorebi -ErrorAction SilentlyContinue) -and -not (Test-RepairKomorebiLauncherBusy)) { 'komorebi' }
+        if (Get-Process yasb -ErrorAction SilentlyContinue) { 'yasb' }
+        $w = try { Find-AhkWindow -ScriptPath $ahk } catch { [IntPtr]::Zero }   # can't tell = not up
+        if ($w -and $w -ne [IntPtr]::Zero) { 'ahk' }
+        if (Get-Process ShareX -ErrorAction SilentlyContinue) { 'sharex' }
+    )
+}
+
+function Wait-RepairComponents {
+    # Waits (up to $Seconds) until every one of $Keys is up; returns the ones that still aren't.
+    param([string[]]$Keys, [int]$Seconds = 60)
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ($true) {
+        $up = @(Get-RepairStackState)
+        $missing = @($Keys | Where-Object { $up -notcontains $_ })
+        if (-not $missing.Count -or (Get-Date) -ge $deadline) { return $missing }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+function Start-RepairComponents {
+    # The components that are down, started through their own tasks -- the same `schtasks
+    # /Run` 710sRice start fires, so each one comes up at its task's run level whatever this
+    # (admin) window is -- then waited for: komorebi's launcher alone takes ~10 s (more on a
+    # first start, when it writes the monitor map), and the re-check mustn't catch one halfway
+    # up. Up to 60 s -- a repair takes as long as it takes (user, 2026-09-27).
+    param([string[]]$Keys)
+    Write-Host "`n-- Starting what's down --" -ForegroundColor Cyan
+    $taskOf = @{}
+    foreach ($c in @(Get-AutostartComponents -NoWrite)) { $taskOf[$c.Key] = $c.TaskName }
+    $fired = @(foreach ($k in $Keys) {
+        $name = Get-DoctorComponentName $k
+        if (-not $taskOf[$k] -or -not (Test-Task -TaskName $taskOf[$k])) {
+            Step-Warn "$($name): no task to start it with -- 710sRice install -Only tasks registers it"
+            continue
+        }
+        $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $taskOf[$k]) 2>&1
+        if ($LASTEXITCODE -ne 0) { Step-Warn "$($name): its task didn't run (schtasks exit $LASTEXITCODE)"; continue }
+        $k
+    })
+    if (-not $fired.Count) { return }
+    $missing = @(Wait-RepairComponents $fired 60)
+    foreach ($k in $fired) {
+        $name = Get-DoctorComponentName $k
+        if ($missing -contains $k) { Step-Warn "$($name): its task fired, but it isn't up after 60 s -- 710sRice logs shows why" }
+        else { Step-Ok "$($name): started through its task, running" }
+    }
+}
+
 function Invoke-RepairPlan {
     # Runs one round's plan. Nothing here stops the rest: a fix that fails is reported, and
-    # the check that follows says what's still wrong.
+    # the check that follows says what's still wrong. Everything goes to the screen
+    # (Out-Host): this function's output must stay empty -- see the install call.
     param($Plan)
     if ($Plan.Steps.Count) {
         # In place, in this (admin) window, with install's own output -- the same run as
@@ -65,11 +139,39 @@ function Invoke-RepairPlan {
         try { & (Join-Path $Root 'install.ps1') -Only $Plan.Steps | Out-Host }
         catch { Write-Host "  [!!] install stopped: $($_.Exception.Message)" -ForegroundColor Yellow }
     }
-    # Stage 4, commit 4: the install steps only. Commit 5 runs the rest of the plan.
-    $rest = @($Plan.Lines | Where-Object { $_ -notlike '710sRice install -Only *' })
-    if ($rest.Count) {
+    # The rest is the dispatcher's own code for each command (710sRice.ps1 -- repair runs
+    # inside it): the same thing as typing the command, from this same admin window.
+    if ($Plan.Tiling) {
+        # Only saves the mode and re-registers komorebi's task; a running komorebi keeps its
+        # level until it restarts (the re-check's [!!] says `710sRice restart`).
+        Write-Host "`n-- Tiling mode --" -ForegroundColor Cyan
+        try { Set-RiceTilingMode $Plan.Tiling | Out-Host }
+        catch { Step-Warn "tiling $($Plan.Tiling): $($_.Exception.Message)" }
+    }
+    if ($Plan.Restart) {
+        Write-Host "`n-- Restarting the stack --" -ForegroundColor Cyan
+        try { Invoke-RiceRestart | Out-Host } catch { Step-Warn "restart: $($_.Exception.Message)" }
+    } else {
+        if ($Plan.Start.Count) {
+            try { Start-RepairComponents $Plan.Start | Out-Host } catch { Step-Warn "starting what's down: $($_.Exception.Message)" }
+        }
+        if ($Plan.ReloadBar) {
+            Write-Host "`n-- The bar --" -ForegroundColor Cyan
+            try { Invoke-RiceReloadBar | Out-Host } catch { Step-Warn "reload bar: $($_.Exception.Message)" }
+        }
+    }
+    if ($Plan.Reload) {
+        # After the starts: `reload` goes through 710.ahk, which may just have come back.
+        Write-Host "`n-- Reload --" -ForegroundColor Cyan
+        try { Invoke-RiceReload | Out-Host } catch { Step-Warn "reload: $($_.Exception.Message)" }
+    }
+    # The config env vars are read at start: a komorebi / YASB already running keeps the old
+    # folders until it restarts, and doctor can't see that (it reads the registry). A planned
+    # restart has already taken care of it.
+    if ($Plan.Steps -contains 'envvars' -and -not $Plan.Restart -and
+        @(Get-RepairStackState | Where-Object { $_ -in 'komorebi', 'yasb' }).Count) {
         Write-Host ''
-        foreach ($l in $rest) { Write-Host "  [..] $l -- not done by repair yet; run it yourself" -ForegroundColor Cyan }
+        Step-Info 'komorebi and YASB read the config env vars at start -- 710sRice restart picks them up'
     }
 }
 
@@ -77,6 +179,9 @@ function Invoke-RiceRepair {
     <# `710sRice doctor -repair`. Returns the number of [XX] left -- 710sRice's exit code. #>
     Write-Host ''
     Write-Host '  Checking...' -ForegroundColor DarkGray
+    # What's up now: before each re-check, these are waited for (an upgrade restarts what it
+    # stopped through its task and doesn't wait).
+    $upBefore = @(Get-RepairStackState)
     $report = Get-DoctorReport
     $title  = $report.Header.Title -replace '^710sRice doctor', '710sRice doctor -repair'
     $plan   = Get-RepairPlan $report.All
@@ -120,6 +225,14 @@ function Invoke-RiceRepair {
         Write-RepairProblems $shown $plan
         Invoke-RepairPlan $plan
 
+        # Settle: whatever was up when repair began is up again before it's checked.
+        $upNow = @(Get-RepairStackState)
+        $gone  = @($upBefore | Where-Object { $upNow -notcontains $_ })
+        if ($gone.Count) {
+            Write-Host ''
+            Write-Host "  Waiting for $(@($gone | ForEach-Object { Get-DoctorComponentName $_ }) -join ', ') to come back up..." -ForegroundColor DarkGray
+            $null = Wait-RepairComponents $upBefore 60
+        }
         Write-Host ''
         Write-Host '  Checking again...' -ForegroundColor DarkGray
         $report = Get-DoctorReport

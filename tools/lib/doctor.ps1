@@ -491,6 +491,13 @@ function Test-DoctorStack {
     # Not installed: group b already says so, and nothing here could start it.
     $parts = @($parts | Where-Object Installed)
     if (-not @($parts | Where-Object { $procs[$_.Key].Count }).Count) {
+        # Nothing running: normal on an on-demand machine between sessions. A full-time
+        # (-Activate'd) machine is meant to run from sign-in, so there it's a problem, and
+        # repair starts the lot (user, 2026-09-27: "repair just make it all on if possible").
+        if (Test-FullTimeMachine) {
+            return New-DoctorResult -Id 'stack' -Status 'XX' -Text "Stack not running -- this is a full-time machine (it starts at sign-in)" `
+                -Fix '710sRice start' -Repair "start:$(@($parts | ForEach-Object Key) -join ',')"
+        }
         return New-DoctorResult -Id 'stack' -Status '..' -Text 'Stack not running -- 710sRice start starts it'
     }
     foreach ($c in $parts) {
@@ -1053,7 +1060,10 @@ function Get-RepairPlan {
             '^reload$'                 { $plan.Reload = $true; $covered = $true }
             '^reload-bar$'             { $plan.ReloadBar = $true; $covered = $true }
             '^restart$'                { $plan.Restart = $true; $covered = $true }
-            '^start:(\w+)$'            { if (-not $starts.Contains($Matches[1])) { $starts.Add($Matches[1]) }; $covered = $true }
+            '^start:([\w,]+)$'         {   # one component, or several (start:komorebi,yasb,...)
+                foreach ($k in $Matches[1] -split ',') { if ($k -and -not $starts.Contains($k)) { $starts.Add($k) } }
+                $covered = $true
+            }
             '^tiling:(elevated|normal)$' { $plan.Tiling = $Matches[1]; $covered = $true }
         }
         if ($covered) { $plan.Fixable += $r } else { $plan.Unknown += $r }
