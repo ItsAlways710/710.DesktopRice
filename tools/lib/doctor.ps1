@@ -481,6 +481,41 @@ function Get-DoctorYasbWatchdogNote {
     $note
 }
 
+function Get-DoctorStaleText {
+    # A running YASB / 710.ahk that loaded older files than the repo has now: Text (+ Detail), or
+    # $null. YASB: config.yaml against the fingerprint Start-Yasb.ps1 recorded when the bar started
+    # -- reload-stack.ps1's own test for "restart the bar", byte for byte, so the two can't
+    # disagree (no fingerprint = the same answer). 710.ahk: 710.ahk or user.ahk written after its
+    # process started (AHK's Reload() starts a new process); a start time Windows won't hand
+    # over = not checked, never guessed.
+    param([string]$Key, $Process)
+    if ($Key -eq 'yasb') {
+        $fp  = Join-Path (Get-DoctorLogDir) 'yasb-config.sha256'
+        $cfg = Join-Path $Root 'config\yasb\config.yaml'
+        if (-not (Test-Path -LiteralPath $cfg)) { return $null }   # group e / the bar itself say so
+        if (-not (Test-Path -LiteralPath $fp)) {
+            return [pscustomobject]@{ Text = 'YASB is running an older config.yaml'; Detail = 'no record of the config.yaml it started with (yasb-config.sha256)' }
+        }
+        if ((Get-FileHash -LiteralPath $cfg -Algorithm SHA256).Hash -ne (Get-Content -LiteralPath $fp -Raw).Trim()) {
+            return [pscustomobject]@{ Text = 'YASB is running an older config.yaml'; Detail = $null }
+        }
+        return $null
+    }
+    if ($Key -eq 'ahk') {
+        $started = try { $Process.StartTime } catch { $null }
+        if (-not $started) { return $null }
+        foreach ($f in 'config\ahk\710.ahk', 'config\ahk\user.ahk') {
+            $item = Get-Item -LiteralPath (Join-Path $Root $f) -ErrorAction SilentlyContinue
+            if ($item -and $item.LastWriteTime -gt $started) {
+                $leaf = Split-Path -Leaf $f
+                $text = if ($leaf -eq '710.ahk') { '710.ahk changed since it started' } else { 'user.ahk changed since 710.ahk started' }
+                return [pscustomobject]@{ Text = $text; Detail = $null }
+            }
+        }
+    }
+    $null
+}
+
 function Test-DoctorStack {
     # One line per component (or one line for "nothing running").
     $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
@@ -527,6 +562,14 @@ function Test-DoctorStack {
         }
         if ($c.Key -ne 'komorebi' -and (Get-ProcessElevation -Id $running[0].Id) -eq 'elevated') {
             New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" -Fix '710sRice restart' -Repair 'restart'
+            continue
+        }
+        # Running files older than the ones on disk (a pull or an edit since they started):
+        # `710sRice reload` restarts the bar for a changed config.yaml and reloads 710.ahk at its
+        # end. The last finding each line can have -- the ones above cover these anyway.
+        $stale = Get-DoctorStaleText $c.Key $running[0]
+        if ($stale) {
+            New-DoctorResult -Id $id -Status 'XX' -Text $stale.Text -Detail $stale.Detail -Fix '710sRice reload' -Repair 'reload'
             continue
         }
         if ($c.Key -eq 'ahk') {
@@ -846,6 +889,51 @@ function Test-DoctorThemeFiles {
     New-DoctorResult -Id 'theme-files' -Status 'OK' -Text 'Theme files: colors.json (color1/3/5/6), wallust_colors.css, starship.toml'
 }
 
+function Get-DoctorThemeInputs {
+    # What the theme is made from, as apply-wallust-outputs.ps1 stamps it at the end of every full
+    # run: every config\wallust\templates\*.tpl, then that script -- repo-relative path -> the
+    # CRLF->LF sha256 (Get-DoctorLfSha256; the script carries an identical copy, it's
+    # dependency-free by design).
+    $inputs = [ordered]@{}
+    foreach ($t in @(Get-ChildItem -LiteralPath (Join-Path $Root 'config\wallust\templates') -Filter '*.tpl' -File | Sort-Object Name)) {
+        $inputs["config\wallust\templates\$($t.Name)"] = Get-DoctorLfSha256 -Path $t.FullName
+    }
+    $inputs['tools\apply-wallust-outputs.ps1'] = Get-DoctorLfSha256 -Path (Join-Path $Root 'tools\apply-wallust-outputs.ps1')
+    $inputs
+}
+
+function Test-DoctorThemeInputs {
+    # The theme on screen made from the templates in the repo now. A template or
+    # apply-wallust-outputs.ps1 changed since the last full theme run (a pull brought a new one)
+    # leaves the old look until the next wallpaper change -- the stack tabs' colours on
+    # 2026-09-26 were exactly that. No stamp at all = every install from before the stamp
+    # existed; the palette step writes it (a fresh install's theme step already has).
+    $stamp = Join-Path (Get-DoctorLogDir) 'theme-inputs.sha256'
+    $fix = @{ Fix = '710sRice install -Only palette'; Step = 'palette' }
+    $made = @{}
+    if (Test-Path -LiteralPath $stamp) {
+        foreach ($line in @(Get-Content -LiteralPath $stamp)) {
+            if ($line -match '^([0-9a-f]{64})\s+(\S.*)$') { $made[$Matches[2].Trim()] = $Matches[1] }
+        }
+    }
+    if (-not $made.Count) {   # no stamp, or nothing readable in it
+        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text 'No record of which templates made the theme' @fix
+    }
+    $now = Get-DoctorThemeInputs
+    $what = @(
+        foreach ($rel in $now.Keys) {
+            $leaf = Split-Path -Leaf $rel
+            if (-not $made.ContainsKey($rel)) { "new: $leaf" }
+            elseif ($made[$rel] -ne $now[$rel]) { "$leaf changed" }
+        }
+        foreach ($rel in $made.Keys) { if (-not $now.Contains($rel)) { "gone: $(Split-Path -Leaf $rel)" } }
+    )
+    if ($what.Count) {
+        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text 'Theme was made from older templates' -Detail $what @fix
+    }
+    New-DoctorResult -Id 'theme-inputs' -Status 'OK' -Text 'Theme made from the current templates'
+}
+
 # --- f. Integrations -----------------------------------------------------------------------------
 # The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
 # search), Windows Terminal (theme, default shell), the $PROFILE hook, Defender's exclusions,
@@ -1035,6 +1123,7 @@ function Get-DoctorGroups {
             @{ Id = 'display-index'; Name = 'display-index.local.json'; Run = { Test-DoctorDisplayIndex } }
             @{ Id = 'wallust-toml';  Name = 'wallust.toml';             Run = { Test-DoctorWallustToml } }
             @{ Id = 'theme-files';   Name = 'Theme files';              Run = { Test-DoctorThemeFiles } }
+            @{ Id = 'theme-inputs';  Name = 'Theme templates';          Run = { Test-DoctorThemeInputs } }
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
             @{ Id = 'flow';       Name = 'Flow Launcher';        Run = { Test-DoctorFlow } }

@@ -410,3 +410,26 @@ $null = & schtasks.exe /Query /TN $lockScreenTask 2>&1
 if ($LASTEXITCODE -eq 0) {
     $null = & schtasks.exe /Run /TN $lockScreenTask 2>&1
 }
+
+# --- Stamp: which templates this theme was made from ----------------------------------
+# `710sRice doctor` (Test-DoctorThemeInputs) compares this with the files as they are now: a
+# template or this script changed since -- a `git pull` / `710sRice update` brought a new one,
+# say -- means the theme on screen is older than the repo, and `710sRice install -Only
+# palette` (repair runs it) makes it again from the current wallpaper. One line per input:
+# every config\wallust\templates\*.tpl, then this script -- "<sha256>  <repo-relative path>",
+# the hash taken with CRLF turned into LF (the file as the repo stores it: a Windows clone's
+# line endings mustn't read as a change). Written LAST, only when every step above got this
+# far -- a run that stopped part-way leaves the old stamp, and doctor keeps saying so.
+# Doctor's Get-DoctorLfSha256 / Get-DoctorThemeInputs must hash exactly the same way (this
+# script stays dependency-free, so this is a copy, not a call).
+function Get-LfSha256Local {
+    param([Parameter(Mandatory)][string]$Path)
+    $text = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Path)) -replace "`r`n", "`n"
+    [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($text))).ToLowerInvariant()
+}
+$stampInputs = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'config\wallust\templates') -Filter '*.tpl' -File | Sort-Object Name |
+                 ForEach-Object { "config\wallust\templates\$($_.Name)" }) + 'tools\apply-wallust-outputs.ps1'
+$stampDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
+New-Item -ItemType Directory -Path $stampDir -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $stampDir 'theme-inputs.sha256') -Encoding ascii -Value @(
+    foreach ($rel in $stampInputs) { "$(Get-LfSha256Local -Path (Join-Path $RepoRoot $rel))  $rel" })
