@@ -798,18 +798,6 @@ function Test-DoctorThemeFiles {
 # search), Windows Terminal (theme, default shell), the $PROFILE hook, Defender's exclusions,
 # and -- on a full-time machine -- the Windows settings -Activate applies.
 
-function ConvertTo-DoctorSafePath {
-    # A path as it can be shown in a report that may get pasted into an issue: the user's own
-    # profile folders as %LOCALAPPDATA% / %APPDATA% / %USERPROFILE%, never the user name.
-    param([string]$Path)
-    $out = "$Path"
-    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
-        $dir = [Environment]::GetEnvironmentVariable($v)
-        if ($dir -and $out.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase)) { return "%$v%$($out.Substring($dir.Length))" }
-    }
-    $out
-}
-
 function Test-DoctorFlow {
     # setup-flow-launcher.ps1 -Check: install's own flow step, asked what it would change.
     # Functional items (the search keywords, the Everything engine, the old plugin, Flow
@@ -902,7 +890,7 @@ function Test-DoctorDefender {
         return New-DoctorResult -Id 'defender' -Status 'OK' -Text "Defender exclusions: all $($want.Count) in place"
     }
     $parts  = @(if ($missing.Count) { "$($missing.Count) missing" }; if ($stale.Count) { "$(Get-DoctorPlural $stale.Count 'old pwsh.exe' 'old pwsh.exes') left" })
-    $detail = @($missing | ForEach-Object { "missing: $(ConvertTo-DoctorSafePath $_)" }) + @($stale | ForEach-Object { "old: $(ConvertTo-DoctorSafePath $_)" })
+    $detail = @($missing | ForEach-Object { "missing: $(ConvertTo-SafePath $_)" }) + @($stale | ForEach-Object { "old: $(ConvertTo-SafePath $_)" })
     New-DoctorResult -Id 'defender' -Status 'XX' -Text "Defender exclusions: $($parts -join ', ')" -Detail $detail -Fix '710sRice install -Only defender' -Step 'defender'
 }
 

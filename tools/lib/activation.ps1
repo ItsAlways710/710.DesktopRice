@@ -32,6 +32,21 @@
   it's arguably the sounder of the two, for whatever that's worth pending a real test.
 #>
 
+# --- Paths as they get printed ------------------------------------------------------------
+function ConvertTo-SafePath {
+    # A path as it can be shown on screen: the user's own profile folders as %LOCALAPPDATA% /
+    # %APPDATA% / %USERPROFILE%, never the Windows user name. The repo is public and output
+    # gets pasted into issues -- install's and uninstall's lines, doctor's report, repair's
+    # (which shows install's). Anything outside those folders comes back as it was.
+    param([string]$Path)
+    $out = "$Path"
+    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+        $dir = [Environment]::GetEnvironmentVariable($v)
+        if ($dir -and $out.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase)) { return "%$v%$($out.Substring($dir.Length))" }
+    }
+    $out
+}
+
 # --- Registry backup (reg.exe export) -----------------------------------------------
 function Backup-RegistryKey {
     <# Exports one registry key (reg.exe export format) to backups/<timestamp>-<label>/.
@@ -432,7 +447,7 @@ function Set-DefenderExclusions {
     if ($stale.Count -gt 0) {
         try {
             Remove-MpPreference -ExclusionPath $stale
-            Step-Ok "Old pwsh.exe Defender exclusion(s) removed: $($stale -join ', ')"
+            Step-Ok "Old pwsh.exe Defender exclusion(s) removed: $(@($stale | ForEach-Object { ConvertTo-SafePath $_ }) -join ', ')"
         } catch {
             Step-Warn "Could not remove old pwsh.exe Defender exclusion(s): $($_.Exception.Message)"
         }
@@ -444,7 +459,7 @@ function Set-DefenderExclusions {
     }
     try {
         Add-MpPreference -ExclusionPath $missing
-        Step-Ok "Defender exclusions added: $($missing -join ', ')"
+        Step-Ok "Defender exclusions added: $(@($missing | ForEach-Object { ConvertTo-SafePath $_ }) -join ', ')"
     } catch {
         Step-Warn "Could not add Defender exclusions: $($_.Exception.Message)"
     }
@@ -476,7 +491,7 @@ function Remove-DefenderExclusions {
     }
     try {
         Remove-MpPreference -ExclusionPath $toRemove
-        Step-Ok "Defender exclusions removed: $($toRemove -join ', ')"
+        Step-Ok "Defender exclusions removed: $(@($toRemove | ForEach-Object { ConvertTo-SafePath $_ }) -join ', ')"
     } catch {
         Step-Warn "Could not remove Defender exclusions: $($_.Exception.Message)"
     }
@@ -1600,13 +1615,13 @@ function Install-ShellProfile {
 
     if ($existing -match $pattern) {
         if (($Matches[0] -replace '\r?\n', "`r`n") -eq $block) {
-            Step-Ok "Profile hook already installed: $profilePath"
+            Step-Ok "Profile hook already installed: $(ConvertTo-SafePath $profilePath)"
             return
         }
         Copy-Item $profilePath "$profilePath.bak" -Force
         $updated = [regex]::Replace($existing, $pattern, $block.Replace('$', '$$'))
         Set-Content -Path $profilePath -Value $updated -Encoding utf8NoBOM
-        Step-Ok "Profile hook updated: $profilePath (previous saved to $profilePath.bak)"
+        Step-Ok "Profile hook updated: $(ConvertTo-SafePath $profilePath) (previous saved to $(ConvertTo-SafePath "$profilePath.bak"))"
         return
     }
 
@@ -1614,7 +1629,7 @@ function Install-ShellProfile {
     else { New-Item -ItemType Directory -Path (Split-Path $profilePath) -Force | Out-Null }
     $newContent = if ($existing.Trim()) { $existing.TrimEnd() + "`r`n`r`n" + $block + "`r`n" } else { $block + "`r`n" }
     Set-Content -Path $profilePath -Value $newContent -Encoding utf8NoBOM
-    Step-Ok "Profile hook installed: $profilePath"
+    Step-Ok "Profile hook installed: $(ConvertTo-SafePath $profilePath)"
 }
 
 function Remove-ShellProfile {
@@ -1633,7 +1648,7 @@ function Remove-ShellProfile {
     $updated = [regex]::Replace($existing, $pattern, "`r`n").Trim()
     if ($updated) { Set-Content -Path $profilePath -Value ($updated + "`r`n") -Encoding utf8NoBOM }
     else { Remove-Item $profilePath }
-    Step-Ok "Profile hook removed: $profilePath (previous saved to $profilePath.bak)"
+    Step-Ok "Profile hook removed: $(ConvertTo-SafePath $profilePath) (previous saved to $(ConvertTo-SafePath "$profilePath.bak"))"
 }
 
 # --- Restoring theming side effects (wallpaper/accent/Terminal/Flow) -- uninstall-only --

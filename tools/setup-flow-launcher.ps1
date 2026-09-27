@@ -93,8 +93,20 @@ $pluginsDir   = Join-Path $flowRoot 'Plugins'
 $everythingExe = @("$env:ProgramFiles\Everything\Everything.exe", "${env:ProgramFiles(x86)}\Everything\Everything.exe") |
     Where-Object { Test-Path $_ } | Select-Object -First 1
 
+# Paths as they get printed: %APPDATA%\..., never the Windows user name (the repo is public
+# and output gets pasted into issues). A copy of activation.ps1's ConvertTo-SafePath, for the
+# same reason Save-OriginalStateOnce is one: this script has no dependency on activation.ps1.
+function ConvertTo-SafePath {
+    param([string]$Path)
+    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+        $dir = [Environment]::GetEnvironmentVariable($v)
+        if ($dir -and "$Path".StartsWith($dir, [StringComparison]::OrdinalIgnoreCase)) { return "%$v%$("$Path".Substring($dir.Length))" }
+    }
+    "$Path"
+}
+
 if (-not (Test-Path $settingsPath)) {
-    Write-Warning "Flow Launcher Settings.json not found at $settingsPath -- run Flow Launcher at least once first, then re-run this script."
+    Write-Warning "Flow Launcher Settings.json not found at $(ConvertTo-SafePath $settingsPath) -- run Flow Launcher at least once first, then re-run this script."
     exit $(if ($Check) { 2 } else { 1 })
 }
 
@@ -167,7 +179,7 @@ Add-Keyword $explorerPluginId 'f' 'Explorer'
 
 # --- Explorer plugin: file search on the Everything index ---------------------------------
 if (-not $explorer) {
-    Write-Warning "Flow Explorer plugin settings not found at $explorerPath (has Flow run at least once?) -- file search keyword not applied."
+    Write-Warning "Flow Explorer plugin settings not found at $(ConvertTo-SafePath $explorerPath) (has Flow run at least once?) -- file search keyword not applied."
     Add-Finding 'Explorer plugin settings not found'
 } else {
     $desired = [ordered]@{ FileSearchActionKeyword = 'f'; FileSearchKeywordEnabled = $true }

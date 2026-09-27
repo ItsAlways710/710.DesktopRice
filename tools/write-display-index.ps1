@@ -60,7 +60,8 @@ try {
 } catch {
     $dumpPath = Join-Path $env:TEMP 'monitor-information.raw.txt'
     ($raw -join "`n") | Set-Content -Path $dumpPath -Encoding UTF8
-    Write-Warning "Couldn't parse komorebic.exe monitor-information as JSON. Raw output saved to $dumpPath."
+    # %TEMP% as text, not the expanded path: that one carries the Windows user name.
+    Write-Warning "Couldn't parse komorebic.exe monitor-information as JSON. Raw output saved to %TEMP%\monitor-information.raw.txt."
     exit 1
 }
 $monitors = @($parsed)

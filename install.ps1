@@ -234,7 +234,7 @@ $Steps['packages'] = {
         $newShortcuts = @(Get-DesktopShortcuts | Where-Object { $shortcutsBefore -notcontains $_ })
         $removed = @(foreach ($lnk in $newShortcuts) {
             try { Remove-Item -LiteralPath $lnk -Force; Split-Path $lnk -Leaf }
-            catch { Step-Warn "Couldn't remove the desktop shortcut $($lnk): $($_.Exception.Message)" }
+            catch { Step-Warn "Couldn't remove the desktop shortcut $(ConvertTo-SafePath $lnk): $($_.Exception.Message)" }
         })
         if ($removed.Count -gt 0) { Step-Ok "Removed the desktop shortcut(s) the installers added: $($removed -join ', ')" }
 
@@ -490,7 +490,7 @@ $Steps['palette'] = {
     Write-Host "`n-- Palette (current wallpaper) --" -ForegroundColor Cyan
     $currentWallpaper = Get-CurrentWallpaper
     if (-not $currentWallpaper -or -not (Test-Path -LiteralPath $currentWallpaper)) {
-        Step-Warn "The current wallpaper ($(if ($currentWallpaper) { $currentWallpaper } else { 'none set' })) is gone -- pick one with SUPER+W; that re-themes everything from it."
+        Step-Warn "The current wallpaper ($(if ($currentWallpaper) { ConvertTo-SafePath $currentWallpaper } else { 'none set' })) is gone -- pick one with SUPER+W; that re-themes everything from it."
     } elseif (-not (Test-Path $wallustExe) -or -not (Test-Path (Join-Path $Root 'config\wallust\wallust.toml'))) {
         Step-Warn "wallust isn't set up (no wallust.exe or wallust.toml) -- add the wallust step: 710sRice install -Only wallust,palette"
     } else {
@@ -536,7 +536,10 @@ $Steps['profile'] = {
     # Also unconditional -- winarchy calls Install-WinarchyShellProfile in its own install.ps1
     # outside the -Activate block too. Idempotent; snapshots the previous $PROFILE to a .bak
     # alongside it before changing anything.
-    Write-Host "`n-- Shell profile ($PROFILE hook) --" -ForegroundColor Cyan
+    # `$PROFILE literally: the hook line below names the real file (as %USERPROFILE%\...), and
+    # an expanded $PROFILE printed both the user name and the wrong file -- the hook goes into
+    # profile.ps1 (every host), not Microsoft.PowerShell_profile.ps1.
+    Write-Host "`n-- Shell profile (`$PROFILE hook) --" -ForegroundColor Cyan
     Install-ShellProfile
 }
 
