@@ -212,7 +212,8 @@ Re-running the installer is always safe. A plain re-run keeps whatever you had: 
 full-time (`-Activate`) machine stays full-time, and your elevated-tiling choice is
 remembered. It installs what's missing, re-registers the sign-in tasks, and recompiles the
 rules. One thing to know: **every run applies the default wallpaper and theme again**, so
-pick yours with SUPER+W afterwards. There's no separate update checker, by design.
+pick yours with SUPER+W afterwards. There's no separate update checker, by design:
+`710sRice doctor` tells you when GitHub has a newer version, when you ask it.
 
 `710sRice install -SkipPackages` skips the winget step and redoes everything else (config,
 theme, Flow setup), which is quicker when only the repo changed.
@@ -237,7 +238,9 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | `710sRice` | The command list. `710sRice <command> -?` shows one command's options |
 | `710sRice install` | Install or update; `-Activate` makes it full-time, `-SkipPackages` skips winget, `-Only <step>` runs just those [steps](#install-steps) *(admin)* |
 | `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
+| `710sRice doctor` | Health check: what's wrong, and the command that fixes each thing. Changes nothing; also says when GitHub has a newer version |
 | `710sRice start` / `stop` | Start or stop the stack |
+| `710sRice restart` | Stop the stack and start it again (SUPER+Shift+R only restarts what it has to) |
 | `710sRice reload` | Reload the whole stack, same as SUPER+Shift+R |
 | `710sRice reload bar` | Restart just the bar |
 | `710sRice logs` | Open the logs folder and list what's in it |
@@ -297,6 +300,7 @@ ShareX start as you. It checks what came up and says so.
 
 To stop, use `710sRice stop` or **Quit 710sRice** in the tray icon's menu. Flow Launcher and
 Everything keep running either way; they're ordinary apps you can use on their own.
+`710sRice restart` stops everything and starts it again.
 
 The taskbar is left to you. The stack is built around a hidden taskbar, so `710sRice start`
 tells you how to turn auto-hide on if it's off, and `710sRice stop` reminds you to turn it
@@ -478,7 +482,7 @@ elevated itself, so nothing it launches runs as admin by accident.
   float and can't be tiled. `710sRice tiling elevated` switches back, and
   `710sRice tiling status` shows where things stand. The choice is remembered (a re-run of
   install keeps it), it doesn't touch your wallpaper or theme, and it takes effect the next
-  time komorebi starts (sign out and in, or `710sRice stop` then `710sRice start`).
+  time komorebi starts (sign out and in, or `710sRice restart`).
 - **Admin commands without an admin window:** turn on Windows 11's `sudo` (Settings >
   System > For developers > Enable sudo, "Inline" mode) and run `sudo <command>` in a normal
   Terminal.
@@ -499,19 +503,21 @@ tested", so if something odd shows up around admin windows, that's the first thi
   it's one of the included rules, so expect it: each bar restart can add another title bar
   on top of Claude's own, and clicks land one row off. Quit it from its tray icon and
   relaunch to fix. SUPER+Shift+R only restarts the bar when it has to (its `config.yaml`
-  changed, or komorebi restarted), so this is rare; `710sRice reload bar` always does.
+  changed, or komorebi restarted), so this is rare; `710sRice reload bar` and
+  `710sRice restart` always do.
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.
 - **Changed a weather or wallpaper variable?** Restart the bar: `710sRice reload bar`.
-- **Something not right?** SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and
-  re-applies the config. `710sRice logs` opens the folder with every log.
+- **Something not right?** `710sRice doctor` (or **Doctor** in the main menu, SUPER+Alt+Space)
+  checks the install and names the fix for each problem it finds. SUPER+Shift+R (or
+  `710sRice reload`) reloads the whole stack and re-applies the config. `710sRice logs` opens
+  the folder with every log.
 
 ## Future plans
 
-- **`710sRice doctor`** (in progress): a read-only health check of the install, what's
-  wrong and how to fix it, plus whether a newer version is out. Each problem names the
-  [install step](#install-steps) that fixes it. Then `710sRice doctor -repair` to run those
-  steps for you, and `710sRice update` to pull and repair in one go.
+- **`710sRice doctor -repair`:** run the fixes doctor names, for you -- the
+  [install steps](#install-steps) behind each problem, never the theme reset. Then
+  **`710sRice update`** to pull and repair in one go.
 - **More commands:** set the weather key and location, point the wallpaper gallery at a
   folder, add or remove a game for game mode, and turn taskbar auto-hide on or off.
 - **A proper README pass:** screenshots and a short demo.
