@@ -109,8 +109,8 @@ widgets:
   clock:
     type: yasb.clock.ClockWidget
     options:
-      label: '{%a, %d %b %H:%M}<span>{alarm}</span>'
-      label_alt: '{%a, %d %b %H:%M}'
+      label: '{%H:%M | %a, %b %d}<span>{alarm}</span>'
+      label_alt: '{%H:%M | %a, %b %d}'
       timezones: []
       calendar:
         blur: false
@@ -120,7 +120,7 @@ widgets:
         direction: down
         extended: false
         show_years: true
-        show_holidays: false
+        show_holidays: true
         show_week_numbers: true
       callbacks:
         on_left: toggle_calendar
