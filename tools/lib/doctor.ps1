@@ -972,6 +972,45 @@ function Test-DoctorPaletteLastRun {
         -Detail $detail -Fix 'pick another wallpaper (SUPER+W), or another palette source (SUPER+Alt+Space > Palette profiles)'
 }
 
+function Test-DoctorLockScreen {
+    # Your lock-screen picture (plan doc item 48; tools\lib\lockscreen.ps1), three kinds of line:
+    #   - The old sync still here, on a machine from before 2026-09-28: its elevated task, or the
+    #     policy key it wrote (install's snapshot of that key says it's ours). [XX]: `-Only tasks`
+    #     retires both, so repair -- and update -- does.
+    #   - A lock-screen policy that isn't ours (no snapshot: a company's, say) shows its own
+    #     picture over yours. [!!]: explained, nothing to run -- it isn't ours to delete.
+    #   - The last set, from the record scripts\Set-LockScreen.ps1 writes: [OK]; [!!] with
+    #     Windows' reason (never [XX]: a managed PC may refuse every time, and repair couldn't
+    #     change that); [..] nothing has set it yet.
+    # Doctor never asks Windows what the lock screen shows: that would be a Windows PowerShell
+    # start in every report, and a picture you pick in Settings is yours until the next wallpaper
+    # change.
+    $ours   = [bool](Get-OriginalState -Label 'lockscreen-personalizationcsp')
+    $csp    = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -ErrorAction SilentlyContinue
+    $gpo    = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -ErrorAction SilentlyContinue
+    $cspSet = [bool]($csp -and ($csp.LockScreenImagePath -or $csp.LockScreenImageUrl))
+    $gpoSet = [bool]($gpo -and $gpo.LockScreenImage)
+    $task   = Test-Task -TaskName 'lock-screen-sync'
+    if ($task -or ($ours -and $cspSet)) {
+        $what = @(if ($task) { 'its task' }; if ($ours -and $cspSet) { 'the policy key it wrote, which hides your own picture' }) -join ' and '
+        New-DoctorResult -Id 'lock-screen:old' -Status 'XX' -Text "The retired lock-screen sync is still here: $what" -Fix '710sRice install -Only tasks' -Step 'tasks'
+    }
+    if (($cspSet -and -not $ours) -or $gpoSet) {
+        New-DoctorResult -Id 'lock-screen:policy' -Status '!!' -Text "A lock-screen policy on this machine shows its own picture over yours -- not 710sRice's (a company policy?)"
+    }
+    $rec = Read-LockScreenRecord
+    if (-not $rec) {
+        return New-DoctorResult -Id 'lock-screen' -Status '..' -Text 'Lock screen: not set by 710sRice yet -- it follows the next wallpaper change'
+    }
+    $when = try { $t = [datetime]::Parse("$($rec.time)"); if ($t.Date -eq (Get-Date).Date) { $t.ToString('HH:mm') } else { $t.ToString('yyyy-MM-dd HH:mm') } } catch { "$($rec.time)" }
+    $name = "$($rec.image)"
+    if ($rec.ok) {
+        return New-DoctorResult -Id 'lock-screen' -Status 'OK' -Text "Lock screen: set with the wallpaper ($(if ($name) { "$name, " })$when)"
+    }
+    New-DoctorResult -Id 'lock-screen' -Status '!!' -Text "Lock screen: the last set ($when) didn't take -- it shows an older picture" `
+        -Detail @($(if ($name) { "wallpaper: $name" }), (ConvertTo-SafeText "$($rec.reason)")) -Fix '710sRice install -Only palette'
+}
+
 # --- f. Integrations -----------------------------------------------------------------------------
 # The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
 # search), Windows Terminal (theme, default shell), the $PROFILE hook, Defender's exclusions,
@@ -1188,6 +1227,7 @@ function Get-DoctorGroups {
             @{ Id = 'theme-files';   Name = 'Theme files';              Run = { Test-DoctorThemeFiles } }
             @{ Id = 'theme-inputs';  Name = 'Theme stamp';              Run = { Test-DoctorThemeInputs } }
             @{ Id = 'palette-last';  Name = 'Last theme run';           Run = { Test-DoctorPaletteLastRun } }
+            @{ Id = 'lock-screen';   Name = 'Lock screen';              Run = { Test-DoctorLockScreen } }
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
             @{ Id = 'flow';       Name = 'Flow Launcher';        Run = { Test-DoctorFlow } }
