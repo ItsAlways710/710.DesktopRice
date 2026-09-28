@@ -5,8 +5,8 @@
 
 .DESCRIPTION
     wallust's theme list and the wallpaper's closest themes, a wallust config of the editor's
-    own (so its palettes never touch the pipeline's files), colours as "one colour plus at most
-    one adjustment", where each app colour sits under the roles, profile names, and deep copies.
+    own (so its palettes never touch the pipeline's files), colors as "one color plus at most
+    one adjustment", where each app color sits under the roles, profile names, and deep copies.
 
     Kept out of tools\lib\palette.ps1 on purpose: that file is part of the theme stamp (a change
     there means "re-theme" to doctor) and is parsed on every wallpaper change. Needs palette.ps1
@@ -69,11 +69,11 @@ function Get-PaletteSchemeFiles {
 }
 
 # ------------------------------------------------------------------------------------------
-# One colour + at most one adjustment (what the colour selector edits)
+# One color + at most one adjustment (what the color selector edits)
 # ------------------------------------------------------------------------------------------
 function Split-PaletteExpression {
     <# An expression -> Base (a name or #hex), Adjust ('none', 'lighten', 'darken', 'mix'),
-       Amount (0-100), Other (mix's second colour), Simple ($false: something the selector's
+       Amount (0-100), Other (mix's second color), Simple ($false: something the selector's
        controls can't show -- nested functions; the selector then offers the text as it is). #>
     param([Parameter(Mandatory)][string]$Text)
     $tree = ConvertFrom-PaletteExpression -Text $Text
@@ -107,7 +107,7 @@ function Join-PaletteExpression {
 }
 
 function Get-PaletteExpressionNames {
-    <# Every colour name an expression uses, in order (duplicates kept once), one per output. #>
+    <# Every color name an expression uses, in order (duplicates kept once), one per output. #>
     param([Parameter(Mandatory)][string]$Text)
     $out = [System.Collections.Generic.List[string]]::new()
     $walk = $null
@@ -124,9 +124,9 @@ function Get-PaletteExpressionNames {
 }
 
 function Get-PaletteRoleHome {
-    <# Where an app colour sits in the editor: the first role its DEFAULT expression uses
+    <# Where an app color sits in the editor: the first role its DEFAULT expression uses
        (komorebi's monocle border, lighten(accent, 25), sits under Accent), or 'palette' for one
-       that comes straight from the palette (Terminal's sixteen colours). #>
+       that comes straight from the palette (Terminal's sixteen colors). #>
     param([Parameter(Mandatory)][string]$Expression)
     foreach ($n in @(Get-PaletteExpressionNames -Text $Expression)) {
         if ($script:PaletteRoles.Contains($n)) { return $n }
@@ -135,7 +135,7 @@ function Get-PaletteRoleHome {
 }
 
 function Get-PaletteEditorLayout {
-    <# The editor's roles -> app colours tree: an ordered role (plus 'palette') -> list of
+    <# The editor's roles -> app colors tree: an ordered role (plus 'palette') -> list of
        @{ Target; Prop; Label; TargetLabel } in target order. Hidden targets are left out. #>
     param([object[]]$Targets = (Get-PaletteTargets))
     $layout = [ordered]@{}

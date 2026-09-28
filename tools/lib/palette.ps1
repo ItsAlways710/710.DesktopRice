@@ -669,6 +669,7 @@ function Invoke-PaletteWallust {
     $psi.RedirectStandardError = $true
     $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
     $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $psi.Environment['RUST_BACKTRACE'] = '0'   # a failure's reason is its Error: line, never a backtrace
     $p = [System.Diagnostics.Process]::Start($psi)
     $out = $p.StandardOutput.ReadToEndAsync()
     $err = $p.StandardError.ReadToEndAsync()
@@ -711,7 +712,8 @@ function Get-PaletteFromSource {
     $r = Invoke-PaletteWallust -Arguments $args2 -Exe $Exe
     if ($r.TimedOut) { throw 'wallust took longer than 30 s and was stopped' }
     if ($r.ExitCode -ne 0) {
-        $why = @($r.Output | Where-Object { $_ -notmatch '^\s*\[I\]' } | Select-Object -Last 2) -join ' / '
+        $why = @($r.Output | Where-Object { $_ -match '^\s*Error:' } | Select-Object -First 1) -join ''
+        if (-not $why) { $why = @($r.Output | Where-Object { $_ -notmatch '^\s*\[I\]' } | Select-Object -Last 2) -join ' / ' }
         if (-not $why) { $why = "exit $($r.ExitCode)" }
         throw "wallust failed: $why"
     }

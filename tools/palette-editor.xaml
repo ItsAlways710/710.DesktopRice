@@ -1,6 +1,6 @@
 <!--
   The palette profile editor's window (tools\palette-editor.ps1 loads it, fills the lists and
-  wires every control). Brushes are DynamicResources the script sets from the menus' colours
+  wires every control). Brushes are DynamicResources the script sets from the menus' colors
   (config\ahk\menu-colors.css), so the editor wears the theme that's on screen; the preview on
   the right wears the profile being edited. Preview elements carry Tag="Property=target.prop;..."
   - the script paints each from the resolved theme and makes it clickable.
@@ -401,7 +401,7 @@
                 <WrapPanel x:Name="FromPanel"/>
               </StackPanel>
 
-              <TextBlock Style="{StaticResource H}" Text="COLOUR SOURCE"/>
+              <TextBlock Style="{StaticResource H}" Text="COLOR SOURCE"/>
               <WrapPanel x:Name="KindPanel">
                 <RadioButton x:Name="KindWallpaper" Style="{StaticResource Seg}" Content="Wallpaper" Tag="wallpaper"/>
                 <RadioButton x:Name="KindMatch" Style="{StaticResource Seg}" Content="Closest theme" Tag="match"/>
@@ -440,11 +440,11 @@
                   <TextBlock x:Name="SatValue" Width="40" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource B.Sub}"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                  <TextBlock Style="{StaticResource Label}" Text="Colours"/>
+                  <TextBlock Style="{StaticResource Label}" Text="Colors"/>
                   <StackPanel>
-                    <CheckBox x:Name="Cols16" Content="16 distinct colours" Margin="0,5,0,4"/>
+                    <CheckBox x:Name="Cols16" Content="16 distinct colors" Margin="0,5,0,4"/>
                     <TextBlock Style="{StaticResource Hint}" MaxWidth="520" HorizontalAlignment="Left"
-                               Text="Off: color8-15 repeat color0-7 (brighter). On: all sixteen are different colours from the wallpaper."/>
+                               Text="Off: color8-15 repeat color0-7 (brighter). On: all sixteen are different colors from the wallpaper."/>
                   </StackPanel>
                 </StackPanel>
               </StackPanel>
@@ -479,13 +479,13 @@
 
               <TextBlock Style="{StaticResource H}" Text="ROLES -- WHAT GETS WHAT"/>
               <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
-                         Text="Click a colour to change it. Open a role (&#x203A;) to see every app colour that follows it -- any of them can take its own colour instead."/>
+                         Text="Click a color to change it. Open a role (&#x203A;) to see every app color that follows it -- any of them can take its own color instead."/>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                 <TextBlock Style="{StaticResource Hint}" Text="Start the roles from:" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <Button x:Name="PresetDefault" Content="Default's map" Padding="10,3" Margin="0,0,6,0"
                         ToolTip="Default's roles and Terminal slot order: made for wallpaper palettes (kmeans, salience)"/>
                 <Button x:Name="PresetTerminal" Content="Terminal order" Padding="10,3"
-                        ToolTip="For palettes in terminal order (built-in themes, scheme files, ansi): the background, the text, blue as the accent, and Terminal's colours where they belong"/>
+                        ToolTip="For palettes in terminal order (built-in themes, scheme files, ansi): the background, the text, blue as the accent, and Terminal's colors where they belong"/>
               </StackPanel>
               <TextBlock x:Name="PresetHint" Style="{StaticResource Hint}" Visibility="Collapsed" Margin="0,0,0,8"/>
               <StackPanel x:Name="RolesPanel"/>
@@ -495,7 +495,7 @@
                 <TextBlock Style="{StaticResource Label}" Text="Terminal"/>
                 <StackPanel>
                   <WrapPanel x:Name="TermReadPanel">
-                    <RadioButton x:Name="TermLighten" Style="{StaticResource Seg}" Content="Lift dim colours" Tag="lighten"/>
+                    <RadioButton x:Name="TermLighten" Style="{StaticResource Seg}" Content="Lift dim colors" Tag="lighten"/>
                     <RadioButton x:Name="TermAuto" Style="{StaticResource Seg}" Content="Lift or deepen" Tag="auto"/>
                     <RadioButton x:Name="TermOff" Style="{StaticResource Seg}" Content="Leave as they are" Tag="off"/>
                   </WrapPanel>
@@ -521,11 +521,11 @@
 
               <TextBlock Style="{StaticResource H}" Text="APPS THIS PROFILE THEMES"/>
               <WrapPanel x:Name="TargetsPanel"/>
-              <TextBlock Style="{StaticResource Hint}" Text="An app that's off keeps whatever colours it has -- the profile leaves it alone."/>
+              <TextBlock Style="{StaticResource Hint}" Text="An app that's off keeps whatever colors it has -- the profile leaves it alone."/>
             </StackPanel>
           </ScrollViewer>
 
-          <!-- The colour selector: over the profile's side only, so the preview stays in view -->
+          <!-- The color selector: over the profile's side only, so the preview stays in view -->
           <Border x:Name="PickerLayer" Grid.Column="0" Background="{DynamicResource B.Scrim}" CornerRadius="8" Visibility="Collapsed">
             <Border x:Name="Picker" Background="{DynamicResource B.Bg}" BorderBrush="{DynamicResource B.Accent}" BorderThickness="1"
                     CornerRadius="10" Margin="10" MaxWidth="700" VerticalAlignment="Top">
@@ -543,16 +543,16 @@
 
                   <StackPanel x:Name="PkSlotRow" Orientation="Horizontal" Margin="0,12,0,0">
                     <TextBlock Style="{StaticResource Hint}" Text="Choosing:" VerticalAlignment="Center" Margin="0,0,10,6"/>
-                    <RadioButton x:Name="PkSlotBase" Style="{StaticResource Seg}" Content="the colour" Tag="base"/>
+                    <RadioButton x:Name="PkSlotBase" Style="{StaticResource Seg}" Content="the color" Tag="base"/>
                     <RadioButton x:Name="PkSlotOther" Style="{StaticResource Seg}" Content="what it's mixed with" Tag="other"/>
                   </StackPanel>
 
-                  <TextBlock Style="{StaticResource Cap}" Text="FROM THE PALETTE (THIS WALLPAPER'S COLOURS)"/>
+                  <TextBlock Style="{StaticResource Cap}" Text="FROM THE PALETTE (THIS WALLPAPER'S COLORS)"/>
                   <WrapPanel x:Name="PkPalette"/>
                   <TextBlock Style="{StaticResource Cap}" Text="A ROLE"/>
                   <WrapPanel x:Name="PkRoles"/>
 
-                  <TextBlock Style="{StaticResource Cap}" Text="A FIXED COLOUR (THE SAME ON EVERY WALLPAPER)"/>
+                  <TextBlock Style="{StaticResource Cap}" Text="A FIXED COLOR (THE SAME ON EVERY WALLPAPER)"/>
                   <StackPanel Orientation="Horizontal">
                     <StackPanel>
                       <Grid x:Name="PkSV" Width="240" Height="120" Cursor="Cross" ClipToBounds="True" Background="Transparent">
@@ -600,7 +600,7 @@
                       <TextBlock Style="{StaticResource Hint}" Text="Hex" Margin="0,0,0,4"/>
                       <TextBox x:Name="PkHexBox" Width="130" MaxLength="7"/>
                       <TextBlock Style="{StaticResource Hint}" Width="200" Margin="0,8,0,0"
-                                 Text="Drag in the square, or type #rrggbb. A fixed colour ignores the wallpaper."/>
+                                 Text="Drag in the square, or type #rrggbb. A fixed color ignores the wallpaper."/>
                     </StackPanel>
                   </StackPanel>
 
@@ -622,7 +622,7 @@
 
                   <DockPanel Margin="0,16,0,0" LastChildFill="False">
                     <Button x:Name="PkReset" DockPanel.Dock="Left"/>
-                    <Button x:Name="PkUse" DockPanel.Dock="Right" Style="{StaticResource Primary}" Content="Use this colour" Margin="8,0,0,0"/>
+                    <Button x:Name="PkUse" DockPanel.Dock="Right" Style="{StaticResource Primary}" Content="Use this color" Margin="8,0,0,0"/>
                     <Button x:Name="PkCancel" DockPanel.Dock="Right" Content="Cancel"/>
                   </DockPanel>
                 </StackPanel>
@@ -634,7 +634,7 @@
           <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel x:Name="Preview" Margin="0,0,8,20" Background="Transparent">
               <DockPanel Margin="0,8,0,4">
-                <TextBlock x:Name="PreviewHint" DockPanel.Dock="Right" Style="{StaticResource Hint}" VerticalAlignment="Bottom" Text="click any colour to change it"/>
+                <TextBlock x:Name="PreviewHint" DockPanel.Dock="Right" Style="{StaticResource Hint}" VerticalAlignment="Bottom" Text="click any color to change it"/>
                 <TextBlock Style="{StaticResource H}" Text="PREVIEW" Margin="0"/>
               </DockPanel>
 

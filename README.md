@@ -10,7 +10,7 @@ A keyboard-first tiling desktop for Windows 11, themed from your wallpaper.
 | [Flow Launcher](https://www.flowlauncher.com/) + [Everything](https://www.voidtools.com/) | App launcher and instant file search |
 | [ShareX](https://getsharex.com/) | Screenshots, recordings, OCR, QR scanning |
 | [Windows Terminal](https://github.com/microsoft/terminal) + PowerShell 7 | The terminal, with a [Starship](https://starship.rs/) prompt, fzf, zoxide, eza and bat |
-| [wallust](https://codeberg.org/explosion-mental/wallust) | Pulls a color palette from the wallpaper and recolors everything else |
+| [wallust](https://codeberg.org/explosion-mental/wallust) | Pulls a color palette from the wallpaper; a [palette profile](#palette-profiles) decides which color goes where |
 
 Throughout this README, **SUPER** means the Windows key.
 
@@ -250,6 +250,10 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | `710sRice reload` | Reload the whole stack, same as SUPER+Shift+R |
 | `710sRice reload bar` | Restart just the bar |
 | `710sRice logs` | Open the logs folder and list what's in it |
+| `710sRice palette` | List the [palette profiles](#palette-profiles), the one in use marked |
+| `710sRice palette use <profile>` | Theme everything with that profile now: `default`, `0`–`9`, or its name |
+| `710sRice palette edit [<profile>]` | Open the palette profile editor on the one in use (or that one) |
+| `710sRice palette new [<from>]` | Create a palette profile in the editor, starting from the one in use (or `<from>`) |
 | `710sRice tiling status` | Whether komorebi runs elevated: the saved choice, its task, and the running copy |
 | `710sRice tiling elevated` / `normal` | Switch komorebi to elevated or not *(admin)* |
 
@@ -271,7 +275,7 @@ only runs with `-Activate`).
 | `path` | Puts the `710sRice` command on your PATH |
 | `wallust` | Installs wallust at its pinned version |
 | `theme` | Sets the default wallpaper and themes everything from it |
-| `palette` | Re-themes everything from the wallpaper you have now (no wallpaper change) |
+| `palette` | Re-themes everything from the wallpaper you have now, with the palette profile in use (no wallpaper change) |
 | `monitors` | Records which monitor is which, for komorebi |
 | `defender` | Adds the Windows Defender exclusions |
 | `profile` | Hooks the PowerShell profile in |
@@ -324,8 +328,8 @@ From a PowerShell 7 window:
 
 This is a real uninstall: it stops everything, removes the Scheduled Tasks, and puts back
 what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
-colors and default shell, Flow Launcher settings, taskbar, Windows settings, PowerShell
-profile and Defender exclusions are restored, not reset to defaults. The installer saves
+colors and default shell, Flow Launcher settings and theme, taskbar, Windows settings,
+PowerShell profile and Defender exclusions are restored, not reset to defaults. The installer saves
 each one the first time it changes it.
 
 Packages: anything the installer added is removed, except rows marked **Pre-existing? yes**
@@ -337,11 +341,14 @@ Terminal and Everything).
   `-Keep ShareX.ShareX,Flow-Launcher.Flow-Launcher`.
 - `-Force` removes the Pre-existing rows too.
 
-It forgets your elevated-tiling choice, so a later install starts from the default again.
+It forgets your elevated-tiling choice and which palette profile is in use, so a later
+install starts from the defaults again. Your palette profiles themselves stay in
+`config/palettes` (it tells you how many).
 It also takes the `710sRice` command off your PATH; `.\710sRice.ps1` in the repo folder still
 works, for a reinstall.
 It doesn't delete the repo folder, your weather variables, or your personal files
-(`user.ahk`, `user.ps1`, `rules.local.toml`, `config/windows.toml`). Delete the folder
+(`user.ahk`, `user.ps1`, `rules.local.toml`, `config/windows.toml`, your palette profiles and
+scheme files). Delete the folder
 yourself if you're done with it.
 
 ## Hotkeys
@@ -355,7 +362,7 @@ yourself if you're done with it.
 | SUPER+Space | Flow Launcher |
 | SUPER+Ctrl+Space | Flow, apps only |
 | SUPER+S | Flow, file search |
-| SUPER+Alt+Space | Main menu: apps, capture, tiling, game mode, reload, quit |
+| SUPER+Alt+Space | Main menu: apps, capture, tiling, palette profiles, game mode, reload, quit |
 | SUPER+Esc | Power menu: lock, sleep, restart, shut down... |
 | SUPER+K | This hotkey list |
 | SUPER+X | Close the window |
@@ -390,7 +397,7 @@ keys, Esc to go back.
 
 ## Make it yours
 
-Three optional files are yours alone. Git ignores them, so neither `710sRice update` nor `git pull` touches them:
+These files are yours alone. Git ignores them, so neither `710sRice update` nor `git pull` touches them:
 
 - `config/ahk/user.ahk` — your own hotkeys. It's loaded after `710.ahk` if it exists, and
   SUPER+K lists its hotkeys too. Reload with SUPER+Shift+R.
@@ -398,12 +405,17 @@ Three optional files are yours alone. Git ignores them, so neither `710sRice upd
   `config/pwsh/profile.ps1`. Open a new terminal to pick up changes.
 - `config/komorebi/rules.local.toml` — your own app rules. Quick add rule writes it for you;
   see [App rules](#app-rules).
+- `config/palettes/profile0.json` … `profile9.json` — your palette profiles (the editor
+  writes them; see [Palette profiles](#palette-profiles)), and any scheme files you put in
+  `config/palettes/schemes`.
 
 ## Wallpapers and theming
 
 Change the wallpaper with **SUPER+W** (or the wallpaper button on the bar) and everything
-recolors to match: the bar, komorebi's window borders, the Windows accent color, Windows
-Terminal, the prompt, the menus and the lock screen. wallust does the color picking.
+recolors to match: the bar, komorebi's window borders and stack tabs, the Windows accent
+color, Windows Terminal, the prompt, the menus, Flow Launcher and the lock screen. wallust
+does the color picking; the [palette profile](#palette-profiles) in use decides how, and
+which color goes where.
 
 The gallery shows two folders:
 
@@ -426,6 +438,52 @@ For more folders, add lines to `image_path` under the `wallpapers:` widget in
         - "$env:YASB_WALLPAPER_PATH"
         - "D:\\Art\\Backgrounds"
 ```
+
+### Palette profiles
+
+The wallpaper decides the colors; a palette profile decides how they're made and where each
+one goes. **Default** is the theme described above, and it's in use until you pick another.
+Up to ten profiles of your own sit beside it, and the one in use applies to every wallpaper.
+
+**SUPER+Alt+Space > Palette profiles**:
+
+- **Choose profile** re-themes everything with that profile at once, without changing the
+  wallpaper, and every wallpaper change after that uses it too. It stays chosen through
+  sign-out and `710sRice update`.
+- **Create profile** and **Edit profile** open the editor.
+
+The editor has:
+
+- **Color source**: how the palette is made. From the wallpaper (wallust's `kmeans`,
+  Default's, or `salience` or `ansi`; a dark or light palette; more saturation; 16 distinct
+  colors), the built-in theme closest to each wallpaper, one built-in theme (about 600,
+  searchable), a random built-in theme each time, or a color scheme file (pywal or
+  terminal.sexy) that you put in `config/palettes/schemes`.
+- **Palette**: the colors that source makes from the wallpaper you have now.
+- **Roles**: eight named colors (Background, Panel, Accent, Hover, Subtext, Text, Bright text,
+  Alert), each taken from the palette. Open a role to see every app color that follows it;
+  any of them can have a color of its own instead. Built-in themes and scheme files come in
+  terminal order, so the **Terminal order** button suits them better than Default's map.
+- **Readable text** (colors too dim to read get lifted), **light or dark** Windows apps, and
+  which apps the profile themes at all. An app that's switched off keeps its own colors.
+- **Preview**: the bar, the menus, Flow Launcher, Terminal and the prompt, window borders,
+  stack tabs and the Windows accent, in the profile's colors on your wallpaper. Click any
+  color in it to change it.
+
+Picking a color gives you a palette color, a role, or a fixed color (the same on every
+wallpaper), as it is, lighter, darker, or mixed with another. **Save** keeps the profile;
+**Save and use** also themes everything with it now. Default can't be changed, but you can
+try anything on it and **Save as new**.
+
+From a PowerShell 7 window, `710sRice palette` lists the profiles, `710sRice palette use 3`
+(or its name) switches, and `710sRice palette edit` / `710sRice palette new` open the editor.
+
+If wallust can't make a palette from a wallpaper, nothing is left half-themed: the last theme
+stays and a notification says why. `710sRice doctor` checks that the colors on screen are the
+ones the profile in use makes, and names the fix when they aren't.
+
+Theming another app takes one small file; `tools/palette/targets/README.md` explains how,
+with Flow Launcher as the example.
 
 ## App rules
 

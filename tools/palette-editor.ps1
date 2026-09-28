@@ -9,12 +9,12 @@
     nothing else. One editor at a time: a second start brings the open one to the front.
 
     What's on it (claude/palette-profiles-plan.md, "Stage 5"):
-      - the colour source and its settings, and the palette it makes from the wallpaper that's
+      - the color source and its settings, and the palette it makes from the wallpaper that's
         up now (wallust runs in the background, into a config of the editor's own -- never the
         pipeline's files);
-      - the eight roles, each with every app colour that follows it underneath; any colour
-        opens the colour selector (a palette slot, a role, a fixed colour, lighter / darker /
-        mixed), and an app colour picked there becomes that app's own (an override);
+      - the eight roles, each with every app color that follows it underneath; any color
+        opens the color selector (a palette slot, a role, a fixed color, lighter / darker /
+        mixed), and an app color picked there becomes that app's own (an override);
       - readable text, light / dark, and which apps the profile themes;
       - a preview of the bar, menus, Flow, Terminal and the prompt, borders and stack tabs
         and the Windows accent, repainted on every change -- click any of it to change it.
@@ -76,7 +76,7 @@ Write-EditorLog "--- start: -ProfileId '$ProfileId' -New:$New -From '$From'"
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
 # ------------------------------------------------------------------------------------------
-# Colours and brushes
+# Colors and brushes
 # ------------------------------------------------------------------------------------------
 $script:BrushCache = @{}
 function Get-Brush {
@@ -91,7 +91,7 @@ function Get-Brush {
 }
 
 function Get-EditorColors {
-    <# The editor wears the menus' colours (config\ahk\menu-colors.css; the bar's file until the
+    <# The editor wears the menus' colors (config\ahk\menu-colors.css; the bar's file until the
        menus have their own) -- 710.ahk's fallbacks before either exists. #>
     $c = [ordered]@{ Bg = '#2B2B2B'; Text = '#E0E0E0'; Accent = '#5C41A5'; OnAccent = $null; Sub = '#9A9A9A' }
     foreach ($f in @((Join-Path $Root 'config\ahk\menu-colors.css'), (Join-Path $Root 'config\yasb\wallust_colors.css'))) {
@@ -102,7 +102,7 @@ function Get-EditorColors {
         }
         break
     }
-    if (-not $c.OnAccent) { $c.OnAccent = $c.Bg }   # 710.ahk: the background colour on the accent bar
+    if (-not $c.OnAccent) { $c.OnAccent = $c.Bg }   # 710.ahk: the background color on the accent bar
     $c
 }
 
@@ -188,7 +188,7 @@ $script:Mode = 'edit'          # edit | default | new
 $script:Id = $null             # the slot being edited ('default', 'profileN'); new: the slot it'll go in, if asked for
 $script:Work = $null           # the profile as edited (ConvertTo-PaletteProfile's shape)
 $script:Baseline = ''          # its saved form when opened / last saved (dirty = different)
-$script:Palette = $null        # the 19 colours the source makes from the wallpaper that's up
+$script:Palette = $null        # the 19 colors the source makes from the wallpaper that's up
 $script:PaletteKey = ''
 $script:Theme = $null          # Resolve-PaletteTheme of Work + Palette
 $script:ThemeError = $null
@@ -199,7 +199,7 @@ $script:ThemeNames = $null
 $script:ThemeMatches = @{}     # image -> closest themes (not $Matches: -match owns that name)
 $script:RandomRound = 0
 $script:Busy = $null           # a running theme run (Start-EditorApply)
-$script:Pk = $null             # the open colour selector
+$script:Pk = $null             # the open color selector
 $script:Ask = $null            # the open question
 $script:RoleUi = [ordered]@{}
 $script:PropUi = @{}
@@ -500,7 +500,7 @@ function Build-RoleRows {
         $chev.FontSize = 15
         $chev.Focusable = $false
         $chev.Tag = $role
-        $chev.ToolTip = 'Show the app colours that follow this'
+        $chev.ToolTip = 'Show the app colors that follow this'
         $chev.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
         $chev.Add_Click({ param($s, $e) Switch-RoleOpen -Role $s.Tag; $e.Handled = $true })
         [System.Windows.Controls.Grid]::SetColumn($chev, 0)
@@ -530,8 +530,8 @@ function Build-RoleRows {
             $row.Add_MouseLeftButtonUp({ param($s, $e) Open-Picker -Kind 'role' -Role $s.Tag })
         } else {
             $sw.Visibility = 'Hidden'
-            $expr.Text = 'its colours, straight from the palette'
-            $row.ToolTip = 'Windows Terminal''s sixteen colours, background, text, cursor and selection: palette slots, not roles'
+            $expr.Text = 'its colors, straight from the palette'
+            $row.ToolTip = 'Windows Terminal''s sixteen colors, background, text, cursor and selection: palette slots, not roles'
             $row.Cursor = [System.Windows.Input.Cursors]::Hand
             $row.Add_MouseLeftButtonUp({ param($s, $e) Switch-RoleOpen -Role $s.Tag })
         }
@@ -661,11 +661,11 @@ function Register-PreviewTags {
 function Get-KindHint {
     param([string]$Kind)
     switch ($Kind) {
-        'wallpaper' { 'wallust reads the colours out of each wallpaper.' }
-        'match'     { 'Each wallpaper gets the built-in theme whose colours are closest to it.' }
+        'wallpaper' { 'wallust reads the colors out of each wallpaper.' }
+        'match'     { 'Each wallpaper gets the built-in theme whose colors are closest to it.' }
         'theme'     { 'The same built-in theme, whatever the wallpaper.' }
         'random'    { 'A different built-in theme every time the wallpaper changes (the preview shows one).' }
-        'scheme'    { 'A pywal or terminal.sexy colour scheme file, whatever the wallpaper.' }
+        'scheme'    { 'A pywal or terminal.sexy color scheme file, whatever the wallpaper.' }
     }
 }
 
@@ -683,9 +683,9 @@ function Sync-SourceControls {
         if ($src.kind -eq 'wallpaper') {
             foreach ($rb in @($script:Ui.MethodKmeans, $script:Ui.MethodSalience, $script:Ui.MethodAnsi)) { $rb.IsChecked = ($rb.Tag -eq $src.method) }
             $script:Ui.MethodHint.Text = switch ($src.method) {
-                'kmeans'   { 'Groups the picture''s pixels into its main colours -- Default''s method.' }
-                'salience' { 'Picks the colours that stand out, even small ones.' }
-                'ansi'     { 'Sorts the picture''s colours into terminal order: red in the red slot, and so on.' }
+                'kmeans'   { 'Groups the picture''s pixels into its main colors -- Default''s method.' }
+                'salience' { 'Picks the colors that stand out, even small ones.' }
+                'ansi'     { 'Sorts the picture''s colors into terminal order: red in the red slot, and so on.' }
             }
             $kmeans = $src.method -eq 'kmeans'
             $script:Ui.StyleDark.IsEnabled = -not $kmeans
@@ -712,9 +712,9 @@ function Sync-OptionControls {
     try {
         foreach ($rb in @($script:Ui.TermLighten, $script:Ui.TermAuto, $script:Ui.TermOff)) { $rb.IsChecked = ($rb.Tag -eq $script:Work.readable.terminal) }
         $script:Ui.TermReadHint.Text = switch ($script:Work.readable.terminal) {
-            'lighten' { 'Colours too dim to read on the background are lifted until they read (Default).' }
+            'lighten' { 'Colors too dim to read on the background are lifted until they read (Default).' }
             'auto'    { 'Lifted on a dark background, deepened on a light one.' }
-            'off'     { 'The palette''s colours exactly, readable or not.' }
+            'off'     { 'The palette''s colors exactly, readable or not.' }
         }
         $script:Ui.ReadUi.IsChecked = [bool]$script:Work.readable.ui
         foreach ($rb in @($script:Ui.ModeDark, $script:Ui.ModeLight, $script:Ui.ModeAuto)) { $rb.IsChecked = ($rb.Tag -eq $script:Work.appMode) }
@@ -906,7 +906,7 @@ function Update-Preview {
     }
     $acc = $th.Targets['windows']['accent']
     if ($acc) { $script:Ui.MockAccentText.Foreground = Get-Brush (Get-TextOn $acc) }
-    # An app that's off keeps its own colours: its mock is dimmed and says so.
+    # An app that's off keeps its own colors: its mock is dimmed and says so.
     $off = @($script:Work.off)
     foreach ($pair in @(@('yasb', 'MockBar', 'CapBar', 'BAR'), @('menus', 'MockMenu', 'CapMenu', 'MENUS'), @('flow', 'MockFlow', 'CapFlow', 'FLOW LAUNCHER'),
                         @('terminal', 'MockTerm', 'CapTerm', 'WINDOWS TERMINAL AND THE PROMPT'), @('komorebi', 'MockWin', 'CapWin', 'WINDOWS: BORDERS, STACK TABS, ACCENT'))) {
@@ -992,7 +992,7 @@ function Update-PresetHint {
     foreach ($k in $def.Keys) { if ($script:Work.roles[$k] -ne $def[$k]) { $same = $false } }
     $show = $same -and (Test-TerminalOrdered)
     $script:Ui.PresetHint.Visibility = if ($show) { 'Visible' } else { 'Collapsed' }
-    $script:Ui.PresetHint.Text = 'This palette is in terminal order (color1 is red, color4 blue ...), so Default''s map puts odd colours in odd places -- Terminal order suits it.'
+    $script:Ui.PresetHint.Text = 'This palette is in terminal order (color1 is red, color4 blue ...), so Default''s map puts odd colors in odd places -- Terminal order suits it.'
 }
 
 function Set-TargetOn {
@@ -1092,7 +1092,7 @@ function Set-FixedTheme {
 }
 
 # ------------------------------------------------------------------------------------------
-# The colour selector
+# The color selector
 # ------------------------------------------------------------------------------------------
 function Open-Picker {
     param([ValidateSet('role', 'prop')][string]$Kind, [string]$Role, [string]$Target, [string]$Prop)
@@ -1104,8 +1104,8 @@ function Open-Picker {
         $pk.Current = $pk.Original
         $pk.Default = (Get-PaletteDefaultProfile).roles[$Role]
         $script:Ui.PkTitle.Text = $script:PaletteRoles[$Role].Label.ToUpperInvariant()
-        $script:Ui.PkAbout.Text = "$($script:PaletteRoles[$Role].About). Every app colour under it follows."
-        $script:Ui.PkReset.Content = "Default's colour ($(Get-ExpressionWords $pk.Default))"
+        $script:Ui.PkAbout.Text = "$($script:PaletteRoles[$Role].About). Every app color under it follows."
+        $script:Ui.PkReset.Content = "Default's color ($(Get-ExpressionWords $pk.Default))"
     } else {
         $t = Get-PaletteTarget -Id $Target
         $def = $t.Properties[$Prop].Default
@@ -1114,7 +1114,7 @@ function Open-Picker {
         $pk.Current = if ($own) { $pk.Original } else { $def }
         $pk.Default = $def
         $script:Ui.PkTitle.Text = (Get-PropLabel -Target $Target -Prop $Prop).ToUpperInvariant()
-        $script:Ui.PkAbout.Text = "Follows $(Get-ExpressionWords $def) unless you give it a colour of its own here."
+        $script:Ui.PkAbout.Text = "Follows $(Get-ExpressionWords $def) unless you give it a color of its own here."
         $script:Ui.PkReset.Content = "Follow $(Get-ExpressionWords $def)"
     }
     $script:Pk = $pk
@@ -1160,7 +1160,7 @@ function Build-PickerSwatches {
 }
 
 function Resolve-PickerHex {
-    <# The colour an expression gives in the profile as edited. For a role's own colour the role
+    <# The color an expression gives in the profile as edited. For a role's own color the role
        is taken as $Text first, so a loop back to itself (Accent -> Text -> Accent) throws. #>
     param([string]$Text, [switch]$AsRole)
     $defs = [ordered]@{}
@@ -1212,7 +1212,7 @@ function Sync-Picker {
         $script:Ui.PkWhat.Text = Get-ExpressionWords $pk.Current
         $script:Ui.PkUse.IsEnabled = -not $script:Ui.PkError.Text
         $script:Ui.PkReset.Visibility = if ($pk.Current -eq $pk.Default) { 'Hidden' } else { 'Visible' }
-        # The square and the hue strip show the colour being chosen now (base, or what it's mixed with).
+        # The square and the hue strip show the color being chosen now (base, or what it's mixed with).
         $shown = $null
         if ($simple) {
             $n = if ($pk.Slot -eq 'other') { $split.Other } else { $split.Base }
@@ -1243,7 +1243,7 @@ function Get-PickerParts {
 }
 
 function Set-PickerName {
-    # A palette slot / role / hex picked: it becomes the colour (or what it's mixed with).
+    # A palette slot / role / hex picked: it becomes the color (or what it's mixed with).
     param([string]$Name)
     $pk = $script:Pk
     $s = Get-PickerParts
@@ -1291,7 +1291,7 @@ function Read-PickerExpression {
 }
 
 function Set-PickerValueInWork {
-    # The selector's colour into the profile (live preview and Use); $null = back to following.
+    # The selector's color into the profile (live preview and Use); $null = back to following.
     param($Text)
     $pk = $script:Pk
     if ($pk.Kind -eq 'role') {
@@ -1559,7 +1559,7 @@ function Step-EditorApply {
             else { Set-Status -Warn -Text "Nothing changed on screen: $why" -Details $all }
         }
     }
-    # The editor wears the menus' colours: re-dress it when they changed.
+    # The editor wears the menus' colors: re-dress it when they changed.
     Update-Known
     Set-EditorBrushes
     Sync-Header
@@ -1762,7 +1762,7 @@ foreach ($rb in @($u.ModeDark, $u.ModeLight, $u.ModeAuto)) {
     $rb.Add_Checked({ param($s, $e) if (-not $script:Updating) { $script:Work.appMode = "$($s.Tag)"; Update-Theme } })
 }
 
-# The preview: click a colour to change it.
+# The preview: click a color to change it.
 $u.Preview.Add_MouseLeftButtonUp({
     param($s, $e)
     $o = $e.OriginalSource
