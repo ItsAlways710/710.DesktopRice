@@ -876,6 +876,27 @@ function Get-DoctorShownPath {
     ConvertTo-SafePath $Path
 }
 
+function Test-DoctorPaletteProfile {
+    # The chosen palette profile (SUPER+Alt+Space > Palette profiles, 710sRice palette use),
+    # usable or not. A chosen profile that's gone or broken is still themed -- with Default,
+    # the pipeline's fallback -- so it's [!!]: the choice is yours to fix, repair never
+    # changes it. Broken profiles nobody chose are just noted.
+    $chosen = Get-ActivePaletteProfileId
+    $active = Resolve-ActivePaletteProfile
+    $all = @(Get-PaletteProfiles)
+    if ($chosen -ne $active.Id) {
+        $chosenLabel = ($all | Where-Object Id -eq $chosen | Select-Object -First 1).Label
+        New-DoctorResult -Id 'palette-profile' -Status '!!' -Text "Palette profile: $chosenLabel is chosen but can't be used -- Default is used instead" `
+            -Detail @("$($active.Warning -replace ' -- using Default$', '')") -Fix "710sRice palette use default (or fix it in SUPER+Alt+Space > Palette profiles > Edit)"
+    } else {
+        $p = $all | Where-Object Id -eq $active.Id | Select-Object -First 1
+        New-DoctorResult -Id 'palette-profile' -Status 'OK' -Text "Palette profile: $($p.Label) ($(Get-PaletteSourceSummary -Source $active.Profile.source))"
+    }
+    foreach ($b in $all | Where-Object { $_.Exists -and $_.Error -and $_.Id -ne $chosen }) {
+        New-DoctorResult -Id "palette-profile:$($b.Id)" -Status '..' -Text "$($b.Label) can't be used: $($b.Error -replace '^[^:]+: ', '')"
+    }
+}
+
 function Test-DoctorThemeFiles {
     # What the wallpaper pipeline (tools\apply-wallust-outputs.ps1) leaves behind: the palette it
     # made last (config\wallust\generated\palette.json -- the one kept when wallust fails) and
@@ -1160,6 +1181,7 @@ function Get-DoctorGroups {
             @{ Id = 'asc';           Name = 'ASC rules file';           Run = { Test-DoctorAscPin } }
             @{ Id = 'display-index'; Name = 'display-index.local.json'; Run = { Test-DoctorDisplayIndex } }
             @{ Id = 'wallust-toml';  Name = 'wallust.toml';             Run = { Test-DoctorWallustToml } }
+            @{ Id = 'palette-profile'; Name = 'Palette profile';        Run = { Test-DoctorPaletteProfile } }
             @{ Id = 'theme-files';   Name = 'Theme files';              Run = { Test-DoctorThemeFiles } }
             @{ Id = 'theme-inputs';  Name = 'Theme stamp';              Run = { Test-DoctorThemeInputs } }
             @{ Id = 'palette-last';  Name = 'Last theme run';           Run = { Test-DoctorPaletteLastRun } }

@@ -322,14 +322,29 @@ if ($Keep -contains 'PSFzf') {
 # Gitignored, machine-local, always regenerable by install.ps1 -- safe to remove
 # unconditionally, no Pre-existing? question applies (nothing here existed before this
 # repo did, and it's config data, not a package).
-Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json, wallust.toml, tiling-mode.txt)" {
+Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json, wallust.toml, menu-colors.css, tiling-mode.txt, the palette-profile choice)" {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\display-index.local.json')
     # The remembered elevated/non-elevated tiling choice -- uninstall forgets it, so a
     # fresh install starts from the default again (plan doc Open item 37).
     Remove-Item -Force -ErrorAction SilentlyContinue (Get-TilingModePath)
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\komorebi.json')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\wallust\wallust.toml')
+    # Palette Profiles: the menus' colours file, and which profile is chosen (forgotten like the
+    # tiling mode -- a fresh install starts on Default) plus how the last theme run went. The
+    # profiles themselves are YOURS and stay (below).
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\ahk\menu-colors.css')
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-profile.txt')
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-status.json')
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\theme-inputs.sha256')
 } 'Machine-local generated files removed'
+
+# Your palette profiles and scheme files are user data, like rules.local.toml and user.ahk:
+# left in place (a reinstall finds them in the menu again), and said so.
+$yourProfiles = @(Get-ChildItem -LiteralPath (Join-Path $Root 'config\palettes') -Filter 'profile*.json' -File -ErrorAction SilentlyContinue)
+$yourSchemes  = @(Get-ChildItem -LiteralPath (Join-Path $Root 'config\palettes\schemes') -File -ErrorAction SilentlyContinue)
+if ($yourProfiles.Count -or $yourSchemes.Count) {
+    Step-Info "Your palette profiles ($($yourProfiles.Count)) and scheme files ($($yourSchemes.Count)) in config\palettes are left in place -- they're yours; delete them if you want them gone."
+}
 
 # --- 10. Original-state snapshot folder --------------------------------------------------
 # Each Restore-* function above already deletes its own snapshot file once it's actually

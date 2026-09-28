@@ -147,6 +147,21 @@ $Commands = [ordered]@{
                      Run = { Invoke-RiceReloadBar } }
     'logs'      = @{ Usage = 'logs'; Help = 'Open the logs folder (and list what''s in it)'; Admin = 'Any'
                      Run = { Show-RiceLogs } }
+    # palette: the palette profiles (tools\lib\palette.ps1, loaded only here). Any window: a
+    # switch goes through the wallpaper pipeline (apply-wallust-outputs.ps1 -ProfileId), which
+    # keeps the old choice when the new profile's palette can't be made.
+    'palette'     = @{ Usage = 'palette'; Help = 'List the palette profiles (SUPER+Alt+Space > Palette profiles)'; Admin = 'Any'
+                       Run = {
+                           if ($args.Count) {
+                               Write-RiceError "Unknown option '$($args[0])' for palette"
+                               Show-RiceCommandHelp 'palette'
+                               $script:RiceExit = 1
+                               return
+                           }
+                           . (Join-Path $Root 'tools\lib\palette.ps1'); Show-RicePalettes
+                       } }
+    'palette use' = @{ Usage = 'palette use <profile>'; Help = 'Theme everything with that profile now (default, 0-9 or its name)'; Admin = 'Any'
+                       Run = { Invoke-RicePaletteUse @args } }
     # tiling: the saved mode (tiling-mode.txt) and komorebi's task only -- never install's
     # theme reset. Changing it needs admin: an elevated task can only be registered, or a
     # task an admin window made replaced, from an admin window.
@@ -345,6 +360,41 @@ function Invoke-RiceRestart {
     if ($script:RiceExit -eq 0) {
         Step-Info 'Apps tiled through a layered rule (Claude Desktop) can pick up an extra title bar when the bar restarts -- relaunch the app if you see one.'
     }
+}
+
+# --- palette ---------------------------------------------------------------------------------------
+function Show-RicePalettes {
+    # Default and the profiles that exist, the one in use marked; a broken one says why.
+    $active = Resolve-ActivePaletteProfile
+    $chosen = Get-ActivePaletteProfileId
+    $all = @(Get-PaletteProfiles)
+    Write-Host ''
+    Write-Host '  Palette profiles -- choose, create or edit them in SUPER+Alt+Space > Palette profiles'
+    foreach ($p in $all | Where-Object Exists) {
+        $mark = if ($p.Id -eq $active.Id) { '>' } else { ' ' }
+        $what = if ($p.Error) { "can't be used: $($p.Error -replace '^[^:]+: ', '')" } else { $p.Summary }
+        $line = '  {0} {1,-26} {2}' -f $mark, $p.Label, $what
+        if ($p.Id -eq $active.Id) { Write-Host $line -ForegroundColor Green }
+        elseif ($p.Error) { Write-Host $line -ForegroundColor Yellow }
+        else { Write-Host $line }
+    }
+    if ($chosen -ne $active.Id) { Write-Host "  [!!] $($active.Warning)" -ForegroundColor Yellow }
+    $free = @($all | Where-Object { $_.Id -ne 'default' -and -not $_.Exists }).Count
+    Write-Host ''
+    Write-Host "  $free of 10 slots free. 710sRice palette use <profile> switches now; every wallpaper change uses it too."
+    Write-Host ''
+}
+
+function Invoke-RicePaletteUse {
+    if ($args.Count -ne 1 -or -not "$($args[0])".Trim()) {
+        Write-RiceError 'palette use takes one profile: default, 0-9, or its name'
+        Show-RiceCommandHelp 'palette use'
+        $script:RiceExit = 1
+        return
+    }
+    # In-process, like install's palette step; the pipeline prints what it themed.
+    & (Join-Path $Root 'tools\apply-wallust-outputs.ps1') -ProfileId "$($args[0])"
+    $script:RiceExit = $LASTEXITCODE
 }
 
 # --- logs / tiling ---------------------------------------------------------------------------------

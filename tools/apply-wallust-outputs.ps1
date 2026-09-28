@@ -169,9 +169,12 @@ try {
     }
 
     # --- 7. choice + stamp --------------------------------------------------------------------
-    if ($ProfileId -and $active.Id -ne (Get-ActivePaletteProfileId)) {
-        Set-ActivePaletteProfileId -Id $active.Id
-        Write-PaletteLog "chosen profile is now $profileLabel"
+    if ($ProfileId) {
+        if ($active.Id -ne (Get-ActivePaletteProfileId)) {
+            Set-ActivePaletteProfileId -Id $active.Id
+            Write-PaletteLog "chosen profile is now $profileLabel"
+        }
+        Write-Line 'OK' "$profileLabel is the chosen profile -- every wallpaper change uses it"
     }
     if ($failed.Count) {
         # No stamp: doctor keeps saying the theme isn't current until a run applies everything.
