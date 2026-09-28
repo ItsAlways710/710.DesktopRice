@@ -442,8 +442,13 @@ For more folders, add lines to `image_path` under the `wallpapers:` widget in
 ### Palette profiles
 
 The wallpaper decides the colors; a palette profile decides how they're made and where each
-one goes. **Default** is the theme described above, and it's in use until you pick another.
-Up to ten profiles of your own sit beside it, and the one in use applies to every wallpaper.
+one goes. **Default** is the theme described above, and it's in use until you pick another:
+wallust's `kmeans` with a little more saturation for the bar, menus, Flow, borders and accent, while
+Windows Terminal keeps fixed red, green, yellow, blue, purple and cyan, tinted by the wallpaper,
+so text stays distinct and readable on any wallpaper. Up to ten profiles of your own sit beside
+it, and the one in use applies to every wallpaper. The Default before 2026-09-28 (every Terminal
+color straight from the wallpaper) is kept in `config/palettes/archive`, with how to use it
+again.
 
 **SUPER+Alt+Space > Palette profiles**:
 

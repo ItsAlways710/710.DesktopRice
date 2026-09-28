@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "name": "Default",
-  "note": "Today's theme: the wallpaper through wallust's kmeans method, the colours where they have always gone. Ships with the repo and can't be edited -- the editor saves changes as a new profile. The terminal overrides are wallust 4.1's own Windows Terminal slot order, kept so Terminal looks exactly as it did when wallust wrote the scheme itself.",
-  "source": { "kind": "wallpaper", "method": "kmeans", "style": "dark", "saturation": 0, "colors16": false },
+  "note": "The wallpaper through wallust's kmeans method with a 20% saturation boost: the bar, menus, Flow, borders, stack tabs, prompt and Windows accent take their colours from it, in the same places as always. Windows Terminal's sixteen colours keep fixed hues (red, green, yellow, blue, purple, cyan, each in a normal and a bright shade), mixed 15% with the wallpaper's Text colour -- distinct and readable on every wallpaper, still tinted by it. Ships with the repo and can't be edited -- the editor saves changes as a new profile. The Default before 2026-09-28 is config\\palettes\\archive\\classic-default.json.",
+  "source": { "kind": "wallpaper", "method": "kmeans", "style": "dark", "saturation": 20, "colors16": false },
   "roles": {
     "base": "color1",
     "panel": "color2",
@@ -15,12 +15,18 @@
   },
   "overrides": {
     "terminal": {
-      "red": "color3", "green": "color1", "yellow": "color6", "purple": "color2", "cyan": "color5", "white": "color15",
-      "brightRed": "color11", "brightGreen": "color9", "brightYellow": "color14", "brightPurple": "color10", "brightCyan": "color13", "brightWhite": "color7",
-      "cursorColor": "color8", "selectionBackground": "color15"
+      "background": "mix(background, text, 3)", "foreground": "mix(#E4E4E4, foreground, 25)", "black": "color0",
+      "red": "mix(#E47C75, text, 15)", "green": "mix(#67B36A, text, 15)", "yellow": "mix(#C0992A, text, 15)",
+      "blue": "mix(#64A1EE, text, 15)", "purple": "mix(#C282D0, text, 15)", "cyan": "mix(#00B6BE, text, 15)",
+      "white": "mix(#B4B4B4, foreground, 20)",
+      "brightBlack": "mix(#8C8C8C, foreground, 20)",
+      "brightRed": "mix(#FFB1AA, text, 15)", "brightGreen": "mix(#A1DCA2, text, 15)", "brightYellow": "mix(#E6C77C, text, 15)",
+      "brightBlue": "mix(#9ECEFF, text, 15)", "brightPurple": "mix(#E8B6F3, text, 15)", "brightCyan": "mix(#72DEE4, text, 15)",
+      "brightWhite": "mix(#F4F4F4, foreground, 20)",
+      "cursorColor": "text", "selectionBackground": "mix(background, text, 35)"
     }
   },
   "off": [],
-  "readable": { "terminal": "lighten", "ui": false },
+  "readable": { "terminal": "auto", "ui": true },
   "appMode": "dark"
 }

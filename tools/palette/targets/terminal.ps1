@@ -2,10 +2,13 @@
 # itself never writes settings.json any more (it runs with -s); this does, in one pass.
 #
 # Slot defaults are the standard ANSI order (red = color1 ...), right for palettes that come in
-# terminal order (ansi, the built-in themes, scheme files). The Default profile overrides them
-# with wallust 4.1's own Windows Terminal order (red = color3, green = color1 ...) -- measured on
-# the Dell across all 21 shipped wallpapers (state\palette-probe.ps1) -- so it stays exactly what
-# it was when wallust wrote the scheme itself.
+# terminal order (ansi, the built-in themes, scheme files). The Default profile overrides every
+# slot: fixed hues (red, green, yellow, blue, purple, cyan, a normal and a bright shade each) mixed
+# 15% with the wallpaper's Text colour, and near-neutral whites and greys -- a kmeans palette is
+# often one hue (710Default001-004 are all purple), so the terminal can't take its colours
+# straight from it and stay readable. The archived Classic Default
+# (config\palettes\archive\classic-default.json) keeps wallust 4.1's own Windows Terminal order
+# (red = color3, green = color1 ...), measured on the Dell across all 21 shipped wallpapers.
 $slots = [ordered]@{
     background = 'background'; foreground = 'foreground'; cursorColor = 'cursor'; selectionBackground = 'color8'
     black = 'color0'; red = 'color1'; green = 'color2'; yellow = 'color3'; blue = 'color4'; purple = 'color5'; cyan = 'color6'; white = 'color7'

@@ -1,6 +1,7 @@
 # config\wallust\generated\colors.json -- the four colours the pipeline used to read back for
-# komorebi (today it resolves them itself). Kept, byte for byte what it always was under the
-# Default profile, for anything of yours that still reads it; not shown in the editor.
+# komorebi (today it resolves them itself). Kept, the same four colours it always held (the
+# Background, Accent, Subtext and Text roles), for anything of yours that still reads it; not
+# shown in the editor.
 @{
     Id     = 'colors'
     Label  = 'colors.json (legacy)'
