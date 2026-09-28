@@ -8,9 +8,10 @@
   retired window-slots daemon if one is still running) regardless of whether -Activate was
   ever used, then reverts
   everything install.ps1 -Activate touches (autostart Scheduled Tasks, native-taskbar
-  auto-hide, HKCU registry hardening, Explorer's Startup-delay, the lock-screen sync task
-  and the lock-screen image itself), everything install.ps1 applies unconditionally (the
-  pwsh $PROFILE hook, Windows Defender exclusions, the desktop wallpaper, Windows accent
+  auto-hide, HKCU registry hardening, Explorer's Startup-delay, and the retired lock-screen
+  sync task and its policy key if a machine from before 2026-09-28 still has them),
+  everything install.ps1 applies unconditionally (the pwsh $PROFILE hook, Windows Defender
+  exclusions, the desktop wallpaper, your lock-screen picture, Windows accent
   color/dark-mode, Windows Terminal's colorScheme/theme/default shell, Flow Launcher's
   ActionKeyword merge/identity toggles/Everything plugin), the env vars, the `710sRice`
   command's user-PATH entry (<repo>\bin, only that exact entry) and winget pins
@@ -139,13 +140,10 @@ Invoke-ActivationRevert 'Unregister autostart (Scheduled Tasks + Startup fallbac
     Unregister-Autostart
     Step-Ok 'Autostart unregistered'
 }
-Invoke-ActivationRevert 'Unregister lock-screen sync task' {
-    Unregister-LockScreenSyncTask
-    Step-Ok 'Lock-screen sync task unregistered'
-}
-Invoke-ActivationRevert 'Restore original lock screen' {
-    if (Restore-LockScreen) { Step-Ok 'Lock screen restored to whatever it was before this repo ever managed it' }
-    else { Step-Info 'Lock-screen sync was never actually registered on this machine -- nothing to restore.' }
+Invoke-ActivationRevert 'Remove the retired lock-screen sync task and its policy key' {
+    # Only a machine from before 2026-09-28 has them; your lock-screen picture itself is put
+    # back in section 3, after the hardening revert below.
+    if (-not (Remove-RetiredLockScreenSync)) { Step-Info 'No old lock-screen sync task or policy key on this machine.' }
 }
 # Snapshot tray-icon promotions before either kill below -- see Backup-TrayIconPromotions
 # in tools\lib\activation.ps1 for why. Skipped under -DryRun (neither kill happens, so
@@ -191,10 +189,20 @@ Write-Host "`n-- Revert shell profile / Defender exclusions --" -ForegroundColor
 Invoke-ActivationRevert 'Remove the pwsh $PROFILE hook' { Remove-ShellProfile }
 Invoke-ActivationRevert 'Remove Windows Defender exclusions' { Remove-DefenderExclusions }
 
-Write-Host "`n-- Revert wallpaper / accent color / Windows Terminal / Flow Launcher --" -ForegroundColor Cyan
+Write-Host "`n-- Revert wallpaper / lock screen / accent color / Windows Terminal / Flow Launcher --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Restore original desktop wallpaper' {
     if (Restore-OriginalWallpaper) { Step-Ok 'Desktop wallpaper restored to whatever it was before this repo ever set a default' }
     else { Step-Info 'This repo never actually changed the wallpaper on this machine (already using one of its own) -- nothing to restore.' }
+}
+# After section 2's hardening revert: Restore-LockScreenPicture writes back the Spotlight /
+# Slideshow settings from before 710sRice, and hardening's revert must not undo them.
+Invoke-ActivationRevert 'Restore original lock-screen picture' {
+    switch (Restore-LockScreenPicture) {
+        'restored' { Step-Ok 'Lock-screen picture restored to what it was before this repo ever set it' }
+        'default'  { Step-Ok "Lock screen set to Windows' own default picture -- the one you had before is gone" }
+        'failed'   { Step-Warn 'Lock-screen picture not put back -- pick one in Settings > Personalization > Lock screen.' }
+        default    { Step-Info 'This repo never set the lock screen on this machine -- nothing to restore.' }
+    }
 }
 Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' {
     if (Restore-WindowsAccent) { Step-Ok 'Windows accent color and light/dark-mode settings restored' }
@@ -340,6 +348,8 @@ Invoke-Step "Remove machine-local generated files (display-index.local.json, kom
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-profile.txt')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-status.json')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\theme-inputs.sha256')
+    # How the last lock-screen set went (tools\lib\lockscreen.ps1's record, doctor's).
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\lockscreen.json')
     # The palette editor's own wallust config and its last preview palette.
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-editor')
 } 'Machine-local generated files removed'
@@ -355,7 +365,7 @@ if ($yourProfiles.Count -or $yourSchemes.Count) {
 # --- 10. Original-state snapshot folder --------------------------------------------------
 # Each Restore-* function above already deletes its own snapshot file once it's actually
 # used one; this just cleans up the (should now be empty) folder itself, and any snapshot
-# that was never consumed (e.g. Restore-LockScreen skipped because this shell wasn't
+# that was never consumed (e.g. Restore-LockScreenPolicy skipped because this shell wasn't
 # elevated) so a future re-install snapshots fresh state again rather than restoring an
 # increasingly stale one. -Force -ErrorAction SilentlyContinue rather than checking
 # "empty first": a leftover unconsumed snapshot is still safe to just delete here, since

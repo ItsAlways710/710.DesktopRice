@@ -442,9 +442,9 @@ $Steps['theme'] = {
     # assets\wallpapers\710Default001.png as the desktop wallpaper and runs the exact same
     # wallpaper pipeline (tools\apply-wallust-outputs.ps1) YASB's Wallpapers widget runs on every
     # real wallpaper change (see config\yasb\config.yaml's run_after) -- so komorebi borders, the
-    # Windows accent color, Windows Terminal, and (once -Activate registers its Scheduled Task
-    # a few sections down) the lock screen all end up themed to it too, via the one real
-    # code path rather than a second, parallel "first theme" implementation.
+    # Windows accent color, Windows Terminal and your lock-screen picture all end up themed to
+    # it too, via the one real code path rather than a second, parallel "first theme"
+    # implementation.
     Write-Host "`n-- Default theme --" -ForegroundColor Cyan
     $defaultWallpaper = Join-Path $Root 'assets\wallpapers\710Default001.png'
 
@@ -465,8 +465,7 @@ $Steps['theme'] = {
 
             # The wallpaper pipeline itself, in-process (install already needs PS7), with the
             # chosen palette profile -- Default on a fresh install. It prints what it themed
-            # (komorebi only if it's up); the lock screen follows once -Activate registers its
-            # sync task.
+            # (komorebi only if it's up), the lock screen included.
             & (Join-Path $Root 'tools\apply-wallust-outputs.ps1') -Image $defaultWallpaper
             switch ($LASTEXITCODE) {
                 0       { Step-Ok 'Default wallpaper themed (details above).' }
@@ -483,7 +482,7 @@ $Steps['palette'] = {
     # --- palette: the current wallpaper's colours, re-applied (named-only) ---------------
     # The opposite of theme: no wallpaper change. Runs exactly what YASB's wallpaper widget
     # runs after every change (the pipeline, config\yasb\config.yaml's run_after) on the
-    # wallpaper that's up now (Get-CurrentWallpaper -- the value Sync-LockScreen.ps1 reads).
+    # wallpaper that's up now (Get-CurrentWallpaper -- the value Set-LockScreen.ps1 reads).
     # Same image, same profile, same palette (wallust caches it per image), so on a healthy
     # machine nothing visibly changes -- it's the fix for missing or stale theme files (the
     # bar's and menus' colours, the prompt, Flow's theme, Terminal's scheme). It never falls
@@ -629,30 +628,13 @@ $Steps['tasks'] = {
     if ($Activate) {
         Write-Host "`n-- Activate --" -ForegroundColor Cyan
         Register-Autostart
-        Register-LockScreenSyncTask
-        # Fire it once right now rather than waiting for a future wallpaper change -- on a
-        # fresh install, the theme step already set the default wallpaper before this task
-        # existed to catch it, so without this the lock screen would stay unsynced until the
-        # next real wallpaper change. Best-effort: if the task didn't register above (not
-        # elevated, no pwsh), Test-Task is false and this is a silent no-op.
-        if (Test-Task -TaskName 'lock-screen-sync') {
-            & schtasks.exe /Run /TN (Get-TaskFullName -TaskName 'lock-screen-sync') *> $null
-        }
     } elseif (Test-FullTimeMachine) {
         # Already full-time from an earlier -Activate: re-register so the tasks pick up any
         # change to how components are launched (a newer launcher script, a moved clone),
         # without switching modes.
         Write-Host "`n-- Activate --" -ForegroundColor Cyan
         Step-Info 'Autostart is active: re-registering to pick up any startup changes...'
-        $hadLockScreen = Test-Task -TaskName 'lock-screen-sync'
         Register-Autostart
-        # A full-time machine always has its lock-screen sync task -- including one that went
-        # missing (doctor's fix for that is `-Only tasks`). Fired only when it had to be made
-        # again, so the lock screen catches up; a working one is left alone, as before.
-        Register-LockScreenSyncTask
-        if (-not $hadLockScreen -and (Test-Task -TaskName 'lock-screen-sync')) {
-            & schtasks.exe /Run /TN (Get-TaskFullName -TaskName 'lock-screen-sync') *> $null
-        }
     } else {
         # On-demand: every component still gets its task (no trigger), so Start-All.ps1,
         # SUPER+Shift+R and the bar watchdog start each one at its task's own level -- the
@@ -664,6 +646,20 @@ $Steps['tasks'] = {
         if (-not $OnlyRun) {
             Step-Info 'Run `710sRice install -Activate` when ready to make this repo the active shell experience.'
         }
+    }
+
+    # --- 11c. The lock screen: the old sync retired ------------------------------------------
+    # Every install sets the lock screen as your own picture (the theme step, then every
+    # wallpaper change). A machine from before 2026-09-28 may still have the old elevated
+    # 'lock-screen-sync' task and the policy key it wrote, which hides your picture: they go
+    # here -- doctor's fix for them is `-Only tasks` -- and the picture is set once, since
+    # nothing else would before the next wallpaper change. Also set once when nothing has set
+    # it yet (no record: an install from before, on a machine that never had the old task).
+    $oldSync = (Test-Task -TaskName 'lock-screen-sync') -or [bool](Get-OriginalState -Label 'lockscreen-personalizationcsp')
+    if ($oldSync -or -not (Test-Path -LiteralPath (Get-LockScreenRecordPath))) {
+        Write-Host "`n-- Lock screen --" -ForegroundColor Cyan
+        $null = Remove-RetiredLockScreenSync
+        Set-LockScreenToWallpaper
     }
 }
 

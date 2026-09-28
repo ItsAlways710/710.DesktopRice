@@ -2,10 +2,10 @@
 '
 ' Used by tools\lib\activation.ps1's Get-AutostartComponents (via ConvertTo-HiddenLaunch)
 ' as the Scheduled Task's own Action for the powershell-hosted autostart components
-' (komorebi/yasb/ahk) and, since 2026-09-27, the elevated lock-screen-sync task (its
-' pwsh -WindowStyle Hidden popped an admin window on every wallpaper change -- plan doc
-' item 46). WHY: Task Scheduler launching powershell.exe directly
-' with -WindowStyle Hidden still shows a brief console flash at every logon -- confirmed
+' (komorebi/yasb/ahk) -- and, 2026-09-27 until it was retired on 09-28, the elevated
+' lock-screen-sync task (plan doc items 46 and 48).
+' WHY: Task Scheduler launching powershell.exe directly with -WindowStyle Hidden still
+' shows a brief console flash at every logon -- confirmed
 ' live on Dell, 3-4 flashes at every boot (one per powershell-hosted component). Windows
 ' allocates the console as part of process creation, before PowerShell's own startup code
 ' has run far enough to read -WindowStyle and hide itself -- a well-documented race, not

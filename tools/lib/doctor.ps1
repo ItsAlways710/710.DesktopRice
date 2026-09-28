@@ -641,8 +641,8 @@ function Get-DoctorTaskDrift {
 }
 
 function Test-DoctorTasks {
-    # The mode line, one line per component's task (the worst thing found), and the lock-screen
-    # sync task on a full-time machine.
+    # The mode line and one line per component's task (the worst thing found). (The lock-screen
+    # sync task was checked here until it was retired, 2026-09-28: plan doc item 48.)
     $components = @(Get-AutostartComponents -NoWrite)
     if (-not $components.Count) { return }   # nothing installed: group b says so
     $tasksFix = @{ Fix = '710sRice install -Only tasks'; Step = 'tasks' }
@@ -657,7 +657,7 @@ function Test-DoctorTasks {
     $noSignIn = @($components | Where-Object { $infos[$_.Key] -and -not $infos[$_.Key].AtLogOn })
     if ($fullTime -and $noSignIn.Count) {
         $text = if ($signIn.Count) { "Mode: mixed -- $(& $names $signIn) start at sign-in; $(& $names $noSignIn) $(if ($noSignIn.Count -eq 1) { "doesn't" } else { "don't" })" }
-                else { "Mode: mixed -- the lock-screen sync task (or a Startup shortcut) says full-time, but no task starts at sign-in" }
+                else { "Mode: mixed -- a Startup shortcut says full-time, but no task starts at sign-in" }
         New-DoctorResult -Id 'mode' -Status 'XX' -Text $text @tasksFix
     } elseif ($fullTime) {
         New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: full-time (starts at sign-in)'
@@ -694,22 +694,6 @@ function Test-DoctorTasks {
         }
         $kind = @(if ($t.AtLogOn) { 'sign-in' } else { 'on demand' }; if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' }) -join ', '
         New-DoctorResult -Id $id -Status 'OK' -Text "$name's task ($kind)"
-    }
-
-    # The lock-screen sync task, on a full-time machine: there, and running what install would
-    # register now. One registered before 2026-09-27 ran pwsh directly and popped an admin
-    # window on every wallpaper change (plan doc item 46) -- `-Only tasks` re-registers it, so
-    # repair (and an update) fixes existing installs by itself.
-    if ($fullTime) {
-        $lockId = 'task:lock-screen-sync'
-        $lock   = Get-ComponentTaskInfo -TaskName 'lock-screen-sync'
-        $want   = Get-LockScreenSyncLaunch -NoWrite
-        $drift  = if ($lock -and $want) { @(Get-DoctorTaskDrift $want $lock) } else { @() }
-        if (-not $lock) { New-DoctorResult -Id $lockId -Status 'XX' -Text 'Lock-screen sync task is missing (full-time machine)' @tasksFix }
-        elseif ($drift.Count) {
-            New-DoctorResult -Id $lockId -Status 'XX' -Text "Lock-screen sync task doesn't match what install would register now" -Detail $drift @tasksFix
-        }
-        else { New-DoctorResult -Id $lockId -Status 'OK' -Text 'Lock-screen sync task' }
     }
 }
 

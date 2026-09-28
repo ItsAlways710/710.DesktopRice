@@ -87,7 +87,7 @@ function Invoke-WingetAsUser {
        Why: winget refuses to touch a package installed for this user only (per-user
        scope -- Flow Launcher is one, living under %LOCALAPPDATA%) when it's run from an
        elevated shell: exit 0x8A15007D, ADMIN_CONTEXT_ACTION_PROHIBITED. uninstall.ps1 has
-       to run elevated (Defender exclusions, lock screen), so found live on the
+       to run elevated (Defender exclusions, among others), so found live on the
        2026-09-24 reinstall test: Flow's uninstall failed on every run, while the line
        below it still printed "uninstalled". The task runs as the same user, un-elevated,
        so winget allows it. Its console window shows briefly while winget works.

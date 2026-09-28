@@ -23,7 +23,9 @@
          shows it), 710.ahk gets a toast, exit 1.
       4. Every colour resolved (pure -- a broken profile stops here, nothing written).
       5. Each target applied in order; one failing doesn't stop the rest (exit 2).
-      6. Wallpaper changes only: the lock-screen sync task is fired.
+      6. Wallpaper changes only: your lock-screen picture is set to the wallpaper
+         (scripts\Set-LockScreen.ps1, through tools\lib\lockscreen.ps1). Its own line: it
+         never counts as a failed target.
       7. Only when every target applied: the theme stamp (theme-inputs.sha256) that
          `710sRice doctor` compares with the repo and the chosen profile.
 
@@ -52,6 +54,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $Root 'tools\lib\palette.ps1')
+. (Join-Path $Root 'tools\lib\lockscreen.ps1')
 
 function Write-Line {
     param([string]$Status, [string]$Text)
@@ -159,13 +162,20 @@ try {
     $failed = @($results | Where-Object Status -eq 'failed')
 
     # --- 6. the lock screen (a wallpaper change only) -------------------------------------------
-    # Fires the elevated on-demand task (Register-LockScreenSyncTask) -- Task Scheduler elevates
-    # it, so this needs no admin. A machine that never registered it: a quiet no-op.
-    # `$null = ... 2>&1`, not `*> $null`: the latter leaks schtasks' "ERROR:" text.
+    # Your own lock-screen picture = this wallpaper: Set-LockScreen.ps1 in Windows PowerShell 5.1,
+    # no window, no task, no admin -- it runs as whoever runs this. Waited for, so two quick
+    # changes finish in order under this run's lock. Never a failed target: a managed PC may
+    # refuse every time, and that mustn't hold the theme stamp back -- the record it writes is
+    # what doctor reads.
     if ($mode -eq 'full') {
-        $lockScreenTask = '\710.DesktopRice\lock-screen-sync'
-        $null = & schtasks.exe /Query /TN $lockScreenTask 2>&1
-        if ($LASTEXITCODE -eq 0) { $null = & schtasks.exe /Run /TN $lockScreenTask 2>&1 }
+        $ls = Invoke-LockScreenSetter -Root $Root -Image $Image
+        $lsText = ConvertTo-PaletteSafeText $ls.Message
+        Write-PaletteLog "  lock screen ($($ls.ExitCode)): $lsText"
+        switch ($ls.ExitCode) {
+            0       { Write-Line 'OK' "Lock screen $lsText" }
+            2       { Write-Line '!!' "Lock screen $lsText" }
+            default { Write-Line 'XX' "Lock screen: $lsText" }
+        }
     }
 
     # --- 7. choice + stamp --------------------------------------------------------------------

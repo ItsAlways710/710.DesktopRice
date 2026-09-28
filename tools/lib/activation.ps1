@@ -32,6 +32,10 @@
   it's arguably the sounder of the two, for whatever that's worth pending a real test.
 #>
 
+# Your lock-screen picture: Invoke-LockScreenSetter and its record (install's tasks step and
+# uninstall use them below; the wallpaper pipeline dot-sources the same file).
+. (Join-Path $PSScriptRoot 'lockscreen.ps1')
+
 # --- Paths as they get printed ------------------------------------------------------------
 function ConvertTo-SafePath {
     # A path as it can be shown on screen: the user's own profile folders as %LOCALAPPDATA% /
@@ -325,8 +329,9 @@ public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, stri
 function Get-CurrentWallpaper {
     <# The desktop wallpaper that's up now: HKCU\Control Panel\Desktop\WallPaper -- the value
        both SystemParametersInfo (Set-DesktopWallpaper) and the IDesktopWallpaper COM API
-       that YASB's wallpaper widget uses keep current. scripts\Sync-LockScreen.ps1 reads the
-       same value. $null when none is set. Used by install's palette step. #>
+       that YASB's wallpaper widget uses keep current. scripts\Set-LockScreen.ps1 reads the
+       same value when it isn't handed a picture. $null when none is set. Used by install's
+       palette and tasks steps. #>
     (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue).WallPaper
 }
 
@@ -737,8 +742,8 @@ $script:TaskFolder = '710.DesktopRice'
 function ConvertTo-HiddenLaunch {
     <# Rewraps an Exe/Arguments pair so the Scheduled Task launches it via
        tools\lib\run-hidden.vbs (WScript.Shell.Run, windowStyle 0) instead of directly. Used
-       by the component tasks (Get-AutostartComponents) and, since 2026-09-27, the elevated
-       lock-screen-sync task (Get-LockScreenSyncLaunch).
+       by the component tasks (Get-AutostartComponents). (The elevated lock-screen-sync task
+       started this way too, 2026-09-27 until it was retired on 09-28: Remove-RetiredLockScreenSync.)
 
        Why: Task Scheduler launching a console-subsystem host (powershell.exe) directly
        with -WindowStyle Hidden still briefly flashes a console at every logon -- confirmed
@@ -1176,12 +1181,13 @@ function Get-AutostartStatus {
 
 function Test-FullTimeMachine {
     # install's long-standing rule for "this machine was -Activate'd": any component with a
-    # sign-in task (or its Startup-shortcut fallback), or the lock-screen sync task. install's
-    # tasks step keeps such a machine full-time and -Only windows only acts on one;
-    # `710sRice doctor` reads its mode line from the same rule. Moved here from install.ps1
-    # (2026-09-27) so the two can't drift. Read-only.
+    # sign-in task (or its Startup-shortcut fallback). install's tasks step keeps such a machine
+    # full-time and -Only windows only acts on one; `710sRice doctor` reads its mode line from
+    # the same rule. Moved here from install.ps1 (2026-09-27) so the two can't drift. Read-only.
+    # (Until 2026-09-28 the lock-screen sync task counted too; it's retired -- every install sets
+    # the lock screen now -- so a leftover one says nothing about the mode.)
     $autostart = Get-AutostartStatus
-    (@($autostart.Values | Where-Object { $_ }).Count -gt 0) -or (Test-Task -TaskName 'lock-screen-sync')
+    @($autostart.Values | Where-Object { $_ }).Count -gt 0
 }
 
 function Register-OnDemandTasks {
@@ -1295,152 +1301,27 @@ function Test-IsAdmin {
     ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-# --- Lock-screen sync (on-demand elevated task) ---------------------------------------
-function New-OnDemandElevatedTaskXml {
-    <# On-demand-only (empty <Triggers /> -- no LogonTrigger) with RunLevel HighestAvailable,
-       so the registered task carries its OWN elevation: once install.ps1 -Activate (itself
-       run elevated) registers it, a later `schtasks /Run` -- even from an unelevated caller
-       like apply-wallust-outputs.ps1 -- runs it elevated with no UAC prompt, because Task
-       Scheduler grants the token the Principal asks for rather than the caller's own.
-       Otherwise mirrors New-TaskXml's shape (IgnoreNew multiple-instances policy), except
-       AllowHardTerminate=true and a 1-minute ExecutionTimeLimit rather than New-TaskXml's
-       false/unlimited -- this runs a single quick registry write, not a long-lived daemon,
-       so a runaway instance should be killable and shouldn't be able to block later runs
-       (IgnoreNew) indefinitely. (The lock-screen task starts its script through
-       run-hidden.vbs since 2026-09-27, which returns at once -- so both now bound only that
-       launch, not the sync itself; see Get-LockScreenSyncLaunch.) #>
-    param([Parameter(Mandatory)][string]$Description, [Parameter(Mandatory)][string]$Command,
-          [string]$Arguments = '', [Parameter(Mandatory)][string]$User)
-    $u = [System.Security.SecurityElement]::Escape($User)
-    $desc = [System.Security.SecurityElement]::Escape($Description)
-    $cmd = [System.Security.SecurityElement]::Escape($Command)
-    $arg = [System.Security.SecurityElement]::Escape($Arguments)
-    @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Description>$desc</Description>
-  </RegistrationInfo>
-  <Triggers />
-  <Principals>
-    <Principal id="Author">
-      <UserId>$u</UserId>
-      <LogonType>InteractiveToken</LogonType>
-      <RunLevel>HighestAvailable</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
-    <StartWhenAvailable>false</StartWhenAvailable>
-    <ExecutionTimeLimit>PT1M</ExecutionTimeLimit>
-    <Enabled>true</Enabled>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>$cmd</Command>
-      <Arguments>$arg</Arguments>
-    </Exec>
-  </Actions>
-</Task>
-"@
-}
+# --- Lock screen: your own lock-screen picture -----------------------------------------
+# Since 2026-09-28 the lock screen follows the wallpaper as YOUR lock-screen picture (Windows'
+# per-user one), set on every wallpaper change by the pipeline -- scripts\Set-LockScreen.ps1
+# through tools\lib\lockscreen.ps1, on every install, with no task and no admin. Before that
+# (2026-09-22 .. 09-28) -Activate registered an elevated on-demand task that wrote a machine
+# policy (HKLM PersonalizationCSP) pointing at the wallpaper file, and the screen before sign-in
+# stayed black after a wallpaper change until the next Win+L (plan doc items 46 and 48). What's
+# left of that here: retiring it on a machine that still has it.
 
-function Get-LockScreenSyncLaunch {
-    <# What the lock-screen-sync task runs: scripts\Sync-LockScreen.ps1 in a hidden Windows
-       PowerShell (powershell.exe, System32), started through tools\lib\run-hidden.vbs --
-       exactly the chain the component tasks use (ConvertTo-HiddenLaunch, spec file
-       launch-lock-screen-sync.txt), proven hidden at every sign-in, komorebi's elevated task
-       included. No console window ever exists. Until 2026-09-27 the task ran `pwsh
-       -WindowStyle Hidden` directly (through the WindowsApps alias since 584093b), and every
-       wallpaper change popped an admin window: Windows makes the console before pwsh gets far
-       enough to hide it (plan doc item 46; the race ConvertTo-HiddenLaunch explains). The
-       script is a few registry writes that run the same under 5.1, so the task doesn't need
-       PS7 at all -- the same host and path as the components' specs, nothing that moves when
-       PowerShell 7 updates. Exe / Arguments (the task's action), Spec / SpecLines.
-       -NoWrite: the same answer without writing the spec file -- for `710sRice doctor`,
-       which compares it with the registered task. #>
-    param([switch]$NoWrite)
-    $ps     = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $script = Join-Path $Root 'scripts\Sync-LockScreen.ps1'
-    ConvertTo-HiddenLaunch -NoWrite:$NoWrite -Key 'lock-screen-sync' -Exe $ps `
-        -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`""
-}
-
-function Register-LockScreenSyncTask {
-    <# Registers the on-demand elevated 'lock-screen-sync' task (see
-       New-OnDemandElevatedTaskXml and scripts\Sync-LockScreen.ps1). No LogonTrigger -- it
-       never fires on its own; tools\apply-wallust-outputs.ps1 fires it with `schtasks /Run`
-       every time the wallpaper (and so the wallust palette) changes. Its action is
-       Get-LockScreenSyncLaunch's: wscript + run-hidden.vbs, never a visible window. Requires
-       an elevated shell to REGISTER (same as Set-DefenderExclusions); once registered, later
-       RUNS need no further elevation (see New-OnDemandElevatedTaskXml). Idempotent (/F
-       overwrites, the spec file is rewritten). Warn-and-skip if not elevated -- never fails
-       the install; the lock screen just won't sync until install.ps1 is re-run from an admin
-       shell. #>
-    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Step-Warn 'Lock-screen sync needs an elevated shell to register -- re-run install.ps1 from an admin PowerShell to enable it.'
-        return
-    }
-    # One-time snapshot of PersonalizationCSP as it stood before this task can ever fire
-    # and write to it -- registration (here) is the only point that's guaranteed to run
-    # before the first sync, so it's the right place to capture "before", not
-    # Sync-LockScreen.ps1 itself (which only ever SETS these values, never should be the
-    # one deciding what "original" means). Almost always Existed=$false for all three on
-    # a non-managed machine (PersonalizationCSP is an Enterprise/MDM-only key Home doesn't
-    # ship with) -- see Restore-LockScreen below for what that means on revert.
-    $cspPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
-    Save-OriginalState -Label 'lockscreen-personalizationcsp' -Data @{
-        LockScreenImageStatus = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImageStatus'
-        LockScreenImagePath   = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImagePath'
-        LockScreenImageUrl    = Get-RegValueSnapshot -Path $cspPath -Name 'LockScreenImageUrl'
-    }
-    $user = "$env:USERDOMAIN\$env:USERNAME"
-    $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) '710-task-lock-screen-sync.xml'
-    try {
-        $launch = Get-LockScreenSyncLaunch   # writes launch-lock-screen-sync.txt
-        $xml = New-OnDemandElevatedTaskXml -Description '710.DesktopRice: syncs the lock screen image to the current wallpaper (on-demand, fired by apply-wallust-outputs.ps1)' `
-            -Command $launch.Exe -Arguments $launch.Arguments -User $user
-        Set-Content -Path $xmlPath -Value $xml -Encoding Unicode
-        $full = Get-TaskFullName -TaskName 'lock-screen-sync'
-        & schtasks.exe /Create /TN $full /XML $xmlPath /F *> $null
-        if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
-        Step-Ok 'Lock-screen sync task registered (fires on wallpaper change, via apply-wallust-outputs.ps1).'
-    } catch {
-        Step-Warn "Lock-screen sync: failed to register the task ($($_.Exception.Message))."
-    } finally {
-        Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Unregister-LockScreenSyncTask {
-    <# Reverts Register-LockScreenSyncTask -- called from uninstall.ps1. Only deletes the
-       Scheduled Task itself; the actual PersonalizationCSP registry values are a separate
-       concern, reverted by Restore-LockScreen below (uninstall.ps1 calls both). Mirrors
-       Unregister-Autostart: no elevation check, best-effort, ignores the exit code. Its
-       launch spec (Get-LockScreenSyncLaunch) goes with it. #>
-    $full = Get-TaskFullName -TaskName 'lock-screen-sync'
-    & schtasks.exe /Delete /TN $full /F *> $null
-    Remove-Item (Join-Path $env:LOCALAPPDATA '710.DesktopRice\launch-lock-screen-sync.txt') -Force -ErrorAction SilentlyContinue
-}
-
-function Restore-LockScreen {
-    <# Reverts whatever Sync-LockScreen.ps1 wrote to PersonalizationCSP, back to the
-       Save-OriginalState 'lockscreen-personalizationcsp' snapshot Register-
-       LockScreenSyncTask took at registration time. $null means that snapshot was never
-       taken (lock-screen sync was never successfully registered on this machine) -- safe
-       no-op. On the common case (the key didn't exist before -- see Register-
-       LockScreenSyncTask's comment), this deletes the whole PersonalizationCSP key rather
-       than three now-empty values, so the manual "choose a photo" Settings option comes
-       back too, not just an empty-but-still-managed key. Requires elevation (HKLM) --
-       warns and skips, same as every other elevation-gated revert in this file, rather
-       than failing the uninstall. #>
+function Restore-LockScreenPolicy {
+    <# Puts the machine policy the old sync wrote (HKLM PersonalizationCSP) back the way it was,
+       from the 'lockscreen-personalizationcsp' snapshot install took when it registered the old
+       task. On the usual machine nothing was there before, so the whole key goes (and Settings'
+       own lock-screen picker works again); otherwise its three values are restored. A key with
+       no snapshot of ours is never touched (a company's policy, say), and a key that's already
+       gone is fine. Needs admin (HKLM): warns and skips without it. $true when the snapshot was
+       used. #>
     $snap = Get-OriginalState -Label 'lockscreen-personalizationcsp'
     if (-not $snap) { return $false }
-    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Step-Warn 'Lock-screen registry keys need an elevated shell to revert -- re-run uninstall.ps1 from an admin PowerShell to finish restoring the original lock screen.'
+    if (-not (Test-IsAdmin)) {
+        Step-Warn "The old lock-screen policy key needs an admin window to remove -- run this again from one."
         return $false
     }
     $cspPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
@@ -1453,7 +1334,90 @@ function Restore-LockScreen {
         Set-RegValueFromSnapshot -Path $cspPath -Name 'LockScreenImageUrl' -Snapshot $snap.LockScreenImageUrl
     }
     Remove-OriginalState -Label 'lockscreen-personalizationcsp'
-    return $true
+    $true
+}
+
+function Remove-RetiredLockScreenSync {
+    <# Retires the old lock-screen sync on a machine that still has it: the elevated
+       'lock-screen-sync' task, its launch file (launch-lock-screen-sync.txt), and the policy it
+       wrote (Restore-LockScreenPolicy). Called by install's tasks step (so -Activate, a plain
+       re-run and `710sRice install -Only tasks` -- repair's fix, and so update's) and by
+       uninstall. A no-op on a machine that never had it. $true when it removed something:
+       install then sets your picture once, since nothing else would before the next wallpaper
+       change. #>
+    $removed = $false
+    if (Test-Task -TaskName 'lock-screen-sync') {
+        $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName 'lock-screen-sync') /F 2>&1
+        if (Test-Task -TaskName 'lock-screen-sync') {
+            Step-Warn "Couldn't remove the retired lock-screen sync task -- run this again from an admin window."
+        } else {
+            Step-Info 'Removed the retired lock-screen sync task (the lock screen is your own picture now, set on every wallpaper change).'
+            $removed = $true
+        }
+    }
+    Remove-Item (Join-Path $env:LOCALAPPDATA '710.DesktopRice\launch-lock-screen-sync.txt') -Force -ErrorAction SilentlyContinue
+    if (Restore-LockScreenPolicy) {
+        Step-Info "Removed the old lock-screen policy key (put back the way it was before 710sRice) -- it hid your own picture."
+        $removed = $true
+    }
+    $removed
+}
+
+function Set-LockScreenToWallpaper {
+    <# Your lock-screen picture = the wallpaper that's up now, once, outside a wallpaper change:
+       install's tasks step, right after retiring the old sync, or when nothing has set it yet.
+       One line either way. #>
+    $r = Invoke-LockScreenSetter -Root $Root -Image (Get-CurrentWallpaper)
+    $text = ConvertTo-SafeText $r.Message
+    switch ($r.ExitCode) {
+        0       { Step-Ok "Lock screen $text" }
+        2       { Step-Warn "Lock screen $text" }
+        default { Step-Warn "Lock screen: $text -- it follows the next wallpaper change (SUPER+W)." }
+    }
+}
+
+function Get-WindowsLockScreenDefault {
+    # Windows' own default lock-screen picture, for when your original is gone: img100.jpg in
+    # %WINDIR%\Web\Screen, or the first picture there. $null when there's none.
+    $dir = Join-Path $env:WINDIR 'Web\Screen'
+    $first = Join-Path $dir 'img100.jpg'
+    if (Test-Path -LiteralPath $first -PathType Leaf) { return $first }
+    Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in '.jpg', '.jpeg', '.png' } | Sort-Object Name |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
+function Restore-LockScreenPicture {
+    <# Uninstall: your lock screen as it was before 710sRice first set it, from the
+       'lockscreen-picture' snapshot scripts\Set-LockScreen.ps1 takes before its first set. The
+       picture first -- the original file (Windows reports the original, not a copy), or Windows'
+       own default picture when that file is gone -- THEN the Spotlight / Slideshow settings, so it
+       doesn't matter whether setting a picture switched them off. If -Activate had already
+       switched Spotlight off when the snapshot was taken (Hardened), those two values were its,
+       not the original: its own revert (Set-WindowsHardening -Revert) puts them back, so they're
+       left alone here. Run after that revert. -> 'restored', 'default' (the original was gone),
+       'failed', or $null (nothing ever set here -- nothing to do). #>
+    $snap = Get-OriginalState -Label 'lockscreen-picture'
+    if (-not $snap) { return $null }
+    $img = "$($snap.Image)"
+    $result = 'restored'
+    if (-not $img -or -not (Test-Path -LiteralPath $img -PathType Leaf)) { $img = Get-WindowsLockScreenDefault; $result = 'default' }
+    if ($img) {
+        $r = Invoke-LockScreenSetter -Root $Root -Image $img
+        if ($r.ExitCode -notin 0, 2) { Step-Warn "Lock-screen picture not put back: $(ConvertTo-SafeText $r.Message)"; $result = 'failed' }
+    } else { $result = 'failed' }
+    $cdm = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+    if (-not $snap.Hardened) {
+        foreach ($name in 'RotatingLockScreenEnabled', 'RotatingLockScreenOverlayEnabled') {
+            if ($snap[$name]) { Set-RegValueFromSnapshot -Path $cdm -Name $name -Snapshot $snap[$name] }
+        }
+    }
+    if ($snap.SlideshowEnabled) {
+        Set-RegValueFromSnapshot -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lock Screen' -Name 'SlideshowEnabled' -Snapshot $snap.SlideshowEnabled
+    }
+    Remove-OriginalState -Label 'lockscreen-picture'
+    Remove-Item -LiteralPath (Get-LockScreenRecordPath) -Force -ErrorAction SilentlyContinue
+    $result
 }
 
 # --- Stopping running components (uninstall-only; not gated behind -Activate) --------
@@ -1678,8 +1642,8 @@ function Remove-ShellProfile {
 
 # --- Restoring theming side effects (wallpaper/accent/Terminal/Flow) -- uninstall-only --
 # The wallpaper/lock-screen restore functions live next to what they revert, above
-# (Restore-OriginalWallpaper near Set-DesktopWallpaper, Restore-LockScreen near
-# Register-LockScreenSyncTask). These three cover the rest of what install.ps1 Section 4
+# (Restore-OriginalWallpaper near Set-DesktopWallpaper, Restore-LockScreenPicture in the lock
+# screen's own section). These three cover the rest of what install.ps1 Section 4
 # and tools\apply-wallust-outputs.ps1 change on a real wallpaper/theme apply, plus Flow
 # Launcher's settings -- all called from uninstall.ps1.
 function Restore-WindowsAccent {
