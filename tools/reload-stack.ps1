@@ -406,7 +406,7 @@ if ($komorebiUp -and $removedRules -gt 0) {
         if ($LASTEXITCODE -eq 0) { Write-Log '   wallust borders re-applied.' }
         else { Write-Log "   border re-apply failed (apply-wallust-outputs.ps1 -BordersOnly exit $LASTEXITCODE)."; $failed = $true }
     } catch {
-        # e.g. no wallust colors.json yet -- that script throws rather than exits.
+        # e.g. a palette library that fails to load -- that script throws rather than exits.
         Write-Log "   border re-apply threw: $($_.Exception.Message)"
         $failed = $true
     }

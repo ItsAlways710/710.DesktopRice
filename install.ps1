@@ -440,8 +440,8 @@ $Steps['theme'] = {
     # this whenever the current wallpaper came from assets\wallpapers, which could leave e.g.
     # Windows Terminal on whatever uninstall had restored it to). Sets
     # assets\wallpapers\710Default001.png as the desktop wallpaper and runs the exact same
-    # wallust + apply-wallust-outputs.ps1 pipeline YASB's Wallpapers widget runs on every real
-    # wallpaper change (see config\yasb\config.yaml's run_after) -- so komorebi borders, the
+    # wallpaper pipeline (tools\apply-wallust-outputs.ps1) YASB's Wallpapers widget runs on every
+    # real wallpaper change (see config\yasb\config.yaml's run_after) -- so komorebi borders, the
     # Windows accent color, Windows Terminal, and (once -Activate registers its Scheduled Task
     # a few sections down) the lock screen all end up themed to it too, via the one real
     # code path rather than a second, parallel "first theme" implementation.
@@ -463,15 +463,16 @@ $Steps['theme'] = {
             Set-DesktopWallpaper -Path $defaultWallpaper
             Step-Ok "Desktop wallpaper set to $(ConvertTo-SafePath $defaultWallpaper)"
 
-            & $wallustExe run $defaultWallpaper --config-dir (Join-Path $Root 'config\wallust') 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "wallust run exited with code $LASTEXITCODE" }
-            # In-process, not a separate `pwsh -File` call -- install.ps1 itself already
-            # requires PS7 (see this file's #Requires line), so there's no PATH/process
-            # resolution to worry about; a plain call-operator invocation is simplest.
-            & (Join-Path $Root 'tools\apply-wallust-outputs.ps1')
-            # apply-wallust-outputs.ps1 prints exactly which legs ran (komorebi borders only if
-            # komorebi is up); the lock screen follows once -Activate registers its sync task.
-            Step-Ok "Default theme applied (details above)."
+            # The wallpaper pipeline itself, in-process (install already needs PS7), with the
+            # chosen palette profile -- Default on a fresh install. It prints what it themed
+            # (komorebi only if it's up); the lock screen follows once -Activate registers its
+            # sync task.
+            & (Join-Path $Root 'tools\apply-wallust-outputs.ps1') -Image $defaultWallpaper
+            switch ($LASTEXITCODE) {
+                0       { Step-Ok 'Default wallpaper themed (details above).' }
+                2       { Step-Warn 'Default wallpaper themed, but not everything took (see above) -- 710sRice doctor says what.' }
+                default { Step-Warn "The default wallpaper is up, but its theme wasn't applied (see above)." }
+            }
         } catch {
             Step-Warn "Could not apply the default theme: $($_.Exception.Message)"
         }
@@ -481,11 +482,11 @@ $Steps['theme'] = {
 $Steps['palette'] = {
     # --- palette: the current wallpaper's colours, re-applied (named-only) ---------------
     # The opposite of theme: no wallpaper change. Runs exactly what YASB's wallpaper widget
-    # runs after every change (its two run_after lines in config\yasb\config.yaml) on the
+    # runs after every change (the pipeline, config\yasb\config.yaml's run_after) on the
     # wallpaper that's up now (Get-CurrentWallpaper -- the value Sync-LockScreen.ps1 reads).
-    # Same image, same palette (wallust caches it per image), so on a healthy machine nothing
-    # visibly changes -- it's the fix for missing or stale generated theme files
-    # (colors.json, wallust_colors.css, starship.toml, Terminal's scheme). It never falls
+    # Same image, same profile, same palette (wallust caches it per image), so on a healthy
+    # machine nothing visibly changes -- it's the fix for missing or stale theme files (the
+    # bar's and menus' colours, the prompt, Flow's theme, Terminal's scheme). It never falls
     # back to the default wallpaper: that's the theme step, the reset.
     Write-Host "`n-- Palette (current wallpaper) --" -ForegroundColor Cyan
     $currentWallpaper = Get-CurrentWallpaper
@@ -495,10 +496,12 @@ $Steps['palette'] = {
         Step-Warn "wallust isn't set up (no wallust.exe or wallust.toml) -- add the wallust step: 710sRice install -Only wallust,palette"
     } else {
         try {
-            & $wallustExe run $currentWallpaper --config-dir (Join-Path $Root 'config\wallust') 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "wallust run exited with code $LASTEXITCODE" }
-            & (Join-Path $Root 'tools\apply-wallust-outputs.ps1')
-            Step-Ok "Palette re-applied from the current wallpaper ($(Split-Path -Leaf $currentWallpaper)) -- details above."
+            & (Join-Path $Root 'tools\apply-wallust-outputs.ps1') -Image $currentWallpaper
+            switch ($LASTEXITCODE) {
+                0       { Step-Ok "Palette re-applied from the current wallpaper ($(Split-Path -Leaf $currentWallpaper)) -- details above." }
+                2       { Step-Warn 'Palette re-applied, but not everything took (see above) -- 710sRice doctor says what.' }
+                default { Step-Warn "Palette not re-applied (see above) -- the theme on screen is unchanged." }
+            }
         } catch {
             Step-Warn "Could not re-apply the palette: $($_.Exception.Message)"
         }

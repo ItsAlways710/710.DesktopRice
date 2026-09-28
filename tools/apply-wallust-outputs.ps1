@@ -1,435 +1,186 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
-    Applies wallust's generated colors to everything that isn't a simple CSS
-    import: komorebi's live border and stack-tab colors and the Windows accent color.
-    (YASB gets its colors directly via config/wallust/templates/yasb-colors.css.tpl
-    -- no script needed there, it's just an @import.)
+    The wallpaper pipeline: makes the palette with the chosen palette profile and themes
+    everything from it -- the bar, the menus, the prompt, Flow, komorebi's borders and stack
+    tabs, Windows' accent and Windows Terminal.
 
 .DESCRIPTION
-    Chained as the second entry in YASB's Wallpapers widget run_after list
-    (config/yasb/config.yaml), right after `wallust run` -- NOT wallust's own
-    [hooks] feature, which is confirmed broken on this pinned 4.1.0-alpha build
-    (see config/wallust/wallust.toml for the isolation test that proved it).
-    So this runs every time wallust regenerates a palette, which itself is
-    triggered whenever the wallpaper changes.
+    YASB's Wallpapers widget runs this after every wallpaper change (config\yasb\config.yaml's
+    run_after, with -Image {image}); so do install's theme and palette steps, a profile switch
+    (tools\palette-profiles.ps1, -Reapply), and -- for komorebi's colours alone -- every komorebi
+    start (scripts\Start-Komorebi.ps1) and SUPER+Shift+R (tools\reload-stack.ps1). The name
+    predates Palette Profiles; every caller, and every bar still holding its old two
+    run_after lines, keeps working because it didn't change.
 
-    Windows-accent-setting logic is ported from winarchy's own
-    Set-WinarchyWindowsAppearance / Send-WinarchyColorSetChange
-    (module/Winarchy/Private/ThemeEngine.ps1) -- real, already-proven-on-this-
-    machine registry mechanics, reimplemented standalone with zero dependency on
-    winarchy's module, per this repo's build methodology (port specific relied-on
-    behavior deliberately, don't reinvent or guess).
+    What happens (the how: tools\lib\palette.ps1; the why: claude/palette-profiles-plan.md):
+      1. One run at a time (a wallpaper change and a profile switch can meet).
+      2. The chosen profile (Default when nothing's chosen, or when the chosen one is gone).
+      3. The palette: wallust with the profile's source, -s and one dump template -- or, for a
+         run that doesn't change the wallpaper (-Reapply), the last good palette when it came
+         from the same source and wallpaper. wallust FAILS -> nothing is touched: the last
+         good palette and everything on screen stay, palette-status.json says why (doctor
+         shows it), 710.ahk gets a toast, exit 1.
+      4. Every colour resolved (pure -- a broken profile stops here, nothing written).
+      5. Each target applied in order; one failing doesn't stop the rest (exit 2).
+      6. Wallpaper changes only: the lock-screen sync task is fired.
+      7. Only when every target applied: the theme stamp (theme-inputs.sha256) that
+         `710sRice doctor` compares with the repo and the chosen profile.
 
-    Border color shading (monocle = lighter, stack = darker) also mirrors
-    winarchy's own Get-WinarchyShadedHex lerp-toward-white/black approach.
+    Exit codes: 0 themed; 1 nothing changed (no palette, a broken profile, another run held
+    the lock for 90 s; -BordersOnly: komorebi isn't running); 2 themed, but a target failed.
+
+.PARAMETER Image
+    The wallpaper YASB just set. Left out: the one that's up now (the registry).
+.PARAMETER Reapply
+    No wallpaper change -- a profile was chosen or saved. Reuses the last good palette when the
+    profile's source and the wallpaper are the ones it came from; the lock screen is left alone.
+.PARAMETER ProfileId
+    Theme with this profile instead of the chosen one, and make it the chosen one if that
+    works (a profile switch: the old choice stays when wallust can't make the new palette).
+.PARAMETER BordersOnly
+    Re-push komorebi's borders and stack tabs only (runtime-only state: komorebi starts on its
+    own blue borders). From the last good palette; with none yet, a full -Reapply instead.
 #>
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding = $false)]
 param(
-    # Re-push only komorebi's colors from the current palette -- the borders and, since
-    # 2026-09-26, the stack tabs -- then stop: no Windows accent, no Terminal merge, no
-    # lock-screen fire, no snapshots. For callers that just (re)started or reloaded komorebi
-    # and need them back, because both are runtime-only state: every komorebi start comes up
-    # on its own defaults (blue borders, grey tabs), and nothing in base.json can carry
-    # wallust's live palette. The name predates the tabs; kept so the callers don't change.
-    # Callers: tools\reload-stack.ps1 (SUPER+Shift+R) and scripts\Start-Komorebi.ps1 (boot).
-    # Exits 1 if komorebi isn't running, since then there was nothing to apply.
+    [string]$Image,
+    [switch]$Reapply,
+    [string]$ProfileId,
     [switch]$BordersOnly
 )
+$ErrorActionPreference = 'Stop'
+$Root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $Root 'tools\lib\palette.ps1')
 
-$ErrorActionPreference = "Stop"
-
-$RepoRoot   = Split-Path -Parent $PSScriptRoot
-$ColorsJson = Join-Path $RepoRoot "config\wallust\generated\colors.json"
-
-if (-not (Test-Path $ColorsJson)) {
-    throw "Expected wallust to have generated config\wallust\generated\colors.json before running this hook."
-}
-$colors = Get-Content $ColorsJson -Raw | ConvertFrom-Json
-
-function ConvertTo-Rgb {
-    param([Parameter(Mandatory)][string]$Hex)
-    $h = $Hex.TrimStart('#')
-    [pscustomobject]@{
-        R = [Convert]::ToInt32($h.Substring(0, 2), 16)
-        G = [Convert]::ToInt32($h.Substring(2, 2), 16)
-        B = [Convert]::ToInt32($h.Substring(4, 2), 16)
-    }
+function Write-Line {
+    param([string]$Status, [string]$Text)
+    $color = switch ($Status) { 'OK' { 'Green' } '!!' { 'Yellow' } 'XX' { 'Red' } default { 'Gray' } }
+    Write-Host "  [$Status] " -ForegroundColor $color -NoNewline
+    Write-Host (ConvertTo-PaletteSafeText $Text)
 }
 
-function Send-KomorebiMessage {
-    <# Talks to komorebi the way komorebic does, for the runtime settings komorebic has no
-       command for -- the stack-tab colours (komorebi 0.1.41 takes them as
-       SocketMessage::Stackbar*Colour and repaints the tabs straight after, but komorebic
-       only exposes stackbar-mode). Connects to komorebi's socket,
-       %LOCALAPPDATA%\komorebi\komorebi.sock, and writes one JSON message per line:
-       {"type":"<name>","content":<args>} -- komorebi-client's send_batch, done from .NET
-       (UnixDomainSocketEndPoint -- PS7, like every caller of this script). A normal process
-       reaches an elevated komorebi here exactly as komorebic does. #>
-    param([Parameter(Mandatory)][object[]]$Messages)
-    $path = Join-Path $env:LOCALAPPDATA 'komorebi\komorebi.sock'
-    $socket = [System.Net.Sockets.Socket]::new([System.Net.Sockets.AddressFamily]::Unix,
-        [System.Net.Sockets.SocketType]::Stream, [System.Net.Sockets.ProtocolType]::Unspecified)
-    try {
-        $socket.SendTimeout = 1000
-        $socket.Connect([System.Net.Sockets.UnixDomainSocketEndPoint]::new($path))
-        $text = -join @(foreach ($m in $Messages) { ($m | ConvertTo-Json -Compress) + "`n" })
-        $null = $socket.Send([System.Text.Encoding]::UTF8.GetBytes($text))
-        $socket.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
-    } finally { $socket.Dispose() }
-}
-
-function Save-OriginalStateOnce {
-    <# Self-contained one-time snapshot -- this script stays dependency-free by design (see
-       its own header above), so this duplicates tools\lib\activation.ps1's Save-
-       OriginalState rather than dot-sourcing it. Same path convention
-       (%LOCALAPPDATA%\710.DesktopRice\original-state\<label>.json), so uninstall.ps1's
-       Restore-* functions (which DO dot-source that file) can read what this writes. Keep
-       both copies in sync if this shape ever changes. #>
-    param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)]$Data)
-    $dir = Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state'
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $file = Join-Path $dir "$Label.json"
-    if (Test-Path $file) { return }
-    $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $file -Encoding UTF8
-}
-
-function Get-RegValueSnapshotLocal {
-    <# Same shape as activation.ps1's Get-RegValueSnapshot (single named value, never a
-       whole key -- see that function's own comment for why) -- duplicated here for the
-       same dependency-free reason as Save-OriginalStateOnce above. #>
-    param([string]$Path, [string]$Name)
-    $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
-    if (-not $item) { return [ordered]@{ Existed = $false; Value = $null; Type = $null } }
-    $kind = 'String'
-    try { $kind = (Get-Item -Path $Path).GetValueKind($Name).ToString() } catch { }
-    [ordered]@{ Existed = $true; Value = $item.$Name; Type = $kind }
-}
-
-function Get-ShadedHex {
-    <# Lerp '#rrggbb' toward white (Factor > 0) or black (Factor < 0).
-       Ported from winarchy's Get-WinarchyShadedHex. #>
-    param([Parameter(Mandatory)][string]$Hex, [Parameter(Mandatory)][double]$Factor)
-    $h = $Hex.TrimStart('#')
-    $target = if ($Factor -ge 0) { 255 } else { 0 }
-    $f = [Math]::Abs($Factor)
-    $rgb = foreach ($i in @(0, 2, 4)) {
-        $c = [Convert]::ToInt32($h.Substring($i, 2), 16)
-        [int][Math]::Round($c + ($target - $c) * $f)
-    }
-    '#{0:x2}{1:x2}{2:x2}' -f $rgb[0], $rgb[1], $rgb[2]
-}
-
-# --- komorebi border colors -------------------------------------------------
-# single (focused)  = the shared accent, direct
-# monocle           = accent, lightened
-# stack             = accent, darkened
-# unfocused         = the same dark slot YASB uses for background -- recedes
-#                      rather than drawing attention, matching winarchy's own
-#                      "unfocused = darker_background" default (not accent-based)
-$accent = $colors.color3
-$bg     = $colors.color1
-
-$borders = @{
-    single    = $accent
-    monocle   = Get-ShadedHex -Hex $accent -Factor 0.25
-    stack     = Get-ShadedHex -Hex $accent -Factor -0.2
-    unfocused = $bg
-}
-
-# komorebic talks to a running komorebi process over a local socket -- if
-# komorebi isn't running (e.g. testing YASB/wallust standalone, per this
-# project's usual testing pattern), that connection is refused. Not an error
-# worth alarming over with a raw Rust panic -- check once, skip quietly if so.
-$komorebiRunning = $null -ne (Get-Process -Name "komorebi" -ErrorAction SilentlyContinue)
-if ($komorebiRunning) {
-    foreach ($kind in $borders.Keys) {
-        $rgb = ConvertTo-Rgb -Hex $borders[$kind]
-        & komorebic.exe border-colour --window-kind $kind $rgb.R $rgb.G $rgb.B 2>$null
-    }
-
-    # --- komorebi stack tabs (base.json turns them on: mode OnStack) ------------------------
-    # Dressed like the bar (yasb-colors.css.tpl's slots): background = its --background
-    # (color1, = the unfocused border), the focused tab's text = its --text (color6, the
-    # bright one), the other tabs' text = its --subtext (color5). NOT the accent for the
-    # focused text: color3 is a mid-tone the bar puts BEHIND highlighted items, and as text
-    # on color1 it all but vanished (first Dell test, 2026-09-26). komorebi gives every tab
-    # one background, so the focused tab can only stand out by its text.
-    # A slot missing from colors.json (one written by colors.json.tpl before color5/color6
-    # were added -- wallust only rewrites it on a wallpaper change) skips just that colour.
-    # Best-effort throughout -- a tab colour that doesn't land is cosmetic and must not stop
-    # the accent/Terminal/lock-screen steps below.
-    try {
-        $tabs = [ordered]@{
-            StackbarBackgroundColour    = 'color1'
-            StackbarFocusedTextColour   = 'color6'
-            StackbarUnfocusedTextColour = 'color5'
-        }
-        $missing = @($tabs.Values | Where-Object { -not $colors.$_ })
-        if ($missing.Count) {
-            Write-Host "colors.json has no $($missing -join '/') yet -- change the wallpaper once to regenerate it; those stack-tab colors are skipped until then."
-        }
-        $messages = @(foreach ($name in $tabs.Keys) {
-            $hex = $colors.($tabs[$name])
-            if (-not $hex) { continue }
-            $rgb = ConvertTo-Rgb -Hex $hex
-            [ordered]@{ type = $name; content = @($rgb.R, $rgb.G, $rgb.B) }
-        })
-        if ($messages.Count) { Send-KomorebiMessage -Messages $messages }
-    } catch {
-        Write-Host "couldn't set komorebi's stack-tab colors: $($_.Exception.Message)"
-    }
-} else {
-    Write-Host "komorebi isn't running -- skipped border colors."
-}
-
-# -BordersOnly: borders were the whole job. Everything below (accent, Terminal, lock-screen
-# task) is wallpaper-change work that a plain komorebi (re)start has no reason to redo.
-if ($BordersOnly) {
-    if ($komorebiRunning) { Write-Host 'wallust borders and stack tabs re-applied to komorebi.'; exit 0 }
+$lock = Enter-PaletteLock -TimeoutSec 90
+if (-not $lock) {
+    Write-Line 'XX' 'Another theme run is still going after 90 s -- nothing changed.'
+    Write-PaletteLog 'gave up: another theme run held the lock for 90 s'
     exit 1
 }
-
-# --- Windows accent color ----------------------------------------------------
-# Ported from winarchy's Set-WinarchyWindowsAppearance / Send-WinarchyColorSetChange.
-# Always dark mode -- no light-mode path exists anywhere in this project.
-$personalize = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-$dwm = 'HKCU:\SOFTWARE\Microsoft\Windows\DWM'
-# One-time snapshot of whatever these values were before this script ever ran -- only the
-# very first run (across the life of the install, not just this process) actually writes
-# the file; every later wallpaper change finds it already there and skips. Restored by
-# uninstall.ps1's Restore-WindowsAccent (tools\lib\activation.ps1).
-Save-OriginalStateOnce -Label 'windows-accent' -Data @{
-    Personalize_AppsUseLightTheme    = Get-RegValueSnapshotLocal -Path $personalize -Name 'AppsUseLightTheme'
-    Personalize_SystemUsesLightTheme = Get-RegValueSnapshotLocal -Path $personalize -Name 'SystemUsesLightTheme'
-    Personalize_ColorPrevalence      = Get-RegValueSnapshotLocal -Path $personalize -Name 'ColorPrevalence'
-    Dwm_ColorPrevalence              = Get-RegValueSnapshotLocal -Path $dwm -Name 'ColorPrevalence'
-    Dwm_AccentColor                  = Get-RegValueSnapshotLocal -Path $dwm -Name 'AccentColor'
-    Dwm_ColorizationColor            = Get-RegValueSnapshotLocal -Path $dwm -Name 'ColorizationColor'
-}
-Set-ItemProperty -Path $personalize -Name 'AppsUseLightTheme' -Value 0 -Type DWord
-Set-ItemProperty -Path $personalize -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
-Set-ItemProperty -Path $personalize -Name 'ColorPrevalence' -Value 1 -Type DWord
-Set-ItemProperty -Path $dwm -Name 'ColorPrevalence' -Value 1 -Type DWord
-
-$accentApplied = $false
 try {
-    $accentRgb = ConvertTo-Rgb -Hex $accent
-    $abgr = (0xFF -shl 24) -bor ($accentRgb.B -shl 16) -bor ($accentRgb.G -shl 8) -bor $accentRgb.R
-    Set-ItemProperty -Path $dwm -Name 'AccentColor' -Value $abgr -Type DWord
-    Set-ItemProperty -Path $dwm -Name 'ColorizationColor' -Value $abgr -Type DWord
-    $accentApplied = $true
-}
-catch {
-    Write-Warning "Windows accent not applied: $($_.Exception.Message)"
-}
+    $mode = if ($BordersOnly) { 'borders' } elseif ($Reapply -or $ProfileId) { 'reapply' } else { 'full' }
 
-if (-not ('Wallust.Native.SettingChange' -as [type])) {
-    Add-Type -Namespace Wallust.Native -Name SettingChange -MemberDefinition @'
-[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
-'@
-}
-$result = [UIntPtr]::Zero
-# HWND_BROADCAST, WM_SETTINGCHANGE, SMTO_ABORTIFHUNG -- makes it apply live, no logoff/restart
-[Wallust.Native.SettingChange]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'ImmersiveColorSet', 2, 1000, [ref]$result) | Out-Null
-
-# Only name the legs that actually ran -- this used to claim komorebi borders even right
-# after printing "komorebi isn't running -- skipped border colors."
-$applied = @()
-if ($komorebiRunning) { $applied += 'komorebi borders' }
-if ($accentApplied)   { $applied += "Windows accent ($accent)" }
-if ($applied.Count) { Write-Host ('wallust outputs applied: ' + ($applied -join ' + ')) }
-else { Write-Host 'wallust outputs: neither komorebi borders nor Windows accent applied (see above).' }
-
-# --- Terminal readability: WCAG contrast + hue-preserving lightening --------
-# wallust fills Terminal's 16 ANSI slots straight from the wallpaper's own colors, so a
-# dark wallpaper can hand PowerShell near-black text on a near-black background -- e.g.
-# brightBlack #1C1C1C (PSReadLine's "DarkGray": -Parameters, operators) and green #191034
-# (PSReadLine's "Green": $variables) on #010102. Found 2026-09-23 from the user's
-# screenshot. Fix, agreed with the user: only for Terminal's copy of the scheme, raise any
-# slot below a readable contrast against the background by lifting its HSL lightness --
-# hue and saturation kept, so a too-dark purple becomes a readable purple, not gray.
-# Background, black and foreground are never touched, and nothing else (YASB, borders,
-# accent) sees this. Revert = revert the commit that added this block.
-$TerminalMinContrast       = 4.5   # WCAG AA for normal text
-$TerminalMinContrastDimmed = 3.0   # brightBlack + cursor: meant to stay dimmer than real text
-
-function Get-RelLuminance([string]$Hex) {
-    $c = ConvertTo-Rgb -Hex $Hex
-    $lin = foreach ($v in $c.R, $c.G, $c.B) {
-        $x = $v / 255.0
-        if ($x -le 0.03928) { $x / 12.92 } else { [Math]::Pow(($x + 0.055) / 1.055, 2.4) }
+    # --- 2. the profile ---------------------------------------------------------------------
+    if ($ProfileId) {
+        $id = ConvertTo-PaletteProfileId $ProfileId
+        if (-not $id) { Write-Line 'XX' "No palette profile '$ProfileId' (default, 0-9, or a profile's name)."; exit 1 }
+        try { $active = [pscustomobject]@{ Id = $id; Profile = (Read-PaletteProfile -Id $id); Warning = $null } }
+        catch { Write-Line 'XX' "$($_.Exception.Message) -- nothing changed."; exit 1 }
+    } else {
+        try { $active = Resolve-ActivePaletteProfile }
+        catch { Write-Line 'XX' "The Default profile can't be read: $($_.Exception.Message)"; Write-PaletteLog "Default unreadable: $($_.Exception.Message)"; exit 1 }
     }
-    0.2126 * $lin[0] + 0.7152 * $lin[1] + 0.0722 * $lin[2]
-}
+    $profileLabel = Get-PaletteProfileLabel -Id $active.Id -Name $active.Profile.name
+    $source = $active.Profile.source
+    $key = Get-PaletteSourceKey -Source $source
+    Write-PaletteLog -Start "--- $mode run: $profileLabel ($(Get-PaletteSourceSummary -Source $source))"
+    if ($active.Warning) { Write-Line '!!' $active.Warning; Write-PaletteLog $active.Warning }
 
-function Get-Contrast([string]$A, [string]$B) {
-    $la = Get-RelLuminance $A; $lb = Get-RelLuminance $B
-    ([Math]::Max($la, $lb) + 0.05) / ([Math]::Min($la, $lb) + 0.05)
-}
-
-function Get-ReadableHex([string]$Hex, [string]$Background, [double]$Min) {
-    if ((Get-Contrast $Hex $Background) -ge $Min) { return $Hex }
-    $c = ConvertTo-Rgb -Hex $Hex
-    $r = $c.R / 255.0; $g = $c.G / 255.0; $b = $c.B / 255.0
-    # NB: not $max/$min -- PowerShell names are case-insensitive, and $min would silently
-    # overwrite the $Min threshold parameter (caught in the sandbox, 2026-09-23).
-    $chHi = [Math]::Max($r, [Math]::Max($g, $b)); $chLo = [Math]::Min($r, [Math]::Min($g, $b))
-    $l = ($chHi + $chLo) / 2; $h = 0.0; $s = 0.0
-    if ($chHi -ne $chLo) {
-        $d = $chHi - $chLo
-        $s = if ($l -gt 0.5) { $d / (2 - $chHi - $chLo) } else { $d / ($chHi + $chLo) }
-        $h = if ($chHi -eq $r) { (($g - $b) / $d) + $(if ($g -lt $b) { 6 } else { 0 }) }
-             elseif ($chHi -eq $g) { (($b - $r) / $d) + 2 }
-             else { (($r - $g) / $d) + 4 }
-        $h /= 6
-    }
-    $toRgb = {
-        param($p, $q, $t)
-        if ($t -lt 0) { $t += 1 }; if ($t -gt 1) { $t -= 1 }
-        if ($t -lt 1/6) { return $p + ($q - $p) * 6 * $t }
-        if ($t -lt 1/2) { return $q }
-        if ($t -lt 2/3) { return $p + ($q - $p) * (2/3 - $t) * 6 }
-        $p
-    }
-    for ($L = $l; $L -le 1.0001; $L += 0.01) {
-        $LL = [Math]::Min($L, 1.0)
-        if ($s -eq 0) { $nr = $ng = $nb = $LL }
-        else {
-            $q = if ($LL -lt 0.5) { $LL * (1 + $s) } else { $LL + $s - $LL * $s }
-            $p = 2 * $LL - $q
-            $nr = & $toRgb $p $q ($h + 1/3); $ng = & $toRgb $p $q $h; $nb = & $toRgb $p $q ($h - 1/3)
-        }
-        $cand = '#{0:X2}{1:X2}{2:X2}' -f [int][Math]::Round($nr * 255), [int][Math]::Round($ng * 255), [int][Math]::Round($nb * 255)
-        if ((Get-Contrast $cand $Background) -ge $Min) { return $cand }
-    }
-    '#FFFFFF'
-}
-
-# --- Windows Terminal: color scheme selection + tab-row theme ---------------
-# wallust already writes/updates a "wallust" entry in schemes[] on every run --
-# that's built-in wallust behavior (confirmed against its own docs), no
-# [templates] entry needed for it. Windows Terminal just requires it to be
-# selected manually the first time, so this section does the two things
-# wallust itself won't:
-#   1. Point profiles.defaults.colorScheme at "wallust", globally (every
-#      profile -- PowerShell, cmd, Azure Cloud Shell, VS dev prompts, all of
-#      it) -- same scope winarchy's own Merge-WinarchyTerminalScheme uses for
-#      its "Winarchy" scheme.
-#   2. Add/replace a "wallust" themes[] entry (tab row background + dark
-#      window chrome) and select it as the active theme, so the tab row
-#      tracks the wallpaper too. colorScheme (pane content) and theme (tab
-#      row/window chrome) are two separate Windows Terminal systems -- wallust
-#      only ever writes the first one.
-# Strip-by-name-then-append pattern ported from winarchy's own
-# Merge-WinarchyTerminalScheme (module/Winarchy/Private/ThemeEngine.ps1).
-$wtSettingsCandidates = @(
-    "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-    "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-)
-$wtSettingsPath = $wtSettingsCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-if ($wtSettingsPath) {
-    $wt = Get-Content $wtSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-
-    # One-time snapshot of whatever these fields were before this script ever ran -- same
-    # reasoning as the 'windows-accent' snapshot above, captured from the raw parsed
-    # settings before any of the "ensure structure exists" defensive lines below touch
-    # anything. Restored by uninstall.ps1's Restore-WindowsTerminalSettings (tools\lib\
-    # activation.ps1), alongside install.ps1 Section 8's separate 'terminal-defaultprofile'
-    # snapshot -- see that function's own comment for why this is two labels, not one.
-    $colorSchemeExisted = $wt['profiles'] -is [hashtable] -and $wt['profiles']['defaults'] -is [hashtable] -and $wt['profiles']['defaults'].ContainsKey('colorScheme')
-    $existingWallustTheme = if ($wt['themes'] -is [array]) { @($wt['themes']) | Where-Object { $_['name'] -eq 'wallust' } | Select-Object -First 1 } else { $null }
-    Save-OriginalStateOnce -Label 'terminal-colorscheme' -Data @{
-        ColorSchemeExisted       = $colorSchemeExisted
-        ColorScheme              = if ($colorSchemeExisted) { $wt['profiles']['defaults']['colorScheme'] } else { $null }
-        ThemeKeyExisted          = $wt.ContainsKey('theme')
-        Theme                    = $wt['theme']
-        WallustThemeEntryExisted = $null -ne $existingWallustTheme
-    }
-
-    if (-not $wt.ContainsKey('profiles') -or $wt['profiles'] -isnot [hashtable]) { $wt['profiles'] = @{} }
-    if (-not $wt['profiles'].ContainsKey('defaults') -or $wt['profiles']['defaults'] -isnot [hashtable]) {
-        $wt['profiles']['defaults'] = @{}
-    }
-    $wt['profiles']['defaults']['colorScheme'] = 'wallust'
-
-    # Readability pass over wallust's own scheme entry (see the helper block above).
-    $raised = @()
-    $scheme = @($wt['schemes']) | Where-Object { $_ -is [hashtable] -and $_['name'] -eq 'wallust' } | Select-Object -First 1
-    if ($scheme -and $scheme['background']) {
-        $slots = 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white',
-                 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightPurple', 'brightCyan', 'brightWhite',
-                 'brightBlack', 'cursorColor'
-        foreach ($slot in $slots) {
-            if (-not $scheme[$slot]) { continue }
-            $need = if ($slot -in 'brightBlack', 'cursorColor') { $TerminalMinContrastDimmed } else { $TerminalMinContrast }
-            $fixed = Get-ReadableHex -Hex $scheme[$slot] -Background $scheme['background'] -Min $need
-            if ($fixed -ne $scheme[$slot]) { $raised += "$slot $($scheme[$slot])->$fixed"; $scheme[$slot] = $fixed }
+    # --- 3. the palette ---------------------------------------------------------------------
+    $last = Read-PaletteLastGood
+    $palette = $null
+    if ($mode -eq 'borders' -and $last) {
+        $palette = $last.Palette
+    } else {
+        if ($mode -eq 'borders') { $mode = 'reapply'; Write-PaletteLog 'no palette made yet -- a full re-theme instead of borders only' }
+        if (-not $Image) { $Image = Get-PaletteCurrentWallpaper }
+        $usesImage = Test-PaletteSourceUsesImage -Source $source
+        $reuse = $mode -eq 'reapply' -and $last -and $last.SourceKey -eq $key -and $source.kind -ne 'random' -and
+                 (-not $usesImage -or ($last.Image -eq "$Image" -and $last.ImageStamp -eq (Get-PaletteImageStamp $Image)))
+        # A random theme is new on every wallpaper change, but a profile save / switch keeps the one it has.
+        if ($mode -eq 'reapply' -and $last -and $source.kind -eq 'random' -and $last.SourceKey -eq $key) { $reuse = $true }
+        if ($reuse) {
+            $palette = $last.Palette
+            Write-PaletteLog 'palette: the last one (same source and wallpaper)'
+        } else {
+            # The dump config (config\wallust\wallust.toml) is generated per clone; a stale one --
+            # a pull brought a new template -- is rewritten first (quietly; exit 0 = current).
+            & (Join-Path $Root 'tools\write-wallust-config.ps1') 6>$null 3>$null | Out-Null
+            $imageName = if ($Image) { Split-Path -Leaf $Image } else { '' }
+            try {
+                $palette = Get-PaletteFromSource -Source $source -Image $Image -ConfigDir (Join-Path $Root 'config\wallust') `
+                    -DumpPath (Join-Path (Get-PaletteGeneratedDir) 'palette.next.json')
+                Save-PaletteLastGood -Palette $palette -SourceKey $key -Image $Image
+                Write-PaletteLog "palette made$(if ($imageName) { " from $imageName" })"
+            } catch {
+                $why = ConvertTo-PaletteSafeText $_.Exception.Message
+                $what = if ($usesImage -and $imageName) { "from $imageName" } else { "($(Get-PaletteSourceSummary -Source $source))" }
+                Write-Line 'XX' "Couldn't make a palette $what -- $why"
+                Write-Line '..' "Nothing changed: the theme on screen is the last good one."
+                Write-PaletteLog "FAILED: $why -- kept the last good palette, nothing changed"
+                Set-PaletteStatus -Ok $false -Reason $why -Image $Image -ProfileId $active.Id
+                $null = Send-PaletteAhkMessage -Name '710sRice.PaletteFailed'
+                exit 1
+            }
         }
     }
 
-    $wtTheme = @{
-        name   = 'wallust'
-        tabRow = @{ background = $bg; unfocusedBackground = $bg }
-        window = @{ applicationTheme = 'dark' }
+    # --- 4. every colour --------------------------------------------------------------------
+    try { $theme = Resolve-PaletteTheme -Profile $active.Profile -Palette $palette }
+    catch {
+        $why = ConvertTo-PaletteSafeText "$profileLabel`: $($_.Exception.Message)"
+        Write-Line 'XX' "$why -- nothing changed."
+        Write-PaletteLog "FAILED to resolve: $why"
+        if ($mode -ne 'borders') { Set-PaletteStatus -Ok $false -Reason $why -Image $Image -ProfileId $active.Id }
+        exit 1
     }
-    if (-not $wt.ContainsKey('themes') -or $wt['themes'] -isnot [array]) { $wt['themes'] = @() }
-    $wt['themes'] = @($wt['themes'] | Where-Object { $_['name'] -ne 'wallust' }) + @($wtTheme)
-    $wt['theme'] = 'wallust'
 
-    $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8
-    Write-Host "Windows Terminal: colorScheme + theme set to 'wallust'."
-    if ($raised.Count) { Write-Host "Windows Terminal: raised contrast on $($raised.Count) color(s): $($raised -join ', ')" }
-} else {
-    Write-Host "Windows Terminal settings.json not found -- skipped."
-}
+    # --- 5. the targets -----------------------------------------------------------------------
+    if ($mode -eq 'borders') {
+        $r = @(Invoke-PaletteTargets -Theme $theme -Mode 'borders' -Only 'komorebi')
+        $r | ForEach-Object { Write-PaletteLog "  $($_.Status): $($_.Message)" }
+        if ($r.Count -and $r[0].Status -eq 'ok') { Write-Host 'Borders and stack tabs re-applied to komorebi.'; exit 0 }
+        if ($r.Count -and $r[0].Status -eq 'off') { Write-Host 'komorebi is off in this palette profile -- left alone.'; exit 0 }
+        Write-Host "$(if ($r.Count) { $r[0].Message } else { 'no komorebi target' })"
+        exit 1
+    }
 
-# --- Fire the lock-screen-sync task -------------------------------------------------
-# tools\lib\activation.ps1's Register-LockScreenSyncTask docstring promises this script
-# fires the task "every time the wallpaper (and so the wallust palette) changes" -- it
-# never actually did. Confirmed by testing: border colors/accent/Terminal colorscheme all
-# updated correctly on a real wallpaper change, but the lock screen didn't budge. The one
-# time it ever fired was install.ps1 -Activate's own one-time kickstart call (Section 11).
-# Same Test-Task/schtasks pattern as that call, just inlined -- this script stays
-# dependency-free by design (same reasoning as Save-OriginalStateOnce above; doesn't
-# dot-source activation.ps1), so the task's full path is hardcoded rather than resolved
-# via Get-TaskFullName. Best-effort: if the task was never registered (install.ps1 never
-# run elevated, or without PS7 present), the /Query probe fails and this is a silent
-# no-op, same as everywhere else in this repo that checks Test-Task first. Firing it from
-# here doesn't need elevation itself -- that's the whole point of it being registered as
-# an on-demand *elevated* task (New-OnDemandElevatedTaskXml): Task Scheduler elevates the
-# task's own run, regardless of whether this script (running as YASB's widget click) is.
-$lockScreenTask = '\710.DesktopRice\lock-screen-sync'
-# $null = ... 2>&1, not *> $null -- the latter doesn't fully suppress schtasks.exe's own
-# "ERROR: ..." text when the task genuinely doesn't exist yet (confirmed live: leaked to
-# the console during a fresh install's first-run theme, which runs before -Activate ever
-# registers this task). Same fix applied to activation.ps1's Test-Task, which has the
-# identical pattern.
-$null = & schtasks.exe /Query /TN $lockScreenTask 2>&1
-if ($LASTEXITCODE -eq 0) {
-    $null = & schtasks.exe /Run /TN $lockScreenTask 2>&1
-}
+    $where = if ($Image -and (Test-PaletteSourceUsesImage -Source $source)) { " from $(Split-Path -Leaf $Image)" } else { '' }
+    Write-Host "Palette: $profileLabel -- $(Get-PaletteSourceSummary -Source $source)$where"
+    $results = @(Invoke-PaletteTargets -Theme $theme -Mode $mode)
+    foreach ($r in $results) {
+        Write-PaletteLog "  $($r.Status): $($r.Message)"
+        switch ($r.Status) {
+            'ok'      { Write-Line 'OK' $r.Message }
+            'skipped' { Write-Line '..' $r.Message }
+            'off'     { Write-Line '..' "$($r.Label): off in this profile" }
+            default   { Write-Line 'XX' $r.Message }
+        }
+    }
+    $failed = @($results | Where-Object Status -eq 'failed')
 
-# --- Stamp: which templates this theme was made from ----------------------------------
-# `710sRice doctor` (Test-DoctorThemeInputs) compares this with the files as they are now: a
-# template or this script changed since -- a `git pull` / `710sRice update` brought a new one,
-# say -- means the theme on screen is older than the repo, and `710sRice install -Only
-# palette` (repair runs it) makes it again from the current wallpaper. One line per input:
-# every config\wallust\templates\*.tpl, then this script -- "<sha256>  <repo-relative path>",
-# the hash taken with CRLF turned into LF (the file as the repo stores it: a Windows clone's
-# line endings mustn't read as a change). Written LAST, only when every step above got this
-# far -- a run that stopped part-way leaves the old stamp, and doctor keeps saying so.
-# Doctor's Get-DoctorLfSha256 / Get-DoctorThemeInputs must hash exactly the same way (this
-# script stays dependency-free, so this is a copy, not a call).
-function Get-LfSha256Local {
-    param([Parameter(Mandatory)][string]$Path)
-    $text = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Path)) -replace "`r`n", "`n"
-    [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($text))).ToLowerInvariant()
+    # --- 6. the lock screen (a wallpaper change only) -------------------------------------------
+    # Fires the elevated on-demand task (Register-LockScreenSyncTask) -- Task Scheduler elevates
+    # it, so this needs no admin. A machine that never registered it: a quiet no-op.
+    # `$null = ... 2>&1`, not `*> $null`: the latter leaks schtasks' "ERROR:" text.
+    if ($mode -eq 'full') {
+        $lockScreenTask = '\710.DesktopRice\lock-screen-sync'
+        $null = & schtasks.exe /Query /TN $lockScreenTask 2>&1
+        if ($LASTEXITCODE -eq 0) { $null = & schtasks.exe /Run /TN $lockScreenTask 2>&1 }
+    }
+
+    # --- 7. choice + stamp --------------------------------------------------------------------
+    if ($ProfileId -and $active.Id -ne (Get-ActivePaletteProfileId)) {
+        Set-ActivePaletteProfileId -Id $active.Id
+        Write-PaletteLog "chosen profile is now $profileLabel"
+    }
+    if ($failed.Count) {
+        # No stamp: doctor keeps saying the theme isn't current until a run applies everything.
+        Set-PaletteStatus -Ok $false -Stage 'targets' -Reason (($failed | ForEach-Object Message) -join '; ') -Image $Image -ProfileId $active.Id
+        exit 2
+    }
+    Write-PaletteThemeStamp -ProfileId $active.Id
+    Set-PaletteStatus -Ok $true -ProfileId $active.Id
+    exit 0
+} finally {
+    Exit-PaletteLock $lock
 }
-$stampInputs = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'config\wallust\templates') -Filter '*.tpl' -File | Sort-Object Name |
-                 ForEach-Object { "config\wallust\templates\$($_.Name)" }) + 'tools\apply-wallust-outputs.ps1'
-$stampDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
-New-Item -ItemType Directory -Path $stampDir -Force | Out-Null
-Set-Content -LiteralPath (Join-Path $stampDir 'theme-inputs.sha256') -Encoding ascii -Value @(
-    foreach ($rel in $stampInputs) { "$(Get-LfSha256Local -Path (Join-Path $RepoRoot $rel))  $rel" })

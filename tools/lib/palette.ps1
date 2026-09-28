@@ -436,6 +436,26 @@ function ConvertTo-PaletteProfile {
         if ($am -notin 'dark', 'light', 'auto') { throw "appMode '$am' isn't dark, light or auto" }
         $p.appMode = $am
     }
+    # Every colour name has to mean something, and no role may lean on itself -- checked now,
+    # against a stand-in palette, so a broken profile is caught when it's loaded (the pipeline
+    # then falls back to Default) instead of halfway through a theme run.
+    $dummy = [ordered]@{}; foreach ($k in $script:PaletteSlots) { $dummy[$k] = '#808080' }
+    $roles = [ordered]@{}
+    $visiting = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($r in $roleDefs.Keys) {
+        if ($roles.Contains($r)) { continue }
+        try {
+            $null = $visiting.Add($r)
+            $roles[$r] = Resolve-PaletteExpression -Text $roleDefs[$r] -Palette $dummy -Roles $roles -RoleDefs $roleDefs -Visiting $visiting
+            $null = $visiting.Remove($r)
+        } catch { throw "role '$r': $($_.Exception.Message)" }
+    }
+    foreach ($t in $p.overrides.Keys) {
+        foreach ($k in $p.overrides[$t].Keys) {
+            try { $null = Resolve-PaletteExpression -Text $p.overrides[$t][$k] -Palette $dummy -Roles $roles }
+            catch { throw "overrides.$t.${k}: $($_.Exception.Message)" }
+        }
+    }
     $p
 }
 
@@ -877,8 +897,8 @@ function Send-PaletteKomorebiMessage {
 }
 
 function Get-PaletteTerminalSettingsPath {
-    @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-      "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json") |
+    @((Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'),
+      (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json')) |
         Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 }
 
@@ -938,10 +958,11 @@ function Write-PaletteLog {
 function Set-PaletteStatus {
     <# The last wallpaper-change / switch outcome. Ok = $false keeps the failure's time, the
        wallpaper's file name (never its folder) and wallust's reason, for doctor. #>
-    param([bool]$Ok, [string]$Reason, [string]$Image, [string]$ProfileId)
+    param([bool]$Ok, [string]$Reason, [string]$Image, [string]$ProfileId,
+          [ValidateSet('palette', 'targets')][string]$Stage = 'palette')
     try {
         $o = [ordered]@{ ok = $Ok; time = (Get-Date -Format 's'); profile = $ProfileId }
-        if (-not $Ok) { $o.reason = $Reason; $o.image = if ($Image) { Split-Path -Leaf $Image } else { '' } }
+        if (-not $Ok) { $o.stage = $Stage; $o.reason = (ConvertTo-PaletteSafeText $Reason); $o.image = if ($Image) { Split-Path -Leaf $Image } else { '' } }
         $null = New-Item -ItemType Directory -Force -Path (Get-PaletteStateDir)
         $null = Write-PaletteFile -Path (Get-PaletteStatusPath) -Text (($o | ConvertTo-Json) + "`n")
     } catch { }
@@ -997,4 +1018,97 @@ function Enter-PaletteLock {
 function Exit-PaletteLock {
     param($Lock)
     if ($Lock) { try { $Lock.ReleaseMutex() } catch { } ; $Lock.Dispose() }
+}
+
+# ------------------------------------------------------------------------------------------
+# Applying (the pipeline, tools\apply-wallust-outputs.ps1)
+# ------------------------------------------------------------------------------------------
+function Get-PaletteCurrentWallpaper {
+    <# The wallpaper that's up now: HKCU\Control Panel\Desktop\WallPaper -- what both
+       SystemParametersInfo and YASB's IDesktopWallpaper call keep current (activation.ps1's
+       Get-CurrentWallpaper, the same read). $null when none is set. #>
+    (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue).WallPaper
+}
+
+function ConvertTo-PaletteSafeText {
+    # No path under the user's folders in anything printed or logged (activation.ps1's
+    # ConvertTo-SafeText rule: the profile folders, either slash, whole-folder matches).
+    param([AllowEmptyString()][string]$Text)
+    if (-not $Text) { return $Text }
+    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+        $d = [Environment]::GetEnvironmentVariable($v)
+        if (-not $d) { continue }
+        $d = $d.TrimEnd('\', '/')
+        foreach ($form in @($d, $d.Replace('\', '/'))) {
+            $Text = [regex]::Replace($Text, [regex]::Escape($form) + '(?=$|[\\/])', "%$v%", 'IgnoreCase')
+        }
+    }
+    $Text
+}
+
+function Invoke-PaletteTargets {
+    <# Writes / applies the targets that are on (or only -Only), in order: a file target's
+       template to its Output (only when the bytes change), then its Apply. One target failing
+       never stops the rest. -> one row per target: Id, Label, Status (ok / skipped / off /
+       failed), Message, Changed. #>
+    param([Parameter(Mandatory)]$Theme, [ValidateSet('full', 'reapply', 'borders')][string]$Mode = 'full',
+          [string[]]$Only, [object[]]$Targets = (Get-PaletteTargets))
+    $isAdmin = Test-PaletteIsAdmin
+    foreach ($t in $Targets) {
+        if ($Only -and $t.Id -notin $Only) { continue }
+        if ($t.Id -in $Theme.Off) {
+            [pscustomobject]@{ Id = $t.Id; Label = $t.Label; Status = 'off'; Message = 'off in this profile'; Changed = $false }
+            continue
+        }
+        $changed = $false
+        try {
+            if ($t.Template -and $t.Output) {
+                $path = & $t.Output
+                if ($path) { $changed = Write-PaletteFile -Path $path -Text (Get-PaletteTargetText -Theme $Theme -Target $t) }
+            }
+            $r = @{ Status = 'ok'; Message = $t.Label }
+            if ($t.Apply) {
+                $ctx = @{ Mode = $Mode; IsAdmin = $isAdmin; Changed = $changed }
+                $out = & $t.Apply $Theme.Targets[$t.Id] $Theme $ctx
+                $res = @($out | Where-Object { $_ -is [System.Collections.IDictionary] }) | Select-Object -Last 1
+                if ($res) { $r = $res }
+            } elseif (-not $changed) { $r.Message = "$($t.Label) unchanged" }
+            [pscustomobject]@{ Id = $t.Id; Label = $t.Label; Status = "$($r.Status)"; Message = (ConvertTo-PaletteSafeText "$($r.Message)"); Changed = $changed }
+        } catch {
+            [pscustomobject]@{ Id = $t.Id; Label = $t.Label; Status = 'failed'; Message = (ConvertTo-PaletteSafeText "$($t.Label): $($_.Exception.Message)"); Changed = $changed }
+        }
+    }
+}
+
+function Send-PaletteAhkMessage {
+    <# Posts a registered message ('710sRice.PaletteFailed', ...) to 710.ahk's hidden window,
+       found by its title (activation.ps1's Find-AhkWindow, the same lookup -- this library stays
+       free of activation.ps1). 710.ahk lets these through UIPI itself; before it knows a message
+       the post is simply refused. $false when 710.ahk isn't there. #>
+    param([Parameter(Mandatory)][string]$Name)
+    try {
+        if (-not ('Palette.Native.Ahk' -as [type])) {
+            Add-Type -Namespace Palette.Native -Name Ahk -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern uint RegisterWindowMessage(string lpString);
+[DllImport("user32.dll")]
+public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+'@
+        }
+        $script = Join-Path $script:PaletteLibRoot 'config\ahk\710.ahk'
+        $hwnd = [IntPtr]::Zero
+        while ($true) {
+            # [NullString]::Value, not $null: $null reaches a .NET string as "" (activation.ps1's note).
+            $hwnd = [Palette.Native.Ahk]::FindWindowEx([IntPtr]::Zero, $hwnd, 'AutoHotkey', [NullString]::Value)
+            if ($hwnd -eq [IntPtr]::Zero) { return $false }
+            $sb = [System.Text.StringBuilder]::new(1024)
+            [void][Palette.Native.Ahk]::GetWindowText($hwnd, $sb, $sb.Capacity)
+            if ($sb.ToString().IndexOf($script, [StringComparison]::OrdinalIgnoreCase) -ge 0) { break }
+        }
+        [Palette.Native.Ahk]::PostMessage($hwnd, [Palette.Native.Ahk]::RegisterWindowMessage($Name), [IntPtr]::Zero, [IntPtr]::Zero)
+    } catch { $false }
 }

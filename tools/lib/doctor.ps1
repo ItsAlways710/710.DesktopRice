@@ -30,6 +30,10 @@
   claude/cli-plan.md, Stage 3, has the full check list, what each severity means, and why.
 #>
 
+# The palette library: the theme checks read the chosen profile and its targets the way the
+# wallpaper pipeline does (one definition of "current theme").
+. (Join-Path $PSScriptRoot 'palette.ps1')
+
 # --- Results ------------------------------------------------------------------------------------
 function New-DoctorResult {
     param(
@@ -865,73 +869,102 @@ function Test-DoctorWallustToml {
         -Fix 'deal with what the line above says, then 710sRice install -Only wallust' -NeedsYou
 }
 
+function Get-DoctorShownPath {
+    # A file as the report names it: repo-relative inside the clone, else ConvertTo-SafePath.
+    param([string]$Path)
+    if ($Path.StartsWith($Root, [StringComparison]::OrdinalIgnoreCase)) { return $Path.Substring($Root.Length).TrimStart('\', '/') }
+    ConvertTo-SafePath $Path
+}
+
 function Test-DoctorThemeFiles {
-    # What wallust writes from the current wallpaper (config\wallust\wallust.toml's
-    # [templates]): the palette apply-wallust-outputs.ps1 reads (color1/3/5/6 -- borders,
-    # stack tabs), the bar's colours and starship's. Rebuilt from the current wallpaper by the
-    # palette step, which never changes the wallpaper itself.
-    $colors = Join-Path $Root 'config\wallust\generated\colors.json'
-    $problems = @()
-    if (-not (Test-Path -LiteralPath $colors)) { $problems += 'colors.json is missing' }
-    else {
-        $c = $null
-        try { $c = Get-Content -LiteralPath $colors -Raw | ConvertFrom-Json -AsHashtable } catch { $problems += "colors.json isn't valid JSON" }
-        if ($c) {
-            $gone = @('color1', 'color3', 'color5', 'color6' | Where-Object { "$($c[$_])" -notmatch '^#[0-9A-Fa-f]{6}$' })
-            if ($gone.Count) { $problems += "colors.json has no $($gone -join '/')" }
-        }
+    # What the wallpaper pipeline (tools\apply-wallust-outputs.ps1) leaves behind: the palette it
+    # made last (config\wallust\generated\palette.json -- the one kept when wallust fails) and
+    # every file the chosen palette profile's file targets write (the bar's and menus' colours,
+    # colors.json, the prompt, Flow's theme). Made again from the current wallpaper by the palette
+    # step, which never changes the wallpaper itself.
+    $active = Resolve-ActivePaletteProfile
+    $problems = @(); $names = @()
+    if (-not (Read-PaletteLastGood)) { $problems += 'no palette made yet (config\wallust\generated\palette.json)' }
+    foreach ($t in Get-PaletteTargets) {
+        if (-not $t.Template -or -not $t.Output -or $t.Id -in $active.Profile.off) { continue }
+        $path = & $t.Output
+        if (-not $path) { continue }
+        $names += $t.Label
+        if (-not (Test-Path -LiteralPath $path)) { $problems += "$($t.Label): $(Get-DoctorShownPath $path) is missing" }
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $Root 'config\yasb\wallust_colors.css'))) { $problems += 'wallust_colors.css is missing' }
-    if (-not (Test-Path -LiteralPath (Join-Path $Root 'config\pwsh\starship.toml')))      { $problems += 'starship.toml is missing' }
     if ($problems.Count) {
         return New-DoctorResult -Id 'theme-files' -Status 'XX' -Text "Theme files: $($problems -join '; ')" -Fix '710sRice install -Only palette' -Step 'palette'
     }
-    New-DoctorResult -Id 'theme-files' -Status 'OK' -Text 'Theme files: colors.json (color1/3/5/6), wallust_colors.css, starship.toml'
-}
-
-function Get-DoctorThemeInputs {
-    # What the theme is made from, as apply-wallust-outputs.ps1 stamps it at the end of every full
-    # run: every config\wallust\templates\*.tpl, then that script -- repo-relative path -> the
-    # CRLF->LF sha256 (Get-DoctorLfSha256; the script carries an identical copy, it's
-    # dependency-free by design).
-    $inputs = [ordered]@{}
-    foreach ($t in @(Get-ChildItem -LiteralPath (Join-Path $Root 'config\wallust\templates') -Filter '*.tpl' -File | Sort-Object Name)) {
-        $inputs["config\wallust\templates\$($t.Name)"] = Get-DoctorLfSha256 -Path $t.FullName
-    }
-    $inputs['tools\apply-wallust-outputs.ps1'] = Get-DoctorLfSha256 -Path (Join-Path $Root 'tools\apply-wallust-outputs.ps1')
-    $inputs
+    New-DoctorResult -Id 'theme-files' -Status 'OK' -Text "Theme files: the palette, $($names -join ', ')"
 }
 
 function Test-DoctorThemeInputs {
-    # The theme on screen made from the templates in the repo now. A template or
-    # apply-wallust-outputs.ps1 changed since the last full theme run (a pull brought a new one)
-    # leaves the old look until the next wallpaper change -- the stack tabs' colours on
-    # 2026-09-26 were exactly that. No stamp at all = every install from before the stamp
-    # existed; the palette step writes it (a fresh install's theme step already has).
+    # The theme on screen made from what's in the repo now, with the profile chosen now. The
+    # pipeline stamps what it was made from after every run that applied everything
+    # (theme-inputs.sha256: tools\apply-wallust-outputs.ps1, tools\lib\palette.ps1, every file in
+    # tools\palette\targets, and "profile:<id>" = the chosen profile file's hash) -- the list comes
+    # from Get-PaletteThemeInputs (tools\lib\palette.ps1), the one the pipeline writes with. A pull
+    # that brings a new target or template, a profile changed by hand, a choice made behind the
+    # pipeline's back, a run that stopped part-way: each leaves the old look until the next
+    # wallpaper change. No stamp at all = an install from before the stamp.
     $stamp = Join-Path (Get-DoctorLogDir) 'theme-inputs.sha256'
     $fix = @{ Fix = '710sRice install -Only palette'; Step = 'palette' }
-    $made = @{}
+    $made = [ordered]@{}
     if (Test-Path -LiteralPath $stamp) {
         foreach ($line in @(Get-Content -LiteralPath $stamp)) {
             if ($line -match '^([0-9a-f]{64})\s+(\S.*)$') { $made[$Matches[2].Trim()] = $Matches[1] }
         }
     }
     if (-not $made.Count) {   # no stamp, or nothing readable in it
-        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text 'No record of which templates made the theme' @fix
+        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text 'No record of what made the theme' @fix
     }
-    $now = Get-DoctorThemeInputs
+    $active = Resolve-ActivePaletteProfile
+    $label = Get-PaletteProfileLabel -Id $active.Id -Name $active.Profile.name
+    $now = Get-PaletteThemeInputs -ProfileId $active.Id
     $what = @(
+        $madeProfile = @($made.Keys | Where-Object { $_ -like 'profile:*' }) | Select-Object -First 1
+        $nowProfile = "profile:$($active.Id)"
+        if (-not $madeProfile) { 'made before palette profiles' }
+        elseif ($madeProfile -ne $nowProfile) {
+            $was = $madeProfile.Substring(8)
+            $wasLabel = if ($was -in $script:PaletteProfileIds) { Get-PaletteProfileLabel -Id $was } else { $was }
+            "made with $wasLabel -- $label is chosen now"
+        } elseif ($made[$madeProfile] -ne $now[$nowProfile]) { "$label has changed since" }
         foreach ($rel in $now.Keys) {
+            if ($rel -like 'profile:*') { continue }
             $leaf = Split-Path -Leaf $rel
-            if (-not $made.ContainsKey($rel)) { "new: $leaf" }
+            if (-not $made.Contains($rel)) { "new: $leaf" }
             elseif ($made[$rel] -ne $now[$rel]) { "$leaf changed" }
         }
-        foreach ($rel in $made.Keys) { if (-not $now.Contains($rel)) { "gone: $(Split-Path -Leaf $rel)" } }
+        foreach ($rel in $made.Keys) { if ($rel -notlike 'profile:*' -and -not $now.Contains($rel)) { "gone: $(Split-Path -Leaf $rel)" } }
     )
     if ($what.Count) {
-        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text 'Theme was made from older templates' -Detail $what @fix
+        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text "Theme isn't what the repo and $label make now" -Detail $what @fix
     }
-    New-DoctorResult -Id 'theme-inputs' -Status 'OK' -Text 'Theme made from the current templates'
+    New-DoctorResult -Id 'theme-inputs' -Status 'OK' -Text "Theme made from the current files, with $label"
+}
+
+function Test-DoctorPaletteLastRun {
+    # How the last theme run went (palette-status.json, written by the pipeline). A wallust
+    # failure leaves the old theme on screen by design -- this is where it says so, next to the
+    # toast 710.ahk showed at the time. Nothing to fix by command for a wallpaper wallust can't
+    # read, so it's [!!]; a target that failed is also why the stamp above says [XX].
+    $s = Get-PaletteStatus
+    if (-not $s) { return }
+    $when = try { $t = [datetime]::Parse("$($s.time)"); if ($t.Date -eq (Get-Date).Date) { $t.ToString('HH:mm') } else { $t.ToString('yyyy-MM-dd HH:mm') } } catch { "$($s.time)" }
+    $who = ''
+    if ("$($s.profile)" -in $script:PaletteProfileIds) {
+        $name = try { (Read-PaletteProfile -Id "$($s.profile)").name } catch { '' }
+        $who = Get-PaletteProfileLabel -Id "$($s.profile)" -Name $name
+    }
+    if ($s.ok) { return New-DoctorResult -Id 'palette-last' -Status 'OK' -Text "Last theme run: $when$(if ($who) { ", $who" })" }
+    $detail = @("$(ConvertTo-SafeText "$($s.reason)")")
+    if ($s.image) { $detail = @("wallpaper: $($s.image)") + $detail }
+    if ("$($s.stage)" -eq 'targets') {
+        return New-DoctorResult -Id 'palette-last' -Status '!!' -Text "The last theme run ($when) didn't apply everything" -Detail $detail -Fix '710sRice install -Only palette'
+    }
+    New-DoctorResult -Id 'palette-last' -Status '!!' -Text "The last theme run ($when) couldn't make a palette -- the theme on screen is from before it" `
+        -Detail $detail -Fix 'pick another wallpaper (SUPER+W), or another palette source (SUPER+Alt+Space > Palette profiles)'
 }
 
 # --- f. Integrations -----------------------------------------------------------------------------
@@ -990,9 +1023,14 @@ function Test-DoctorTerminal {
         }
         return   # not installed: group b says so
     }
+    $active = Resolve-ActivePaletteProfile
+    if ('terminal' -in $active.Profile.off) {
+        New-DoctorResult -Id 'terminal' -Status '..' -Text "Windows Terminal's colours: off in $(Get-PaletteProfileLabel -Id $active.Id -Name $active.Profile.name)"
+    }
     $scheme  = if ($wt['profiles'] -is [hashtable] -and $wt['profiles']['defaults'] -is [hashtable]) { $wt['profiles']['defaults']['colorScheme'] }
     $hasOurs = [bool](@($wt['schemes']) | Where-Object { $_ -is [hashtable] -and $_['name'] -eq 'wallust' })
-    if ($scheme -eq 'wallust' -and $hasOurs) { New-DoctorResult -Id 'terminal' -Status 'OK' -Text 'Windows Terminal themed (wallust)' }
+    if ('terminal' -in $active.Profile.off) { }
+    elseif ($scheme -eq 'wallust' -and $hasOurs) { New-DoctorResult -Id 'terminal' -Status 'OK' -Text 'Windows Terminal themed (wallust)' }
     else {
         $why = if ($scheme -ne 'wallust') { "colorScheme isn't wallust" } else { 'no wallust scheme' }
         New-DoctorResult -Id 'terminal' -Status 'XX' -Text "Windows Terminal isn't themed ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
@@ -1123,7 +1161,8 @@ function Get-DoctorGroups {
             @{ Id = 'display-index'; Name = 'display-index.local.json'; Run = { Test-DoctorDisplayIndex } }
             @{ Id = 'wallust-toml';  Name = 'wallust.toml';             Run = { Test-DoctorWallustToml } }
             @{ Id = 'theme-files';   Name = 'Theme files';              Run = { Test-DoctorThemeFiles } }
-            @{ Id = 'theme-inputs';  Name = 'Theme templates';          Run = { Test-DoctorThemeInputs } }
+            @{ Id = 'theme-inputs';  Name = 'Theme stamp';              Run = { Test-DoctorThemeInputs } }
+            @{ Id = 'palette-last';  Name = 'Last theme run';           Run = { Test-DoctorPaletteLastRun } }
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
             @{ Id = 'flow';       Name = 'Flow Launcher';        Run = { Test-DoctorFlow } }

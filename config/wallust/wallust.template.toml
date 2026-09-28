@@ -1,36 +1,25 @@
-# wallust config — drives komorebi border colors, YASB colors, Windows Terminal
-# scheme, and the Windows accent color, all from whichever wallpaper is active.
+# wallust config -- makes the PALETTE, nothing else (Palette Profiles, 2026-09-27).
 #
-# THIS IS THE TEMPLATE. tools\write-wallust-config.ps1 (run by install.ps1) writes the
-# real config\wallust\wallust.toml from it, with {{DESKTOPRICE_HOME}} replaced by wherever
-# this repo actually lives -- wallust's [templates] targets need absolute paths, and the
-# repo can be cloned anywhere (same idea as komorebi.json being compiled from base.json).
-# The generated wallust.toml is gitignored. Edit this file, then re-run that script.
+# THIS IS THE TEMPLATE. tools\write-wallust-config.ps1 (install's wallust step, and the wallpaper
+# pipeline itself whenever it finds the real one out of date) writes config\wallust\wallust.toml
+# from it with {{DESKTOPRICE_HOME}} replaced by wherever this repo lives -- wallust's template
+# targets need absolute paths. The generated file is gitignored; edit this one.
 #
-# Invoked via YASB's Wallpapers widget `run_after` (see config/yasb/config.yaml):
-#   wallust run {image} --config-dir config\wallust
-#   pwsh -NoProfile -File tools\apply-wallust-outputs.ps1
+# tools\apply-wallust-outputs.ps1 runs wallust with --config-dir config\wallust and -s: wallust
+# never writes Windows Terminal or any themed file itself. Its ONE template (templates\
+# palette.json.tpl) dumps every colour it made -- background, foreground, cursor, color0-15 --
+# and the active palette profile decides where they go (tools\lib\palette.ps1,
+# tools\palette\targets\). The profile also decides HOW the palette is made (wallust's method,
+# style, saturation, 16 colours, or a built-in theme / scheme file) -- on the command line, which
+# overrides the palette line below. kmeans is the Default profile's method, and what a bar started
+# before Palette Profiles runs with its old first run_after line (harmless: it only writes the
+# dump, which the pipeline makes again right after).
 #
-# Slot mapping is deliberately explicit and easy to re-point if a given wallpaper
-# produces a bad combination (see templates/*.tpl) — one-off bad matches aren't a
-# big deal, just change the wallpaper or nudge which color# a variable pulls from.
+# [hooks] is NOT used -- broken on this pinned 4.1.0-alpha on Windows (it tries to run the hook's
+# own KEY NAME as a program: "apply: Couldn't run 'apply': program not found", even for a trivial
+# `apply = 'notepad.exe'`). YASB's run_after calls the pipeline instead.
 
 palette = "kmeans"
 
 [templates]
-yasb-colors = { template = 'yasb-colors.css.tpl', target = '{{DESKTOPRICE_HOME}}\config\yasb\wallust_colors.css' }
-raw-colors = { template = 'colors.json.tpl', target = '{{DESKTOPRICE_HOME}}\config\wallust\generated\colors.json' }
-starship = { template = 'starship.toml.tpl', target = '{{DESKTOPRICE_HOME}}\config\pwsh\starship.toml' }
-
-# [hooks] is NOT used -- confirmed broken on this pinned 4.1.0-alpha build on
-# Windows: it tries to execute the hook's own KEY NAME as a literal program
-# ("apply: Couldn't run 'apply': program not found"), reproduced even with a
-# trivial `apply = 'notepad.exe'` value, so this isn't specific to our command
-# string. Instead, tools/apply-wallust-outputs.ps1 is chained directly as a
-# second entry in YASB's Wallpapers widget `run_after` list (config/yasb/
-# config.yaml), right after the `wallust run` call -- a mechanism already
-# proven to work. Worth retrying [hooks] here if a future wallust release fixes
-# this (bump the pin, see tools/install-wallust.ps1).
-#
-# [hooks]
-# apply = 'pwsh -NoProfile -File {{DESKTOPRICE_HOME}}\tools\apply-wallust-outputs.ps1'
+dump = { template = 'palette.json.tpl', target = '{{DESKTOPRICE_HOME}}\config\wallust\generated\palette.next.json' }

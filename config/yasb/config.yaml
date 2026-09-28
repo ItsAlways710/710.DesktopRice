@@ -336,16 +336,17 @@ widgets:
         - keys: "ctrl+alt+w"
           action: "toggle_gallery"
           screen: "primary" # active/cursor/primary
-      # Regenerates the whole palette (komorebi borders, YASB colors, Windows
-      # Terminal scheme, Windows accent) from whichever wallpaper was just picked.
-      # wallust's own [hooks] is broken on this alpha build (see config/wallust/
-      # wallust.toml), so the apply script is chained here directly instead of
-      # relying on wallust to call it.
+      # Re-themes everything (bar, menus, prompt, Flow, komorebi borders, Windows
+      # accent, Windows Terminal) from whichever wallpaper was just picked, with the
+      # chosen palette profile (SUPER+Alt+Space > Palette profiles). One line: the
+      # profile decides how wallust makes the palette, which static text here can't
+      # (this was two lines -- wallust, then the apply script -- until Palette Profiles).
+      # wallust's own [hooks] is broken on this alpha build (see
+      # config/wallust/wallust.template.toml), so the pipeline is chained here.
       run_after:
       # Run through cmd (YASB: subprocess shell=True, {image} arrives quoted), so the
-      # repo paths are quoted too -- a clone under a path with spaces still works.
-        - '"$env:DESKTOPRICE_HOME\tools\bin\wallust\wallust.exe" run {image} --config-dir "$env:DESKTOPRICE_HOME\config\wallust"'
-        - 'pwsh -NoProfile -File "$env:DESKTOPRICE_HOME\tools\apply-wallust-outputs.ps1"'
+      # repo path is quoted too -- a clone under a path with spaces still works.
+        - 'pwsh -NoProfile -File "$env:DESKTOPRICE_HOME\tools\apply-wallust-outputs.ps1" -Image {image}'
   cpu:
     type: "yasb.cpu.CpuWidget"
     options:
