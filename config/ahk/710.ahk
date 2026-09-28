@@ -354,18 +354,23 @@ LaunchClaudeDesktop() {
 ; 2026-09-23) instead of winarchy's fixed 18 rows, to soften losing the old
 ; everything-at-once column view.
 ;
-; Colors: sensible dark fallbacks are used until wallust has written its CSS
-; (fresh checkout, before the first wallpaper switch).
+; Colors: the palette profile's Menus colours (config\ahk\menu-colors.css, written by
+; the wallpaper pipeline -- tools\palette\targets\menus.ps1); the bar's file stands in
+; until that one exists (an install from before Palette Profiles, before its first
+; theme run); sensible dark fallbacks before either does (fresh checkout).
 ; ============================================================================
+MenuCss := RepoRoot "\config\ahk\menu-colors.css"
 WallustCss := RepoRoot "\config\yasb\wallust_colors.css"
 MenuBgHex := '2B2B2B', MenuFgHex := 'E0E0E0', MenuAccentHex := '5C41A5', MenuAccentTextHex := 'FAF1FD'
 MenuMutedHex := '9A9A9A'   ; secondary/hint text -- used by the key overlay's description column
+MenuSelTextHex := ''       ; the selected row's text; '' = the background colour, as it always was
 
 RefreshMenuColors() {
-    global WallustCss, MenuBgHex, MenuFgHex, MenuAccentHex, MenuAccentTextHex, MenuMutedHex
-    if !FileExist(WallustCss)
+    global MenuCss, WallustCss, MenuBgHex, MenuFgHex, MenuAccentHex, MenuAccentTextHex, MenuMutedHex, MenuSelTextHex
+    css := FileExist(MenuCss) ? MenuCss : WallustCss
+    if !FileExist(css)
         return   ; keep the fallback colors above
-    css := FileRead(WallustCss)
+    css := FileRead(css)
     if RegExMatch(css, '--wallust-background:\s*#([0-9A-Fa-f]{6})', &m)
         MenuBgHex := m[1]
     if RegExMatch(css, '--wallust-text:\s*#([0-9A-Fa-f]{6})', &m)
@@ -376,14 +381,16 @@ RefreshMenuColors() {
         MenuAccentTextHex := m[1]
     if RegExMatch(css, '--wallust-subtext:\s*#([0-9A-Fa-f]{6})', &m)
         MenuMutedHex := m[1]
+    MenuSelTextHex := RegExMatch(css, '--wallust-selectedText:\s*#([0-9A-Fa-f]{6})', &m) ? m[1] : ''
 }
 
 Pal := ''
 
 PalColors() {
-    global MenuBgHex, MenuFgHex, MenuAccentHex, MenuMutedHex
+    global MenuBgHex, MenuFgHex, MenuAccentHex, MenuMutedHex, MenuSelTextHex
     RefreshMenuColors()       ; re-read on every open -- a wallpaper change recolors the next menu, no reload
-    return {bg: MenuBgHex, fg: MenuFgHex, ac: MenuAccentHex, mut: MenuMutedHex}
+    return {bg: MenuBgHex, fg: MenuFgHex, ac: MenuAccentHex, mut: MenuMutedHex,
+        sel: (MenuSelTextHex != '' ? MenuSelTextHex : MenuBgHex)}
 }
 
 ; Closes any open palette; true when it was showing `mode` -- so each hotkey
@@ -570,9 +577,10 @@ PalDraw() {
             r.label.Opt('Background' (on ? c.ac : c.bg))
             r.hint.Opt('Background' (on ? c.ac : c.bg))
         }
-        ; selected row: background color as text on the accent bar -- same as our old menus
-        r.label.SetFont((head ? 'bold' : 'norm') ' c' (on ? c.bg : head ? c.ac : e.HasOwnProp('empty') ? c.mut : c.fg))
-        r.hint.SetFont('c' (on ? c.bg : Pal.mode = 'keys' ? c.fg : c.mut))
+        ; selected row: the profile's "selected row text" on the accent bar (the background
+        ; colour under Default -- same as our old menus)
+        r.label.SetFont((head ? 'bold' : 'norm') ' c' (on ? c.sel : head ? c.ac : e.HasOwnProp('empty') ? c.mut : c.fg))
+        r.hint.SetFont('c' (on ? c.sel : Pal.mode = 'keys' ? c.fg : c.mut))
         r.label.Text := ' ' e.text
         r.hint.Text := e.hint ' '
     }
@@ -1423,6 +1431,179 @@ TilingItems := [
 ; enough to leave room for the key hint column.
 OnOff(flag) => Chr(0xB7) ' ' (FileExist(flag) ? 'on' : 'off')
 
+; ============================================================================
+; Palette profiles -- SUPER+Alt+Space > Palette profiles > Choose / Create / Edit
+; ============================================================================
+; The profiles are config\palettes\default.json (Default, ships with the repo)
+; and profile0-9.json (yours, gitignored); the one in use is named in
+; %LOCALAPPDATA%\710.DesktopRice\palette-profile.txt. Read fresh on every open,
+; like Game mode's state, so a profile the editor just saved is already listed.
+;  - Choose runs the wallpaper pipeline with -ProfileId (tools\apply-wallust-
+;    outputs.ps1, hidden): everything is re-themed from the wallpaper that's up,
+;    and the choice only sticks when that worked. A toast says how it went.
+;  - Create / Edit open the editor (tools\palette-editor.ps1, a WPF window of
+;    its own -- kept out of this file so 710.ahk stays small and fast).
+; Menu actions capture their profile with .Bind(), not a closure: a fat arrow
+; in a for-loop would see the loop's LAST profile in every item.
+PaletteDir := RepoRoot "\config\palettes"
+PaletteStateDir := EnvGet('LOCALAPPDATA') "\710.DesktopRice"
+PaletteSwitching := false   ; a Choose is running: it reports its own outcome
+
+PaletteMenuItems() {
+    profiles := PaletteProfiles()
+    chosen := PaletteChosen()
+    choose := [], edit := []
+    for p in profiles {
+        choose.Push({text: p.label, hint: (p.id = chosen ? 'in use' : p.summary), action: PaletteUse.Bind(p.id, p.label)})
+        edit.Push({text: p.label, hint: p.summary, action: PaletteEditor.Bind('-ProfileId ' p.id)})
+    }
+    free := 11 - profiles.Length
+    return [
+        {text: 'Choose profile', sub: choose},
+        {text: 'Create profile', hint: (free ? free ' of 10 free' : 'all 10 in use'), action: PaletteEditor.Bind('-New')},
+        {text: 'Edit profile',   sub: edit} ]
+}
+
+; Default plus every profileN.json there is, in slot order: {id, label, summary}.
+; Labels match the editor's and 710sRice palette's ("Profile 3 . Night").
+PaletteProfiles() {
+    global PaletteDir
+    list := [{id: 'default', label: 'Default', summary: 'kmeans'}]
+    loop 10 {
+        n := A_Index - 1
+        f := PaletteDir '\profile' n '.json'
+        if !FileExist(f)
+            continue
+        try
+            txt := FileRead(f, 'UTF-8')
+        catch
+            continue
+        ; The source object can hold a "name" of its own (a built-in theme's) -- the
+        ; profile's name is the one outside it.
+        src := RegExMatch(txt, 's)"source"\s*:\s*(\{[^{}]*\})', &m) ? m[1] : ''
+        name := PaletteJsonString(StrReplace(txt, src, ''), 'name')
+        list.Push({id: 'profile' n, label: 'Profile ' n (name != '' ? ' ' Chr(0xB7) ' ' name : ''), summary: PaletteSourceHint(src)})
+    }
+    return list
+}
+
+; The source in a few words for the hint column: kmeans / salience, light /
+; closest theme / Nord / random theme / mocha.json.
+PaletteSourceHint(src) {
+    switch PaletteJsonString(src, 'kind') {
+        case 'wallpaper':
+            method := PaletteJsonString(src, 'method')
+            method := (method != '' ? method : 'kmeans')
+            return method (method != 'kmeans' && PaletteJsonString(src, 'style') = 'light' ? ', light' : '')
+        case 'match':  return 'closest theme'
+        case 'theme':  return PaletteJsonString(src, 'name')
+        case 'random': return 'random theme'
+        case 'scheme': return PaletteJsonString(src, 'file')
+    }
+    return ''
+}
+
+; A string field's value out of JSON text ('' when it isn't there) -- enough JSON
+; for our own files: \" \\ \/ \n \t and \uXXXX undone.
+PaletteJsonString(txt, key) {
+    if !RegExMatch(txt, '"' key '"\s*:\s*"((?:[^"\\]|\\.)*)"', &m)
+        return ''
+    out := '', v := m[1], i := 1
+    while (i <= StrLen(v)) {
+        ch := SubStr(v, i, 1)
+        if (ch != '\') {
+            out .= ch, i += 1
+            continue
+        }
+        nx := SubStr(v, i + 1, 1)
+        if (nx = 'u') {
+            out .= Chr(Integer('0x' SubStr(v, i + 2, 4))), i += 6
+            continue
+        }
+        out .= (nx = 'n') ? '`n' : (nx = 't') ? '`t' : nx
+        i += 2
+    }
+    return out
+}
+
+; The profile in use: the choice file's id when that profile is there, else
+; Default (what the pipeline falls back to).
+PaletteChosen() {
+    global PaletteDir, PaletteStateDir
+    try
+        id := StrLower(Trim(FileRead(PaletteStateDir '\palette-profile.txt'), " `t`r`n"))
+    catch
+        return 'default'
+    return (RegExMatch(id, '^profile[0-9]$') && FileExist(PaletteDir '\' id '.json')) ? id : 'default'
+}
+
+; Choose: the pipeline with -ProfileId, its output caught in a temp file so the
+; toast can say what went wrong in its own words. RunWait only parks this
+; menu's thread; every hotkey stays live meanwhile.
+PaletteUse(id, label, *) {
+    global RepoRoot, PaletteSwitching
+    if PaletteSwitching
+        return                      ; one switch at a time
+    PaletteSwitching := true
+    TrayTip('Switching to ' label '...', '710sRice')
+    out := A_Temp '\710sRice-palette-use.txt'
+    try FileDelete(out)
+    q(p) => "'" StrReplace(p, "'", "''") "'"
+    cmd := 'pwsh.exe -NoProfile -ExecutionPolicy Bypass -Command "& ' q(RepoRoot '\tools\apply-wallust-outputs.ps1')
+        . ' -ProfileId ' id ' *> ' q(out) '; exit $LASTEXITCODE"'
+    try {
+        code := RunWait(cmd, , 'Hide')
+    } catch as e {
+        PaletteSwitching := false
+        TrayTip("Couldn't start the switch: " e.Message, '710sRice')
+        return
+    }
+    PaletteSwitching := false
+    ; The first [XX] line. Redirected, Write-Host -NoNewline pieces come out as lines
+    ; of their own: "  [XX] ", then the message on the next line.
+    why := ''
+    try {
+        lines := StrSplit(FileRead(out, 'UTF-8'), '`n', '`r')
+        for i, line in lines
+            if RegExMatch(line, '^\s*\[XX\]\s*(.*)$', &m) {
+                why := Trim(m[1])
+                if (why = '' && i < lines.Length)
+                    why := Trim(lines[i + 1])
+                break
+            }
+    }
+    if (StrLen(why) > 180)
+        why := SubStr(why, 1, 177) '...'
+    switch code {
+        case 0: TrayTip(label ' is in use -- every wallpaper change uses it too', '710sRice')
+        case 2: TrayTip(label ' is in use, but ' (why != '' ? why : "an app couldn't be themed") ' (710sRice doctor)', '710sRice')
+        default: TrayTip('Still on the old profile -- ' (why != '' ? why : 'the switch failed (710sRice doctor)'), '710sRice')
+    }
+}
+
+; Create / Edit: the editor, hidden pwsh (only its window shows). -STA: WPF needs it.
+PaletteEditor(args, *) {
+    global RepoRoot
+    try
+        Run('pwsh.exe -NoProfile -STA -ExecutionPolicy Bypass -File "' RepoRoot '\tools\palette-editor.ps1" ' args, , 'Hide')
+    catch as e
+        TrayTip("Couldn't open the palette editor: " e.Message, '710sRice')
+}
+
+; A wallpaper change whose palette wallust couldn't make: the pipeline kept the
+; last good theme and knocks here (Send-PaletteAhkMessage), so it doesn't go
+; unnoticed. The reason is in palette-status.json (doctor shows it too).
+PaletteFailedToast() {
+    global PaletteStateDir, PaletteSwitching
+    if PaletteSwitching
+        return                      ; Choose reports its own outcome
+    why := ''
+    try why := PaletteJsonString(FileRead(PaletteStateDir '\palette-status.json', 'UTF-8'), 'reason')
+    if (StrLen(why) > 150)
+        why := SubStr(why, 1, 147) '...'
+    TrayTip("The wallpaper changed, but its palette couldn't be made -- the last theme stays." (why != '' ? '`n' why : ''), '710sRice')
+}
+
 MainMenuItems() {
     global GameFlag, AwakeFlag
     return [
@@ -1430,6 +1611,7 @@ MainMenuItems() {
         {text: 'Files',                    hint: 'SUPER+S',          action: (*) => ToggleFlowScoped('f ')},
         {text: 'Capture',                                            sub: CaptureItems},
         {text: 'Tiling',                                             sub: TilingItems},
+        {text: 'Palette profiles',                                   sub: PaletteMenuItems()},
         {text: 'Keybindings',              hint: 'SUPER+K',          action: (*) => ToggleKeyOverlay()},
         {text: 'Game mode ' OnOff(GameFlag),                         action: (*) => ToggleGameMode()},
         {text: 'Stay awake ' OnOff(AwakeFlag), hint: 'SUPER+Ctrl+W', action: (*) => ToggleStayAwake()},
@@ -1465,7 +1647,7 @@ OpenMainMenu(*) {
 ; when an admin window has focus. The catch: Windows then drops messages from
 ; ordinary processes at our door (UIPI) -- the plain-AutoHotkey64 sender got
 ; 'Access is denied' in testing. ChangeWindowMessageFilterEx(MSGFLT_ALLOW = 1)
-; opens the door for exactly the three 710sRice.* messages below and nothing
+; opens the door for exactly the 710sRice.* messages below and nothing
 ; else. Harmless when running without UI Access (nothing's filtered, so there's
 ; nothing to allow).
 AllowFromNormalProcesses(msg) {
@@ -1485,6 +1667,9 @@ OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710s
 ; already mid-flight shrugs it off; the CLI just reports that one instead (it
 ; reads reload-stack.log, not us).
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.ReloadStack', 'UInt')), (*) => SetTimer(ReloadStack, -1))
+
+; The wallpaper pipeline, when wallust couldn't make a palette (PaletteFailedToast).
+OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.PaletteFailed', 'UInt')), (*) => SetTimer(PaletteFailedToast, -1))
 
 ; Builds a native Menu() tree from the shared {text, action}/{text, sub}
 ; structure -- recursive so Capture/Tiling/System (all one level deep today)
@@ -1512,10 +1697,19 @@ SetupTray() {
         try TraySetIcon(ico)   ; no logo asset exists yet -- keeps AHK's default until one does
     A_IconTip := '710sRice'
 
+    RebuildTrayMenu()
+    ; Rebuilt on every right-click (as the button goes down; Windows shows it on the
+    ; way up), so it lists the palette profiles there are now and Game mode's current
+    ; state -- like SUPER+Alt+Space, which builds its list on every open.
+    OnMessage(0x404, (wParam, lParam, *) => ((lParam & 0xFFFF) = 0x204 ? RebuildTrayMenu() : ''))   ; AHK_NOTIFYICON, WM_RBUTTONDOWN
+}
+
+RebuildTrayMenu() {
     tray := A_TrayMenu
-    tray.Delete()               ; drop AHK's default Pause/Suspend/Reload/Edit menu
-    BuildNativeMenu(tray, MainMenuItems())
-    try tray.Default := NativeMenuName(MainMenuItems()[1])   ; Apps -- try: a name mismatch must never stop AHK loading
+    tray.Delete()               ; drop AHK's default Pause/Suspend/Reload/Edit menu (and the last build)
+    items := MainMenuItems()
+    BuildNativeMenu(tray, items)
+    try tray.Default := NativeMenuName(items[1])   ; Apps -- try: a name mismatch must never stop AHK loading
     tray.ClickCount := 1        ; single left-click runs Default, matching winarchy
 }
 SetupTray()
