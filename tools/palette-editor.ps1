@@ -352,6 +352,12 @@ function Request-EditorPalette {
         Use-EditorPalette
         return
     }
+    if ($src.kind -eq 'scheme' -and -not (Test-Path -LiteralPath (Join-Path (Get-PaletteSchemesDir) "$($src.file)") -PathType Leaf)) {
+        # Nothing picked yet (or the file's gone): no wallust run for a name that isn't there.
+        $script:PaletteCache[$key] = [pscustomobject]@{ Error = 'no scheme file'; Note = 'Pick a scheme file -- showing the last palette meanwhile' }
+        Use-EditorPalette
+        return
+    }
     # The pipeline's last palette is this one when the source and wallpaper match -- no wallust run.
     $last = Read-PaletteLastGood
     if ($last -and $src.kind -ne 'random' -and $last.SourceKey -eq (Get-PaletteSourceKey -Source $src) -and
@@ -378,7 +384,7 @@ function Use-EditorPalette {
     } else {
         # Keep showing the last palette we had (or the pipeline's) so the rest stays usable.
         if (-not $script:Palette) { $l = Read-PaletteLastGood; if ($l) { $script:Palette = $l.Palette } }
-        $script:Ui.PaletteNote.Text = ConvertTo-PaletteSafeText "wallust couldn't: $($got.Error) -- showing the last palette"
+        $script:Ui.PaletteNote.Text = if ($got.PSObject.Properties['Note']) { $got.Note } else { ConvertTo-PaletteSafeText "wallust couldn't: $($got.Error) -- showing the last palette" }
         $script:Ui.PaletteNote.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'B.Warn')
     }
     Update-PaletteStrip
@@ -780,7 +786,7 @@ function Update-Buttons {
     $slot = Get-EditorSaveSlot
     $nameError = Test-PaletteProfileName -Name $script:Ui.NameBox.Text -Id $(if ($slot) { $slot } else { 'profile0' }) -Profiles $script:Known
     $srcProblem = $null
-    if ($script:Work.source.kind -eq 'scheme' -and -not (Test-Path -LiteralPath (Join-Path (Get-PaletteSchemesDir) "$($script:Work.source.file)"))) {
+    if ($script:Work.source.kind -eq 'scheme' -and -not (Test-Path -LiteralPath (Join-Path (Get-PaletteSchemesDir) "$($script:Work.source.file)") -PathType Leaf)) {
         $srcProblem = 'pick a scheme file first'
     }
     $ok = -not $script:ThemeError -and -not $nameError -and -not $busy -and -not $srcProblem -and -not $script:Pk
