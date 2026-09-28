@@ -1,0 +1,818 @@
+<!--
+  The palette profile editor's window (tools\palette-editor.ps1 loads it, fills the lists and
+  wires every control). Brushes are DynamicResources the script sets from the menus' colours
+  (config\ahk\menu-colors.css), so the editor wears the theme that's on screen; the preview on
+  the right wears the profile being edited. Preview elements carry Tag="Property=target.prop;..."
+  - the script paints each from the resolved theme and makes it clickable.
+
+  A borderless, see-through window (WindowStyle None + AllowsTransparency): komorebi leaves it
+  floating (the probe checked - a layered window isn't managed).
+-->
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="710sRice palette profiles" Width="1280" Height="860" MinWidth="1000" MinHeight="620"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterScreen" ShowInTaskbar="True" UseLayoutRounding="True"
+        FontFamily="JetBrainsMono Nerd Font, JetBrainsMono NF, Cascadia Mono, Consolas" FontSize="13"
+        Foreground="{DynamicResource B.Text}" TextOptions.TextFormattingMode="Display">
+  <Window.Resources>
+    <SolidColorBrush x:Key="B.Bg" Color="#2B2B2B"/>
+    <SolidColorBrush x:Key="B.Panel" Color="#353535"/>
+    <SolidColorBrush x:Key="B.Line" Color="#555555"/>
+    <SolidColorBrush x:Key="B.Hover" Color="#3A3350"/>
+    <SolidColorBrush x:Key="B.Text" Color="#E0E0E0"/>
+    <SolidColorBrush x:Key="B.Sub" Color="#9A9A9A"/>
+    <SolidColorBrush x:Key="B.Accent" Color="#5C41A5"/>
+    <SolidColorBrush x:Key="B.OnAccent" Color="#FAF1FD"/>
+    <SolidColorBrush x:Key="B.Warn" Color="#E06C75"/>
+    <SolidColorBrush x:Key="B.Scrim" Color="#C02B2B2B"/>
+
+    <!-- Section headings and small captions -->
+    <Style x:Key="H" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource B.Accent}"/>
+      <Setter Property="Margin" Value="0,18,0,8"/>
+    </Style>
+    <Style x:Key="Cap" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{DynamicResource B.Sub}"/>
+      <Setter Property="Margin" Value="0,10,0,4"/>
+    </Style>
+    <Style x:Key="OnPic" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="#E6FFFFFF"/>
+      <Setter Property="Margin" Value="0,10,0,4"/>
+    </Style>
+    <Style x:Key="Hint" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource B.Sub}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style x:Key="Label" TargetType="TextBlock">
+      <Setter Property="Width" Value="136"/>
+      <Setter Property="VerticalAlignment" Value="Top"/>
+      <Setter Property="Margin" Value="0,6,0,0"/>
+      <Setter Property="Foreground" Value="{DynamicResource B.Sub}"/>
+    </Style>
+
+    <!-- Buttons -->
+    <Style TargetType="Button">
+      <Setter Property="Foreground" Value="{DynamicResource B.Text}"/>
+      <Setter Property="Background" Value="{DynamicResource B.Panel}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource B.Line}"/>
+      <Setter Property="Padding" Value="14,6"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{DynamicResource B.Accent}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+      <Setter Property="Foreground" Value="{DynamicResource B.OnAccent}"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style x:Key="Ghost" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource B.Sub}"/>
+      <Setter Property="Padding" Value="6,2"/>
+    </Style>
+
+    <!-- Segmented choices: RadioButtons that look like pills -->
+    <Style x:Key="Seg" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{DynamicResource B.Text}"/>
+      <Setter Property="Background" Value="{DynamicResource B.Panel}"/>
+      <Setter Property="Margin" Value="0,0,6,6"/>
+      <Setter Property="Padding" Value="11,4"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource B.Line}"
+                    BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="{DynamicResource B.Accent}"/>
+                <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+                <Setter Property="Foreground" Value="{DynamicResource B.OnAccent}"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{DynamicResource B.Text}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Margin" Value="0,0,16,8"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <StackPanel Orientation="Horizontal" Background="Transparent">
+              <Border x:Name="box" Width="16" Height="16" CornerRadius="4" BorderThickness="1" VerticalAlignment="Center"
+                      BorderBrush="{DynamicResource B.Line}" Background="{DynamicResource B.Panel}">
+                <TextBlock x:Name="tick" Text="&#x2713;" FontSize="12" Foreground="{DynamicResource B.OnAccent}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+              </Border>
+              <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="box" Property="Background" Value="{DynamicResource B.Accent}"/>
+                <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+                <Setter TargetName="tick" Property="Visibility" Value="Visible"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="TextBox">
+      <Setter Property="Foreground" Value="{DynamicResource B.Text}"/>
+      <Setter Property="Background" Value="{DynamicResource B.Panel}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource B.Line}"/>
+      <Setter Property="CaretBrush" Value="{DynamicResource B.Accent}"/>
+      <Setter Property="SelectionBrush" Value="{DynamicResource B.Accent}"/>
+      <Setter Property="Padding" Value="8,5"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1" CornerRadius="6">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
+                            HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource B.Accent}"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Slider: a line, the filled part in the accent, a round thumb -->
+    <Style x:Key="SliderFill" TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Border Height="4" CornerRadius="2" Background="{DynamicResource B.Accent}"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="SliderBlank" TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Border Background="Transparent"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="Slider">
+      <Setter Property="IsMoveToPointEnabled" Value="True"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Slider">
+            <Grid Height="22" Background="Transparent">
+              <Border Height="4" CornerRadius="2" Background="{DynamicResource B.Line}" VerticalAlignment="Center"/>
+              <Track x:Name="PART_Track">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Style="{StaticResource SliderFill}" Command="{x:Static Slider.DecreaseLarge}"/>
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Style="{StaticResource SliderBlank}" Command="{x:Static Slider.IncreaseLarge}"/>
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb>
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Ellipse Width="14" Height="14" Fill="{DynamicResource B.Accent}" Stroke="{DynamicResource B.Text}" StrokeThickness="1"/>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+              </Track>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Thin scroll bars -->
+    <ControlTemplate x:Key="VBar" TargetType="ScrollBar">
+      <Track x:Name="PART_Track" IsDirectionReversed="True" Width="8">
+        <Track.Thumb>
+          <Thumb>
+            <Thumb.Template>
+              <ControlTemplate TargetType="Thumb">
+                <Border CornerRadius="4" Background="{DynamicResource B.Line}"/>
+              </ControlTemplate>
+            </Thumb.Template>
+          </Thumb>
+        </Track.Thumb>
+      </Track>
+    </ControlTemplate>
+    <ControlTemplate x:Key="HBar" TargetType="ScrollBar">
+      <Track x:Name="PART_Track" Height="8">
+        <Track.Thumb>
+          <Thumb>
+            <Thumb.Template>
+              <ControlTemplate TargetType="Thumb">
+                <Border CornerRadius="4" Background="{DynamicResource B.Line}"/>
+              </ControlTemplate>
+            </Thumb.Template>
+          </Thumb>
+        </Track.Thumb>
+      </Track>
+    </ControlTemplate>
+    <Style TargetType="ScrollBar">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Width" Value="8"/>
+      <Setter Property="MinWidth" Value="8"/>
+      <Setter Property="Template" Value="{StaticResource VBar}"/>
+      <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+          <Setter Property="Width" Value="Auto"/>
+          <Setter Property="MinWidth" Value="0"/>
+          <Setter Property="Height" Value="8"/>
+          <Setter Property="MinHeight" Value="8"/>
+          <Setter Property="Template" Value="{StaticResource HBar}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="ListBox">
+      <Setter Property="Background" Value="{DynamicResource B.Panel}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource B.Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Foreground" Value="{DynamicResource B.Text}"/>
+      <Setter Property="Padding" Value="2"/>
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+      <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBox">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ScrollViewer Focusable="False" CanContentScroll="True">
+                <ItemsPresenter/>
+              </ScrollViewer>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ListBoxItem">
+      <Setter Property="Foreground" Value="{DynamicResource B.Text}"/>
+      <Setter Property="Padding" Value="8,3"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="bd" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="{DynamicResource B.Hover}"/>
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="{DynamicResource B.Accent}"/>
+                <Setter Property="Foreground" Value="{DynamicResource B.OnAccent}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="ToolTip">
+      <Setter Property="Foreground" Value="{DynamicResource B.Text}"/>
+      <Setter Property="Background" Value="{DynamicResource B.Panel}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource B.Line}"/>
+      <Setter Property="FontFamily" Value="JetBrainsMono Nerd Font, JetBrainsMono NF, Cascadia Mono, Consolas"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Padding" Value="8,4"/>
+    </Style>
+  </Window.Resources>
+
+  <Border x:Name="Frame" Background="{DynamicResource B.Bg}" BorderBrush="{DynamicResource B.Line}" BorderThickness="1" CornerRadius="10">
+    <Grid>
+      <Grid x:Name="Main">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header: drag to move -->
+        <Grid x:Name="Header" Grid.Row="0" Background="Transparent" Margin="24,16,12,4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="Crumb" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource B.Accent}" Text="PALETTE PROFILES"/>
+              <Border x:Name="InUse" Margin="12,0,0,0" CornerRadius="4" Background="{DynamicResource B.Accent}" Padding="7,1" Visibility="Collapsed" VerticalAlignment="Center">
+                <TextBlock Text="IN USE" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource B.OnAccent}"/>
+              </Border>
+            </StackPanel>
+            <TextBlock x:Name="Blurb" Style="{StaticResource Hint}" Margin="0,4,0,0"/>
+          </StackPanel>
+          <Button x:Name="CloseX" Grid.Column="1" Style="{StaticResource Ghost}" Content="&#x2715;" FontSize="14" VerticalAlignment="Top" ToolTip="Close (Esc)"/>
+        </Grid>
+
+        <!-- Body: the profile on the left, the preview on the right -->
+        <Grid x:Name="Body" Grid.Row="1" Margin="24,0,24,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="24"/>
+            <ColumnDefinition Width="470"/>
+          </Grid.ColumnDefinitions>
+
+          <ScrollViewer x:Name="LeftScroll" Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="Left" Margin="0,0,14,20">
+
+              <TextBlock Style="{StaticResource H}" Text="NAME" Margin="0,8,0,8"/>
+              <StackPanel Orientation="Horizontal">
+                <TextBox x:Name="NameBox" Width="300" MaxLength="40"/>
+                <TextBlock x:Name="NameHint" Style="{StaticResource Hint}" Margin="12,0,0,0" VerticalAlignment="Center" Width="330"/>
+              </StackPanel>
+
+              <StackPanel x:Name="FromRow" Visibility="Collapsed">
+                <TextBlock Style="{StaticResource H}" Text="START FROM"/>
+                <WrapPanel x:Name="FromPanel"/>
+              </StackPanel>
+
+              <TextBlock Style="{StaticResource H}" Text="COLOUR SOURCE"/>
+              <WrapPanel x:Name="KindPanel">
+                <RadioButton x:Name="KindWallpaper" Style="{StaticResource Seg}" Content="Wallpaper" Tag="wallpaper"/>
+                <RadioButton x:Name="KindMatch" Style="{StaticResource Seg}" Content="Closest theme" Tag="match"/>
+                <RadioButton x:Name="KindTheme" Style="{StaticResource Seg}" Content="Built-in theme" Tag="theme"/>
+                <RadioButton x:Name="KindRandom" Style="{StaticResource Seg}" Content="Random theme" Tag="random"/>
+                <RadioButton x:Name="KindScheme" Style="{StaticResource Seg}" Content="Scheme file" Tag="scheme"/>
+              </WrapPanel>
+              <TextBlock x:Name="KindHint" Style="{StaticResource Hint}" Margin="0,2,0,8"/>
+
+              <StackPanel x:Name="WallpaperOpts">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Style="{StaticResource Label}" Text="Method"/>
+                  <StackPanel>
+                    <WrapPanel x:Name="MethodPanel">
+                      <RadioButton x:Name="MethodKmeans" Style="{StaticResource Seg}" Content="kmeans" Tag="kmeans"/>
+                      <RadioButton x:Name="MethodSalience" Style="{StaticResource Seg}" Content="salience" Tag="salience"/>
+                      <RadioButton x:Name="MethodAnsi" Style="{StaticResource Seg}" Content="ansi" Tag="ansi"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="MethodHint" Style="{StaticResource Hint}" Margin="0,0,0,8" MaxWidth="520" HorizontalAlignment="Left"/>
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Style="{StaticResource Label}" Text="Palette"/>
+                  <StackPanel>
+                    <WrapPanel x:Name="StylePanel">
+                      <RadioButton x:Name="StyleDark" Style="{StaticResource Seg}" Content="dark" Tag="dark"/>
+                      <RadioButton x:Name="StyleLight" Style="{StaticResource Seg}" Content="light" Tag="light"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="StyleHint" Style="{StaticResource Hint}" Margin="0,0,0,8" MaxWidth="520" HorizontalAlignment="Left"/>
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                  <TextBlock Style="{StaticResource Label}" Text="Saturation"/>
+                  <CheckBox x:Name="SatOn" Content="Boost" VerticalAlignment="Center" Margin="0,4,14,0"/>
+                  <Slider x:Name="SatSlider" Width="220" Minimum="1" Maximum="100" Value="30" SmallChange="1" LargeChange="10" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="SatValue" Width="40" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource B.Sub}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Style="{StaticResource Label}" Text="Colours"/>
+                  <StackPanel>
+                    <CheckBox x:Name="Cols16" Content="16 distinct colours" Margin="0,5,0,4"/>
+                    <TextBlock Style="{StaticResource Hint}" MaxWidth="520" HorizontalAlignment="Left"
+                               Text="Off: color8-15 repeat color0-7 (brighter). On: all sixteen are different colours from the wallpaper."/>
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel x:Name="MatchOpts">
+                <TextBlock x:Name="MatchNote" Style="{StaticResource Hint}" Margin="0,0,0,6"/>
+                <WrapPanel x:Name="MatchPanel"/>
+              </StackPanel>
+
+              <StackPanel x:Name="ThemeOpts">
+                <TextBlock x:Name="CloseNote" Style="{StaticResource Hint}" Margin="0,0,0,6" Text="Closest to this wallpaper:"/>
+                <WrapPanel x:Name="ClosePanel"/>
+                <TextBox x:Name="ThemeSearch" Width="300" HorizontalAlignment="Left" Margin="0,4,0,6" ToolTip="Search the built-in themes"/>
+                <ListBox x:Name="ThemeList" Height="190" Width="420" HorizontalAlignment="Left"/>
+              </StackPanel>
+
+              <StackPanel x:Name="RandomOpts">
+                <Button x:Name="Shuffle" Content="Show another" HorizontalAlignment="Left"/>
+              </StackPanel>
+
+              <StackPanel x:Name="SchemeOpts">
+                <WrapPanel x:Name="SchemePanel"/>
+                <TextBlock x:Name="SchemeNote" Style="{StaticResource Hint}" Margin="0,0,0,8"/>
+                <Button x:Name="SchemeFolder" Content="Open the schemes folder" HorizontalAlignment="Left"/>
+              </StackPanel>
+
+              <DockPanel Margin="0,18,0,8">
+                <TextBlock x:Name="PaletteNote" DockPanel.Dock="Right" Style="{StaticResource Hint}" VerticalAlignment="Bottom" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+                <TextBlock Style="{StaticResource H}" Text="PALETTE" Margin="0"/>
+              </DockPanel>
+              <WrapPanel x:Name="PaletteStrip"/>
+
+              <TextBlock Style="{StaticResource H}" Text="ROLES -- WHAT GETS WHAT"/>
+              <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
+                         Text="Click a colour to change it. Open a role (&#x203A;) to see every app colour that follows it -- any of them can take its own colour instead."/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Style="{StaticResource Hint}" Text="Start the roles from:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <Button x:Name="PresetDefault" Content="Default's map" Padding="10,3" Margin="0,0,6,0"
+                        ToolTip="Default's roles and Terminal slot order: made for wallpaper palettes (kmeans, salience)"/>
+                <Button x:Name="PresetTerminal" Content="Terminal order" Padding="10,3"
+                        ToolTip="For palettes in terminal order (built-in themes, scheme files, ansi): the background, the text, blue as the accent, and Terminal's colours where they belong"/>
+              </StackPanel>
+              <TextBlock x:Name="PresetHint" Style="{StaticResource Hint}" Visibility="Collapsed" Margin="0,0,0,8"/>
+              <StackPanel x:Name="RolesPanel"/>
+
+              <TextBlock Style="{StaticResource H}" Text="READABLE TEXT AND LIGHT / DARK"/>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Style="{StaticResource Label}" Text="Terminal"/>
+                <StackPanel>
+                  <WrapPanel x:Name="TermReadPanel">
+                    <RadioButton x:Name="TermLighten" Style="{StaticResource Seg}" Content="Lift dim colours" Tag="lighten"/>
+                    <RadioButton x:Name="TermAuto" Style="{StaticResource Seg}" Content="Lift or deepen" Tag="auto"/>
+                    <RadioButton x:Name="TermOff" Style="{StaticResource Seg}" Content="Leave as they are" Tag="off"/>
+                  </WrapPanel>
+                  <TextBlock x:Name="TermReadHint" Style="{StaticResource Hint}" Margin="0,0,0,8" MaxWidth="520" HorizontalAlignment="Left"/>
+                </StackPanel>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Style="{StaticResource Label}" Text="Everything else"/>
+                <CheckBox x:Name="ReadUi" Content="Keep bar, menu, Flow, prompt and stack-tab text readable" Margin="0,5,0,10"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Style="{StaticResource Label}" Text="Windows apps"/>
+                <StackPanel>
+                  <WrapPanel x:Name="AppModePanel">
+                    <RadioButton x:Name="ModeDark" Style="{StaticResource Seg}" Content="Dark" Tag="dark"/>
+                    <RadioButton x:Name="ModeLight" Style="{StaticResource Seg}" Content="Light" Tag="light"/>
+                    <RadioButton x:Name="ModeAuto" Style="{StaticResource Seg}" Content="Follow the background" Tag="auto"/>
+                  </WrapPanel>
+                  <TextBlock Style="{StaticResource Hint}" MaxWidth="520" HorizontalAlignment="Left"
+                             Text="Windows' app and system mode, Terminal's tab row and Flow's window."/>
+                </StackPanel>
+              </StackPanel>
+
+              <TextBlock Style="{StaticResource H}" Text="APPS THIS PROFILE THEMES"/>
+              <WrapPanel x:Name="TargetsPanel"/>
+              <TextBlock Style="{StaticResource Hint}" Text="An app that's off keeps whatever colours it has -- the profile leaves it alone."/>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- The colour selector: over the profile's side only, so the preview stays in view -->
+          <Border x:Name="PickerLayer" Grid.Column="0" Background="{DynamicResource B.Scrim}" CornerRadius="8" Visibility="Collapsed">
+            <Border x:Name="Picker" Background="{DynamicResource B.Bg}" BorderBrush="{DynamicResource B.Accent}" BorderThickness="1"
+                    CornerRadius="10" Margin="10" MaxWidth="700" VerticalAlignment="Top">
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="20,16,20,16">
+                  <TextBlock x:Name="PkTitle" FontWeight="Bold" Foreground="{DynamicResource B.Accent}"/>
+                  <TextBlock x:Name="PkAbout" Style="{StaticResource Hint}" Margin="0,3,0,12"/>
+                  <StackPanel Orientation="Horizontal">
+                    <Border x:Name="PkSwatch" Width="72" Height="44" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource B.Line}"/>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                      <TextBlock x:Name="PkHex" FontWeight="Bold"/>
+                      <TextBlock x:Name="PkWhat" Style="{StaticResource Hint}"/>
+                    </StackPanel>
+                  </StackPanel>
+
+                  <StackPanel x:Name="PkSlotRow" Orientation="Horizontal" Margin="0,12,0,0">
+                    <TextBlock Style="{StaticResource Hint}" Text="Choosing:" VerticalAlignment="Center" Margin="0,0,10,6"/>
+                    <RadioButton x:Name="PkSlotBase" Style="{StaticResource Seg}" Content="the colour" Tag="base"/>
+                    <RadioButton x:Name="PkSlotOther" Style="{StaticResource Seg}" Content="what it's mixed with" Tag="other"/>
+                  </StackPanel>
+
+                  <TextBlock Style="{StaticResource Cap}" Text="FROM THE PALETTE (THIS WALLPAPER'S COLOURS)"/>
+                  <WrapPanel x:Name="PkPalette"/>
+                  <TextBlock Style="{StaticResource Cap}" Text="A ROLE"/>
+                  <WrapPanel x:Name="PkRoles"/>
+
+                  <TextBlock Style="{StaticResource Cap}" Text="A FIXED COLOUR (THE SAME ON EVERY WALLPAPER)"/>
+                  <StackPanel Orientation="Horizontal">
+                    <StackPanel>
+                      <Grid x:Name="PkSV" Width="240" Height="120" Cursor="Cross" ClipToBounds="True" Background="Transparent">
+                        <Rectangle x:Name="PkHueFill" Fill="Red"/>
+                        <Rectangle>
+                          <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                              <GradientStop Color="#FFFFFFFF" Offset="0"/>
+                              <GradientStop Color="#00FFFFFF" Offset="1"/>
+                            </LinearGradientBrush>
+                          </Rectangle.Fill>
+                        </Rectangle>
+                        <Rectangle>
+                          <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                              <GradientStop Color="#00000000" Offset="0"/>
+                              <GradientStop Color="#FF000000" Offset="1"/>
+                            </LinearGradientBrush>
+                          </Rectangle.Fill>
+                        </Rectangle>
+                        <Canvas IsHitTestVisible="False">
+                          <Ellipse x:Name="PkSVThumb" Width="12" Height="12" Stroke="White" StrokeThickness="2"/>
+                        </Canvas>
+                      </Grid>
+                      <Grid x:Name="PkHue" Width="240" Height="14" Margin="0,8,0,0" Cursor="Hand" Background="Transparent">
+                        <Rectangle RadiusX="3" RadiusY="3">
+                          <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                              <GradientStop Color="#FF0000" Offset="0"/>
+                              <GradientStop Color="#FFFF00" Offset="0.1667"/>
+                              <GradientStop Color="#00FF00" Offset="0.3333"/>
+                              <GradientStop Color="#00FFFF" Offset="0.5"/>
+                              <GradientStop Color="#0000FF" Offset="0.6667"/>
+                              <GradientStop Color="#FF00FF" Offset="0.8333"/>
+                              <GradientStop Color="#FF0000" Offset="1"/>
+                            </LinearGradientBrush>
+                          </Rectangle.Fill>
+                        </Rectangle>
+                        <Canvas IsHitTestVisible="False">
+                          <Border x:Name="PkHueThumb" Width="5" Height="18" Canvas.Top="-2" Background="White" BorderBrush="Black" BorderThickness="1" CornerRadius="1"/>
+                        </Canvas>
+                      </Grid>
+                    </StackPanel>
+                    <StackPanel Margin="18,0,0,0">
+                      <TextBlock Style="{StaticResource Hint}" Text="Hex" Margin="0,0,0,4"/>
+                      <TextBox x:Name="PkHexBox" Width="130" MaxLength="7"/>
+                      <TextBlock Style="{StaticResource Hint}" Width="200" Margin="0,8,0,0"
+                                 Text="Drag in the square, or type #rrggbb. A fixed colour ignores the wallpaper."/>
+                    </StackPanel>
+                  </StackPanel>
+
+                  <TextBlock Style="{StaticResource Cap}" Text="ADJUST"/>
+                  <WrapPanel x:Name="PkAdjust">
+                    <RadioButton x:Name="PkAdjNone" Style="{StaticResource Seg}" Content="as it is" Tag="none"/>
+                    <RadioButton x:Name="PkAdjLighten" Style="{StaticResource Seg}" Content="lighter" Tag="lighten"/>
+                    <RadioButton x:Name="PkAdjDarken" Style="{StaticResource Seg}" Content="darker" Tag="darken"/>
+                    <RadioButton x:Name="PkAdjMix" Style="{StaticResource Seg}" Content="mixed with another" Tag="mix"/>
+                  </WrapPanel>
+                  <StackPanel x:Name="PkAmountRow" Orientation="Horizontal">
+                    <Slider x:Name="PkAmount" Width="300" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="PkAmountText" Margin="10,0,0,0" Width="50" VerticalAlignment="Center" Foreground="{DynamicResource B.Sub}"/>
+                  </StackPanel>
+
+                  <TextBlock Style="{StaticResource Cap}" Text="AS AN EXPRESSION"/>
+                  <TextBox x:Name="PkExpr"/>
+                  <TextBlock x:Name="PkError" Style="{StaticResource Hint}" Foreground="{DynamicResource B.Warn}" Margin="0,4,0,0"/>
+
+                  <DockPanel Margin="0,16,0,0" LastChildFill="False">
+                    <Button x:Name="PkReset" DockPanel.Dock="Left"/>
+                    <Button x:Name="PkUse" DockPanel.Dock="Right" Style="{StaticResource Primary}" Content="Use this colour" Margin="8,0,0,0"/>
+                    <Button x:Name="PkCancel" DockPanel.Dock="Right" Content="Cancel"/>
+                  </DockPanel>
+                </StackPanel>
+              </ScrollViewer>
+            </Border>
+          </Border>
+
+          <!-- The preview: the profile being edited, on this wallpaper -->
+          <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="Preview" Margin="0,0,8,20" Background="Transparent">
+              <DockPanel Margin="0,8,0,4">
+                <TextBlock x:Name="PreviewHint" DockPanel.Dock="Right" Style="{StaticResource Hint}" VerticalAlignment="Bottom" Text="click any colour to change it"/>
+                <TextBlock Style="{StaticResource H}" Text="PREVIEW" Margin="0"/>
+              </DockPanel>
+
+              <!-- The mocks sit on the wallpaper that's up (dimmed), like the real things do -->
+              <Grid x:Name="Backdrop">
+                <Border x:Name="BackdropImage" CornerRadius="10" Background="{DynamicResource B.Panel}"/>
+                <Border CornerRadius="10" Background="#73000000"/>
+                <StackPanel Margin="14,4,14,14">
+              <TextBlock x:Name="CapBar" Style="{StaticResource OnPic}" Text="BAR"/>
+              <Border x:Name="MockBar" Tag="Background=yasb.background;BorderBrush=yasb.border" BorderThickness="0,0,0,2" CornerRadius="6" Padding="6,5">
+                <DockPanel>
+                  <Border DockPanel.Dock="Right" Tag="Background=yasb.mutedBG;BorderBrush=yasb.border" BorderThickness="1" CornerRadius="4" Padding="8,1">
+                    <TextBlock><Run Tag="Foreground=yasb.subtext" Text="Sun 27  "/><Run Tag="Foreground=yasb.text" Text="19:24"/></TextBlock>
+                  </Border>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Tag="Background=yasb.accent" CornerRadius="4" Padding="8,1" Margin="0,0,4,0">
+                      <TextBlock Tag="Foreground=yasb.accentText" Text="1" FontWeight="Bold"/>
+                    </Border>
+                    <Border Tag="Background=yasb.background2" CornerRadius="4" Padding="8,1" Margin="0,0,4,0">
+                      <TextBlock Tag="Foreground=yasb.text" Text="2"/>
+                    </Border>
+                    <Border Tag="Background=yasb.hover" CornerRadius="4" Padding="8,1" Margin="0,0,12,0">
+                      <TextBlock Tag="Foreground=yasb.text" Text="3"/>
+                    </Border>
+                    <TextBlock VerticalAlignment="Center"><Run Tag="Foreground=yasb.text" Text="pwsh"/><Run Tag="Foreground=yasb.subtext" Text="  710.DesktopRice"/></TextBlock>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+
+              <Grid Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="12"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                  <TextBlock x:Name="CapMenu" Style="{StaticResource OnPic}" Text="MENUS"/>
+                  <Border x:Name="MockMenu" Tag="Background=menus.background" CornerRadius="8" Padding="10,8">
+                    <StackPanel>
+                      <TextBlock Tag="Foreground=menus.accent" FontWeight="Bold" FontSize="11" Text="710SRICE"/>
+                      <TextBlock Tag="Foreground=menus.subtext" Margin="0,6,0,4" Text="Search"/>
+                      <Border Tag="Background=menus.subtext" Height="1" Margin="0,0,0,4"/>
+                      <DockPanel Margin="4,1">
+                        <TextBlock DockPanel.Dock="Right" Tag="Foreground=menus.subtext" Text="&#x203A;"/>
+                        <TextBlock Tag="Foreground=menus.text" Text="Apps"/>
+                      </DockPanel>
+                      <Border Tag="Background=menus.accent" CornerRadius="3" Padding="4,1">
+                        <DockPanel>
+                          <TextBlock DockPanel.Dock="Right" Tag="Foreground=menus.selectedText" Text="&#x203A;"/>
+                          <TextBlock Tag="Foreground=menus.selectedText" Text="Palette profiles"/>
+                        </DockPanel>
+                      </Border>
+                      <DockPanel Margin="4,1">
+                        <TextBlock DockPanel.Dock="Right" Tag="Foreground=menus.subtext" Text="SUPER+K"/>
+                        <TextBlock Tag="Foreground=menus.text" Text="Keys"/>
+                      </DockPanel>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <TextBlock x:Name="CapFlow" Style="{StaticResource OnPic}" Text="FLOW LAUNCHER"/>
+                  <Border x:Name="MockFlow" Tag="Background=flow.window;BorderBrush=flow.border" BorderThickness="2" CornerRadius="8" Padding="10,8">
+                    <StackPanel>
+                      <TextBlock><Run Tag="Foreground=flow.query;Background=flow.selection" Text="pal"/><Run Tag="Foreground=flow.caret" Text="|"/><Run Tag="Foreground=flow.suggestion" Text="ette"/></TextBlock>
+                      <Border Tag="Background=flow.separator" Height="1" Margin="0,6,0,6"/>
+                      <Border Tag="Background=flow.selected" CornerRadius="4" Padding="6,3">
+                        <StackPanel>
+                          <TextBlock><Run Tag="Foreground=flow.highlight" Text="Pal"/><Run Tag="Foreground=flow.selectedTitle" Text="ette profiles"/></TextBlock>
+                          <TextBlock Tag="Foreground=flow.selectedTitle" FontSize="11" Text="710sRice"/>
+                        </StackPanel>
+                      </Border>
+                      <StackPanel Margin="6,4,0,0">
+                        <TextBlock><Run Tag="Foreground=flow.highlight" Text="Pa"/><Run Tag="Foreground=flow.title" Text="int"/></TextBlock>
+                        <TextBlock Tag="Foreground=flow.subtitle" FontSize="11" Text="mspaint.exe"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </Grid>
+
+              <TextBlock x:Name="CapTerm" Style="{StaticResource OnPic}" Text="WINDOWS TERMINAL AND THE PROMPT"/>
+              <Border x:Name="MockTerm" Tag="Background=terminal.background" CornerRadius="8">
+                <StackPanel>
+                  <Border Tag="Background=terminal.tabRow" CornerRadius="8,8,0,0" Padding="10,5,10,0">
+                    <StackPanel Orientation="Horizontal">
+                      <Border Tag="Background=terminal.background" CornerRadius="5,5,0,0" Padding="12,3">
+                        <TextBlock Tag="Foreground=terminal.foreground" Text="pwsh"/>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                  <StackPanel Margin="12,8,12,12">
+                    <TextBlock TextWrapping="Wrap"><Run Tag="Foreground=starship.prompt" Text="~\710.DesktopRice"/><Run Tag="Foreground=terminal.foreground" Text=" on "/><Run Tag="Foreground=starship.branch" Text="master"/><Run Tag="Foreground=starship.status" Text=" [!?]"/><Run Tag="Foreground=terminal.foreground" Text=" via "/><Run Tag="Foreground=starship.languages" Text="py 3.12"/></TextBlock>
+                    <TextBlock><Run Tag="Foreground=starship.prompt" Text="&gt; "/><Run Tag="Foreground=terminal.foreground" Text="710sRice doctor "/><Run Tag="Background=terminal.cursorColor" Text=" "/></TextBlock>
+                    <TextBlock Margin="0,2,0,0"><Run Tag="Foreground=starship.error" Text="&gt; "/><Run Tag="Background=terminal.selectionBackground@45;Foreground=terminal.foreground" Text="selected text"/><Run Tag="Foreground=terminal.brightBlack" Text="  # a dim comment"/></TextBlock>
+                    <UniformGrid x:Name="AnsiGrid" Columns="8" Margin="0,10,0,0"/>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <TextBlock x:Name="CapWin" Style="{StaticResource OnPic}" Text="WINDOWS: BORDERS, STACK TABS, ACCENT"/>
+              <Grid x:Name="MockWin">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="10"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Tag="BorderBrush=komorebi.focused" BorderThickness="3" CornerRadius="7" Margin="0,21,0,0">
+                  <Border Tag="Background=terminal.background" CornerRadius="4" MinHeight="96">
+                    <TextBlock Tag="Foreground=terminal.foreground" Text="focused" Margin="8,6" FontSize="11"/>
+                  </Border>
+                </Border>
+                <StackPanel Grid.Column="2">
+                  <StackPanel Orientation="Horizontal">
+                    <Border Tag="Background=komorebi.tabBackground" CornerRadius="4,4,0,0" Padding="9,2">
+                      <TextBlock Tag="Foreground=komorebi.tabFocusedText" Text="Explorer" FontSize="11"/>
+                    </Border>
+                    <Border Tag="Background=komorebi.tabBackground" CornerRadius="4,4,0,0" Padding="9,2" Margin="2,0,0,0">
+                      <TextBlock Tag="Foreground=komorebi.tabText" Text="Notes" FontSize="11"/>
+                    </Border>
+                  </StackPanel>
+                  <Border Tag="BorderBrush=komorebi.stack" BorderThickness="3" CornerRadius="0,7,7,7">
+                    <Border Tag="Background=terminal.background" CornerRadius="4" Height="36">
+                      <TextBlock Tag="Foreground=terminal.foreground" Text="a stack" Margin="8,4" FontSize="11"/>
+                    </Border>
+                  </Border>
+                  <Border Tag="BorderBrush=komorebi.unfocused" BorderThickness="3" CornerRadius="7" Margin="0,6,0,0">
+                    <Border Tag="Background=terminal.background" CornerRadius="4" Height="36">
+                      <TextBlock Tag="Foreground=terminal.foreground" Text="unfocused" Margin="8,4" FontSize="11"/>
+                    </Border>
+                  </Border>
+                </StackPanel>
+              </Grid>
+              <WrapPanel Margin="0,8,0,0">
+                <Border Tag="BorderBrush=komorebi.monocle" BorderThickness="3" CornerRadius="5" Padding="8,2" Margin="0,0,8,0">
+                  <TextBlock Text="monocle border" FontSize="11" Foreground="#E6FFFFFF"/>
+                </Border>
+                <Border x:Name="MockAccent" Tag="Background=windows.accent" CornerRadius="5" Padding="8,3">
+                  <TextBlock x:Name="MockAccentText" Text="Windows accent" FontSize="11"/>
+                </Border>
+              </WrapPanel>
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+
+        <!-- Footer: what happened, and the buttons -->
+        <Border Grid.Row="2" BorderBrush="{DynamicResource B.Line}" BorderThickness="0,1,0,0" Padding="24,12,24,14" Margin="0,8,0,0">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="Status" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+              <Button x:Name="BtnDelete" Content="Delete" Margin="0,0,28,0"/>
+              <Button x:Name="BtnCancel" Content="Close" Margin="0,0,8,0"/>
+              <Button x:Name="BtnSave" Content="Save" Margin="0,0,8,0"/>
+              <Button x:Name="BtnSaveUse" Style="{StaticResource Primary}" Content="Save and use"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- Questions (discard changes? delete?) over the whole window -->
+      <Border x:Name="AskLayer" Background="{DynamicResource B.Scrim}" CornerRadius="10" Visibility="Collapsed">
+        <Border Background="{DynamicResource B.Bg}" BorderBrush="{DynamicResource B.Accent}" BorderThickness="1" CornerRadius="10"
+                Padding="22,18" MaxWidth="520" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <StackPanel>
+            <TextBlock x:Name="AskTitle" FontWeight="Bold" Foreground="{DynamicResource B.Accent}"/>
+            <TextBlock x:Name="AskText" Style="{StaticResource Hint}" Margin="0,6,0,16"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button x:Name="AskNo" Margin="0,0,8,0"/>
+              <Button x:Name="AskYes" Style="{StaticResource Primary}"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

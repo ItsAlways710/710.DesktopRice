@@ -326,7 +326,7 @@ if ($Keep -contains 'PSFzf') {
 # Gitignored, machine-local, always regenerable by install.ps1 -- safe to remove
 # unconditionally, no Pre-existing? question applies (nothing here existed before this
 # repo did, and it's config data, not a package).
-Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json, wallust.toml, menu-colors.css, tiling-mode.txt, the palette-profile choice)" {
+Invoke-Step "Remove machine-local generated files (display-index.local.json, komorebi.json, wallust.toml, menu-colors.css, tiling-mode.txt, the palette-profile choice, the palette editor's scratch folder)" {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root 'config\komorebi\display-index.local.json')
     # The remembered elevated/non-elevated tiling choice -- uninstall forgets it, so a
     # fresh install starts from the default again (plan doc Open item 37).
@@ -340,6 +340,8 @@ Invoke-Step "Remove machine-local generated files (display-index.local.json, kom
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-profile.txt')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-status.json')
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\theme-inputs.sha256')
+    # The palette editor's own wallust config and its last preview palette.
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-editor')
 } 'Machine-local generated files removed'
 
 # Your palette profiles and scheme files are user data, like rules.local.toml and user.ahk:
