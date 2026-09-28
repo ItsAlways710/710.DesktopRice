@@ -993,6 +993,25 @@ function Test-DoctorPaletteLastRun {
 # search), Windows Terminal (theme, default shell), the $PROFILE hook, Defender's exclusions,
 # and -- on a full-time machine -- the Windows settings -Activate applies.
 
+function Test-DoctorFlowTheme {
+    # Flow on the palette's theme (tools\palette\targets\flow.ps1): selected in its settings and
+    # the file there. Skipped when the chosen profile switches Flow off, or Flow has never run
+    # (the line above says so). Picking another theme in Flow's own settings reads as [XX] here:
+    # the palette re-selects its own on every wallpaper change -- switch Flow off in the profile
+    # to keep one of yours.
+    $active = Resolve-ActivePaletteProfile
+    if ('flow' -in $active.Profile.off) {
+        return New-DoctorResult -Id 'flow-theme' -Status '..' -Text "Flow Launcher's colours: off in $(Get-PaletteProfileLabel -Id $active.Id -Name $active.Profile.name)"
+    }
+    $settingsPath = Join-Path $env:APPDATA 'FlowLauncher\Settings\Settings.json'
+    if (-not (Test-Path -LiteralPath $settingsPath)) { return }
+    $theme = "$(([IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json -AsHashtable)['Theme'])"
+    $file = Test-Path -LiteralPath (Join-Path $env:APPDATA 'FlowLauncher\Themes\710sRice.xaml')
+    if ($theme -eq '710sRice' -and $file) { return New-DoctorResult -Id 'flow-theme' -Status 'OK' -Text 'Flow Launcher themed (710sRice)' }
+    $why = if ($theme -ne '710sRice') { "it's on '$(if ($theme) { $theme } else { "Flow's default" })'" } else { '710sRice.xaml is missing' }
+    New-DoctorResult -Id 'flow-theme' -Status 'XX' -Text "Flow Launcher isn't on the palette's theme ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
+}
+
 function Test-DoctorFlow {
     # setup-flow-launcher.ps1 -Check: install's own flow step, asked what it would change.
     # Functional items (the search keywords, the Everything engine, the old plugin, Flow
@@ -1188,6 +1207,7 @@ function Get-DoctorGroups {
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
             @{ Id = 'flow';       Name = 'Flow Launcher';        Run = { Test-DoctorFlow } }
+            @{ Id = 'flow-theme'; Name = 'Flow Launcher theme';  Run = { Test-DoctorFlowTheme } }
             @{ Id = 'everything'; Name = 'Everything';           Run = { Test-DoctorEverything } }
             @{ Id = 'terminal';   Name = 'Windows Terminal';     Run = { Test-DoctorTerminal } }
             @{ Id = 'profile';    Name = 'Shell profile hook';   Run = { Test-DoctorProfileHook } }

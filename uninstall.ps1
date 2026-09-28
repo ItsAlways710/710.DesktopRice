@@ -208,6 +208,10 @@ Invoke-ActivationRevert 'Restore original Flow Launcher settings + remove the Ev
     if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored (keywords, identity, Explorer file search) and any legacy Everything plugin removed' }
     else { Step-Info 'setup-flow-launcher.ps1 never actually changed anything on this machine -- nothing to restore.' }
 }
+Invoke-ActivationRevert 'Restore Flow Launcher''s own theme (Palette Profiles themed it)' {
+    if (Restore-FlowTheme) { Step-Ok "Flow Launcher's theme put back and 710sRice.xaml removed" }
+    else { Step-Info 'Flow Launcher was never themed by the palette -- nothing to restore.' }
+}
 
 # --- 4. Revert env vars -------------------------------------------------------------
 Write-Host "`n-- Config environment variables --" -ForegroundColor Cyan

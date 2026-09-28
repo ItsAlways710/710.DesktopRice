@@ -1064,7 +1064,16 @@ function Invoke-PaletteTargets {
         try {
             if ($t.Template -and $t.Output) {
                 $path = & $t.Output
-                if ($path) { $changed = Write-PaletteFile -Path $path -Text (Get-PaletteTargetText -Theme $Theme -Target $t) }
+                if ($path) {
+                    $text = Get-PaletteTargetText -Theme $Theme -Target $t
+                    # Validate: never hand an app a file it can't read (Flow shows an error box
+                    # and drops to its default theme on a bad xaml).
+                    switch ("$($t.Validate)") {
+                        'xml'  { try { [System.Xml.XmlDocument]::new().LoadXml($text) } catch { throw "the rendered file isn't valid XML ($($_.Exception.GetBaseException().Message)) -- not written" } }
+                        'json' { try { $null = $text | ConvertFrom-Json } catch { throw "the rendered file isn't valid JSON -- not written" } }
+                    }
+                    $changed = Write-PaletteFile -Path $path -Text $text
+                }
             }
             $r = @{ Status = 'ok'; Message = $t.Label }
             if ($t.Apply) {

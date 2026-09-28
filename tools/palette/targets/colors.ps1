@@ -14,5 +14,6 @@
         color6 = @{ Label = 'color6'; Default = 'text' }
     }
     Template = 'colors.json.tpl'
+    Validate = 'json'
     Output   = { Join-Path (Get-PaletteRoot) 'config\wallust\generated\colors.json' }
 }

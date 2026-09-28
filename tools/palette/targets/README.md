@@ -14,7 +14,8 @@ stamp pick a new file up by themselves.
 | `Properties` | yes | `[ordered]@{ name = @{ Label = '...'; Default = '<expression>' } }` — each property's colour when the profile doesn't override it. Expressions: a role (`accent`), a palette slot (`color3`, `background`), `#rrggbb`, `lighten(x, n)`, `darken(x, n)`, `mix(x, y, n)` |
 | `Readable` | no | `@(@{ Fg = 'text'; Bg = 'background'; Min = 4.5 })` — pairs the "keep text readable" guard checks (`Bg` may be `othertarget.prop`); `Guard = 'terminal'` puts a pair under the Terminal setting instead of the UI one |
 | `Template` | for files | a file next to this one; `{{property}}` placeholders, plus `{{_isDark}}` (`True`/`False`) and `{{_mode}}` (`dark`/`light`). Everything else is copied byte for byte |
-| `Output` | for files | `{ <scriptblock returning the path> }` — written only when the bytes change |
+| `Output` | for files | `{ <scriptblock returning the path> }` — written only when the bytes change; return nothing to skip writing (Flow before it has ever run) |
+| `Validate` | no | `'xml'` or `'json'`: the rendered text is parsed first and a file that doesn't parse is never written (the target fails instead) |
 | `Apply` | for live apps | `{ param($Values, $Theme, $Context) ... }` — runs after the file (if any) is written; returns `@{ Status = 'ok' \| 'skipped'; Message = '...' }`, throws on failure |
 | `Hidden` | no | leave it out of the editor |
 

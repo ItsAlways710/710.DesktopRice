@@ -1847,3 +1847,36 @@ function Restore-FlowLauncherSettings {
     Remove-OriginalState -Label 'flow-querymode'
     return $true
 }
+
+function Restore-FlowTheme {
+    <# Undoes the palette pipeline's Flow target (tools\palette\targets\flow.ps1): Flow's selected
+       theme goes back to what it was before (the 'flow-theme' snapshot) and our 710sRice.xaml is
+       deleted. Only while Flow is still on ours -- a theme you picked yourself since stays. The
+       old theme comes back only if its file still exists (Flow shows an error box at start for a
+       theme it can't find -- winarchy's Winarchy.xaml, say, once that's gone); otherwise the key
+       goes and Flow uses its own default. Flow is stopped first and NOT relaunched, as in
+       Restore-FlowLauncherSettings. $false when there was nothing to undo. #>
+    $snap = Get-OriginalState -Label 'flow-theme'
+    $flowRoot = Join-Path $env:APPDATA 'FlowLauncher'
+    $xaml = Join-Path $flowRoot 'Themes\710sRice.xaml'
+    if (-not $snap -and -not (Test-Path -LiteralPath $xaml)) { return $false }
+    $flow = @(Get-Process -Name 'Flow.Launcher' -ErrorAction SilentlyContinue)
+    if ($flow.Count) {
+        $flow | Stop-Process -Force
+        $flow | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+    }
+    $settingsPath = Join-Path $flowRoot 'Settings\Settings.json'
+    if ($snap -and (Test-Path -LiteralPath $settingsPath)) {
+        $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+        if ("$($settings['Theme'])" -eq '710sRice') {
+            $old = "$($snap.Theme)"
+            $oldThere = $old -and (@(Join-Path $flowRoot "Themes\$old.xaml") + @(Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'FlowLauncher\app-*\Themes') -Filter "$old.xaml" -File -ErrorAction SilentlyContinue | ForEach-Object FullName) |
+                        Where-Object { Test-Path -LiteralPath $_ }).Count
+            if ($snap.ThemeExisted -and $oldThere) { $settings['Theme'] = $old } else { $settings.Remove('Theme') }
+            $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
+        }
+    }
+    Remove-Item -LiteralPath $xaml -Force -ErrorAction SilentlyContinue
+    Remove-OriginalState -Label 'flow-theme'
+    $true
+}
