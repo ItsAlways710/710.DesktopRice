@@ -11,7 +11,9 @@
 $InstallStepOrder = @('packages', 'upgrade', 'envvars', 'weather', 'path', 'wallust', 'theme', 'palette',
                       'monitors', 'defender', 'profile', 'terminal', 'flow', 'compile', 'tasks', 'windows')
 
-# Steps a plain run never includes -- only -Only runs them. upgrade: install never moves an
-# installed package unless asked (user, 2026-09-26: "upgrade must be named"). palette: a plain
+# Steps a plain run never includes -- only -Only runs them. upgrade: doctor's named fix for "older
+# than its pin", from the local version probes; a plain run's packages step already brings a
+# pinned package below its pin up to it, from what `winget list` shows (Group 1 W7, 2026-09-30 --
+# this replaced the Stage 2 rule "install never moves an installed package"). palette: a plain
 # run's theme step already themes everything (from the default wallpaper).
 $InstallNamedOnlySteps = @('upgrade', 'palette')

@@ -8,7 +8,9 @@
     reads it). Rows with a version number (komorebi, YASB, AutoHotkey, Flow Launcher,
     Everything, wallust) are installed at that version, and the winget ones winget-pinned so
     a general `winget upgrade --all` elsewhere on the machine can't silently move them out
-    from under this repo's tested config. `latest` rows install unpinned.
+    from under this repo's tested config; one already installed below its pin is brought up
+    to it (never down). `latest` rows install unpinned. Every winget call names its source
+    (`--source winget`, or `msstore` for PowerShell 7).
   - Registers KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (User scope)
     pointing at this repo, and mirrors them into the current process so the rest of this
     run sees them too. DESKTOPRICE_HOME (the repo root) is what config\yasb\config.yaml's
@@ -36,10 +38,13 @@
     packages  upgrade  envvars  weather  path  wallust  theme  palette  monitors
     defender  profile  terminal  flow  compile  tasks  windows
   A plain run does every step but upgrade and palette (windows only with -Activate) -- the
-  same run as always, default wallpaper and theme included, and no installed package ever
-  moved. Those two only run when named: upgrade moves a pinned package that's older than its
-  versions.md pin up to it; palette re-applies the CURRENT wallpaper's colours (no
-  wallpaper change). -Only <step>[,<step>...] runs just those, in the
+  same run as always, default wallpaper and theme included. Its packages step brings a pinned
+  package that's below its versions.md pin up to it, and never moves one down or touches an
+  unpinned one (Group 1 W7). Those two only run when named: upgrade does the same move for
+  what the local version probes read (doctor's fix for "older than its pin"); palette
+  re-applies the CURRENT wallpaper's colours (no wallpaper change). A package that doesn't
+  install leaves the run going: the closing lines list it, and the run exits 1 (W2).
+  -Only <step>[,<step>...] runs just those, in the
   same order, in whatever mode the machine is already in (a full-time machine's tasks stay
   sign-in tasks; windows does nothing on an on-demand machine); it takes no other switch
   and starts nothing afterwards. `710sRice doctor` names the step that fixes what it
@@ -168,6 +173,14 @@ $wallustExe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
 
 $Steps = [ordered]@{}
 
+# What didn't install (Group 1 W2): a winget install that failed, a pinned package left below
+# its pin, PSFzf, wallust. The run still finishes every step; the closing lines list these and
+# the run exits 1. "Core" = every versions.md row -- doctor's own rule (a missing package is its
+# [XX]), so install's exit code and doctor's verdict can't disagree (provisional, the user's
+# call 2026-09-30: open for discussion if it ever gets in the way). Restart-required and
+# already-installed count as installed.
+$NotInstalled = [System.Collections.Generic.List[string]]::new()
+
 $Steps['packages'] = {
     # --- 1. Packages (winget) -----------------------------------------------------------
     # versions.md is the one list of what's installed and at which version (read through
@@ -188,6 +201,7 @@ $Steps['packages'] = {
         if ($wingetRows.Count -eq 0) {
             # Never guess what to install -- uninstall refuses the same way.
             Write-Host "  [XX] versions.md has no package table -- nothing installed" -ForegroundColor Red
+            $NotInstalled.Add("every package (versions.md has no package table)")
         }
 
         # Some installers drop a Desktop shortcut (Flow Launcher and ShareX -- seen on the
@@ -208,24 +222,48 @@ $Steps['packages'] = {
         foreach ($row in $wingetRows) {
             $id = $row.InstallId
             $pinVersion = if (Test-PinnedRow $row) { $row.Version } else { $null }
+            # Every call names its source (Get-WingetSourceArgs): winget's own for winget rows,
+            # the Store for PowerShell 7's msstore row -- never both (W1).
             $sourceArgs = @(Get-WingetSourceArgs $row)
             $listArgs = @('list', '--id', $id, '--exact', '--accept-source-agreements') + $sourceArgs
-            $listed = (winget @listArgs 2>$null) | Out-String
-            $alreadyInstalled = $listed -match [regex]::Escape($id)
+            $listed = @(winget @listArgs 2>$null)
+            $alreadyInstalled = ($listed | Out-String) -match [regex]::Escape($id)
             if ($alreadyInstalled) {
-                Step-Ok "$id already installed"
+                # A pinned package below its pin goes up to it (W7; user, 2026-09-30: "install
+                # should always update pinned packages to pin, that's what the pin is for") --
+                # never down: newer than the pin is left alone, doctor's [!!] and your call. The
+                # version is the one this same `winget list` shows (the token after the ID), so
+                # an AutoHotkey 1.1 that winget lists is moved to 2.0.28 instead of pinned at 1.1.
+                $have = Get-WingetListedVersion -Lines $listed -Id $id
+                $cmp  = if ($pinVersion -and $have) { Compare-PinVersion $have $pinVersion } else { $null }
+                if ($cmp -eq -1) {
+                    if (-not (Invoke-MoveToPin -Row $row -From $have)) { $NotInstalled.Add("$($row.Component) (still $have, not its pin $pinVersion)") }
+                } elseif ($cmp -eq 1) {
+                    Step-Ok "$id already installed ($have -- newer than its pin $pinVersion, left alone)"
+                } else {
+                    Step-Ok "$id already installed"
+                }
             } else {
                 Step-Info "Installing $id ..."
                 $wingetArgs = @('install', '--id', $id, '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements')
                 if ($pinVersion) { $wingetArgs += @('--version', $pinVersion) }
                 $wingetArgs += $sourceArgs
                 winget @wingetArgs
-                if ($LASTEXITCODE -ne 0) {
-                    Step-Warn "winget install $id exited with code $LASTEXITCODE -- check the output above."
+                $code = $LASTEXITCODE
+                # Restart-required and already-there are installed too (W2, winarchy c5053b9);
+                # anything else is a package that didn't install -- the run finishes every step
+                # and then says so and exits 1.
+                switch (Get-WingetOutcome $code) {
+                    'ok'      { Step-Ok "$id installed" }
+                    'restart' { Step-Warn "$id installed -- restart Windows to finish its setup" }
+                    default {
+                        Write-Host "  [XX] $($id): winget install exited $(Format-WingetCode $code) -- check the output above" -ForegroundColor Red
+                        $NotInstalled.Add($row.Component)
+                    }
                 }
             }
             if ($pinVersion) {
-                $pinArgs = @('pin', 'add', '--id', $id) + $sourceArgs
+                $pinArgs = @('pin', 'add', '--id', $id, '--exact') + $sourceArgs
                 winget @pinArgs 2>$null | Out-Null
             }
         }
@@ -258,7 +296,8 @@ $Steps['packages'] = {
                     Install-Module $module -Scope CurrentUser -Force -ErrorAction Stop
                     Step-Ok "$module installed"
                 } catch {
-                    Step-Warn "Could not install $($module): $($_.Exception.Message)"
+                    Write-Host "  [XX] Could not install $($module): $($_.Exception.Message)" -ForegroundColor Red
+                    $NotInstalled.Add($row.Component)
                 }
             }
         }
@@ -290,40 +329,8 @@ $Steps['upgrade'] = {
         if ($null -eq $cmp) { Step-Warn "$($name): couldn't read its version ('$($before.Version)') -- left alone"; continue }
         if ($cmp -eq 0) { Step-Ok "$name $($before.Version) -- at its pin"; continue }
         if ($cmp -gt 0) { Step-Warn "$name $($before.Version) is newer than its pin $($row.Version) -- left alone"; continue }
-
-        Step-Info "$name $($before.Version) -> $($row.Version) ..."
-        # One package going wrong is that package's [XX], never the end of the step: the
-        # rest still get checked, and whatever was stopped still gets started again below.
-        $wasRunning = $false
-        try {
-            $wasRunning = Stop-PinnedApp $row
-            $code  = Invoke-PinnedUpgrade $row
-            $after = Get-PackageVersion $row
-            if ($null -ne $code -and $code -ne 0) {
-                Write-Host "  [XX] $($name): winget exited $(Format-WingetCode $code) -- still $($after.Version) (pin put back)" -ForegroundColor Red
-            } elseif ((Compare-PinVersion $after.Version $row.Version) -eq 0) {
-                Step-Ok "$name $($before.Version) -> $($after.Version)"
-            } elseif ($null -eq $code -and $after.Installed) {
-                Step-Warn "$($name): the un-elevated upgrade was still running after 3 minutes -- it reports $($after.Version) so far; check again once it's done."
-            } else {
-                Write-Host "  [XX] $($name): winget finished, but it reports '$($after.Version)', not $($row.Version)" -ForegroundColor Red
-            }
-        } catch {
-            # Invoke-PinnedUpgrade puts the pin back itself (finally), whatever went wrong.
-            Write-Host "  [XX] $($name): $($_.Exception.Message)" -ForegroundColor Red
-        }
-        $task = Get-PinnedAppTask $row
-        if ($wasRunning -and $task) {
-            if (Test-Task -TaskName $task) {
-                $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $task) 2>&1
-                if ($LASTEXITCODE -eq 0) { Step-Ok "$($name): started again through its task" }
-                else { Step-Warn "$($name): its task didn't start (schtasks exit $LASTEXITCODE) -- 710sRice start brings it back." }
-            } else {
-                Step-Warn "$($name) was running but has no task -- 710sRice start brings it back."
-            }
-        } elseif ($wasRunning) {
-            Step-Info "$name was closed for the upgrade -- it starts again the next time you open it."
-        }
+        # The same routine the packages step runs for one below its pin (packages.ps1).
+        if (-not (Invoke-MoveToPin -Row $row -From $before.Version)) { $NotInstalled.Add("$name (not at its pin $($row.Version))") }
     }
 }
 
@@ -423,7 +430,8 @@ $Steps['wallust'] = {
             & (Join-Path $Root 'tools\install-wallust.ps1') -Version $WallustPinnedVersion
             Step-Ok "wallust installed"
         } catch {
-            Step-Warn "wallust install failed: $($_.Exception.Message) -- continuing without it. Re-run install.ps1, or tools\install-wallust.ps1 directly, once network access allows it."
+            Write-Host "  [XX] wallust install failed: $($_.Exception.Message) -- the rest of the install carries on without it." -ForegroundColor Red
+            $NotInstalled.Add('wallust')
         }
     }
 
@@ -759,4 +767,10 @@ if ($OnlyRun) {
         Write-Host ""
         Write-Host "Or run ``710sRice install -Activate`` to start it at every sign-in."
     }
+}
+# Something didn't install (W2): every step still ran; say what, and fail the run.
+if ($NotInstalled.Count) {
+    Write-Host ''
+    Write-Host "  [XX] Not installed: $($NotInstalled -join ', ') -- 710sRice doctor shows what's missing; 710sRice doctor -repair tries again" -ForegroundColor Red
+    exit 1
 }

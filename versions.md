@@ -3,7 +3,7 @@
 The one list of what this repo installs and at which version, and what `uninstall.ps1` is
 (and isn't) allowed to remove. `install.ps1` (its `packages` and `wallust` steps),
 `tools/install-wallust.ps1` and `uninstall.ps1` all read this table — nothing keeps a second
-copy — and `710sRice doctor` will compare it with the machine. A pin bump is a one-line
+copy — and `710sRice doctor` compares it with the machine. A pin bump is a one-line
 change here, and a pin still means "tested on the Dell and accepted".
 
 **Table format is load-bearing**, not just documentation: `tools/lib/packages.ps1`
@@ -19,9 +19,15 @@ Columns:
   `github-release`.
 - **Install ID** — the winget package ID / PSGallery module name / GitHub-or-Codeberg repo
   slug `install.ps1` actually uses. This is the identity `uninstall.ps1` matches against.
-- **Pre-existing?** — see the note below. `uninstall.ps1` never removes a `yes` row without
-  `-Force`; a `no` row is removed by a plain `.\uninstall.ps1` (no flags) unless you pass
-  `-Keep <Install ID>`.
+- **Pre-existing?** — exactly one of three values (see the note below):
+  - `no` — removed by a plain `710sRice uninstall`, unless you pass `-Keep <Install ID>`;
+  - `yes` — kept by a plain uninstall, removed by `710sRice uninstall -Force`;
+  - `system` — installed if missing, **never removed by uninstall, `-Force` included**
+    (PowerShell 7, which uninstall itself runs on and a fresh install needs first, and Windows
+    Terminal, part of Windows 11). Remove one by hand if you want it gone (Settings > Apps).
+
+  Any other value stops install, doctor and uninstall with an error naming the row — a typo
+  can never be read as "remove it".
 - **Last touched** — date this row was last verified against the real machine (not just
   edited in this file).
 
@@ -38,8 +44,15 @@ Marked `no` (dedicated to this stack, safe for a plain `.\uninstall.ps1` to remo
 komorebi, YASB, AutoHotkey, Flow Launcher, wallust, ShareX.
 
 Marked `yes` (general-purpose, protected by default — `uninstall.ps1` requires `-Force` to
-touch these): Windows Terminal, the Nerd Font, Starship, fzf, zoxide, eza, bat, Everything,
-PSFzf, PowerShell 7. **Reviewed and confirmed by the user 2026-09-22** — originally flagged
+touch these): the Nerd Font, Starship, fzf, zoxide, eza, bat, Everything, PSFzf.
+
+Marked `system` (never removed, `-Force` included — user, 2026-09-30, Group 1 W9: "Keep both,
+always, ps7 will have to be a manual remove, and that's fine"): PowerShell 7 and Windows
+Terminal. Until then both were `yes` rows, so `-Force` removed them too — PowerShell 7 included,
+the shell the uninstall itself runs on.
+
+The history of the review, as it stood before `system` existed: Windows Terminal and PowerShell 7
+were `yes` rows too. **Reviewed and confirmed by the user 2026-09-22** — originally flagged
 `?` as Claude's own conservative guess with no real evidence either way (defaulted to
 protecting rather than silently deciding); the user reviewed the full list, confirmed these
 stay protected, and moved ShareX from protected to removable-by-default. PowerShell 7 was
@@ -57,8 +70,8 @@ PowerShell 7 note below.
 | Flow Launcher | 2.1.3 | winget | Flow-Launcher.Flow-Launcher | no | 2026-09-21 |
 | wallust | 4.1.0-alpha | github-release | explosion-mental/wallust | no | 2026-09-21 |
 | ShareX | latest | winget | ShareX.ShareX | no | 2026-09-21 |
-| Windows Terminal | latest | winget | Microsoft.WindowsTerminal | yes | 2026-09-21 |
-| PowerShell 7 | latest | msstore | 9MZ1SNWT0N5D | yes | 2026-09-23 |
+| Windows Terminal | latest | winget | Microsoft.WindowsTerminal | system | 2026-09-21 |
+| PowerShell 7 | latest | msstore | 9MZ1SNWT0N5D | system | 2026-09-23 |
 | JetBrainsMono Nerd Font | latest | winget | DEVCOM.JetBrainsMonoNerdFont | yes | 2026-09-21 |
 | Starship | latest | winget | Starship.Starship | yes | 2026-09-21 |
 | fzf | latest | winget | junegunn.fzf | yes | 2026-09-21 |

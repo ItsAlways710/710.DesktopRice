@@ -19,8 +19,17 @@ function Get-VersionsTable {
     # parser, scoped to exactly that file's fixed column layout (see versions.md's own
     # "table format is load-bearing" note: Component | Version | Source | Install ID |
     # Pre-existing? | Last touched). Returns an array of @{ Component; Version; Source;
-    # InstallId; PreExisting; LastTouched }; PreExisting is $true for "yes" or "yes ?".
-    # Moved here from uninstall.ps1 unchanged (2026-09-26).
+    # InstallId; Keep; PreExisting; System; LastTouched }. Moved here from uninstall.ps1
+    # (2026-09-26).
+    #
+    # Pre-existing? is read explicitly (Group 1, W9 -- 2026-09-30): Keep is exactly one of
+    #   no      removed by a plain uninstall (unless -Keep <id>)
+    #   yes     kept by a plain uninstall, removed by -Force
+    #   system  installed if missing, NEVER removed by uninstall, -Force included (PowerShell 7,
+    #           which uninstall itself runs on, and Windows Terminal, part of Windows 11)
+    # and anything else THROWS, naming the row: a typo must never read as "no" -- which is what
+    # the old `-match '^\s*yes'` made of it, i.e. "remove it". PreExisting ($true for yes and
+    # system) and System are there for the callers that only ask "protected?" / "never?".
     param([string]$Path)
     if (-not (Test-Path $Path)) { return @() }
     $rows = [System.Collections.Generic.List[object]]::new()
@@ -33,12 +42,18 @@ function Get-VersionsTable {
         if ($cells[0] -match '^-+$') { continue }                       # separator row
         if (-not $inTable) { continue }
         if ($cells.Count -lt 6) { continue }
+        $keep = $cells[4].ToLowerInvariant()
+        if ($keep -notin 'no', 'yes', 'system') {
+            throw "versions.md: $($cells[0])'s Pre-existing? is '$($cells[4])' -- it has to be yes, no or system (nothing was changed)"
+        }
         $rows.Add([pscustomobject]@{
             Component   = $cells[0]
             Version     = $cells[1]
             Source      = $cells[2]
             InstallId   = $cells[3]
-            PreExisting = ($cells[4] -match '^\s*yes')
+            Keep        = $keep
+            PreExisting = ($keep -ne 'no')
+            System      = ($keep -eq 'system')
             LastTouched = $cells[5]
         })
     }
@@ -60,10 +75,15 @@ function Test-PinnedRow {
 }
 
 function Get-WingetSourceArgs {
-    # The extra winget arguments a row's Source needs: `--source msstore` for msstore rows,
-    # nothing for winget's default source.
+    # The source a row's winget calls go through, always named: `--source winget` for winget
+    # rows, `--source msstore` for msstore rows (PowerShell 7). Every winget argument list in
+    # the repo is built with this -- install's list / install / pin add, the upgrade's pin remove /
+    # upgrade / pin add, uninstall's pin remove / uninstall, and so Invoke-WingetAsUser's too.
+    # Without a source winget also opens the Store source, and when that one is broken (no
+    # Store, a broken Store) every call fails with 0x8A15003B -- install / upgrade / pin /
+    # uninstall alike (winarchy 093cd71 + 39ee198, Group 1 W1).
     param($Row)
-    if ($Row.Source -eq 'msstore') { @('--source', 'msstore') } else { @() }
+    if ($Row.Source -eq 'msstore') { @('--source', 'msstore') } else { @('--source', 'winget') }
 }
 
 # winget exit codes the scripts act on (winget-cli's doc/.../winget/returnCodes.md).
@@ -72,6 +92,42 @@ function Get-WingetSourceArgs {
 $WingetNotInstalled    = 0x8A150014   # NO_APPLICATIONS_FOUND -- nothing by that ID is installed
 $WingetAdminProhibited = 0x8A15007D   # ADMIN_CONTEXT_ACTION_PROHIBITED -- see Invoke-WingetAsUser
 $WingetNoPin           = 0x8A150063   # PIN_DOES_NOT_EXIST
+# Three that mean the package IS there (winarchy c5053b9 + 093cd71, Group 1 W2):
+$WingetRebootRequired  = 0x8A150109   # INSTALL_REBOOT_REQUIRED_TO_FINISH -- installed; a restart finishes its setup
+$WingetAlreadyInstalled = 0x8A150061  # PACKAGE_ALREADY_INSTALLED
+$WingetNotApplicable   = 0x8A15002B   # UPDATE_NOT_APPLICABLE -- nothing newer to move to (already at that version)
+
+function Get-WingetOutcome {
+    <# What a winget install / upgrade exit code means for this repo: 'ok' (0, or already there:
+       PACKAGE_ALREADY_INSTALLED / UPDATE_NOT_APPLICABLE), 'restart' (installed, Windows has to
+       restart to finish its setup -- counted as installed), 'failed' (anything else), or
+       'timeout' ($null: Invoke-WingetAsUser's run was still going). #>
+    param($Code)
+    if ($null -eq $Code) { return 'timeout' }
+    if ($Code -eq 0 -or $Code -eq $WingetAlreadyInstalled -or $Code -eq $WingetNotApplicable) { return 'ok' }
+    if ($Code -eq $WingetRebootRequired) { return 'restart' }
+    'failed'
+}
+
+function Get-WingetListedVersion {
+    <# The version `winget list --id <id> --exact` shows for $Id, from its output lines -- the
+       token right after the ID (winarchy ce49d5c's parse). The table is Name / Id / Version
+       (and an Available column when an upgrade exists); the Name holds spaces, so it's never
+       split into columns. $null when the ID isn't in the output (not installed) or no version
+       follows it. #>
+    param([string[]]$Lines, [Parameter(Mandatory)][string]$Id)
+    foreach ($line in $Lines) {
+        # winget's progress spinner rides on the same line as the table's first row when output
+        # is captured (\r-separated); only the last \r-piece is what the console would show.
+        $shown = @("$line" -split "`r")[-1]
+        if ($shown -match "(?:^|\s)$([regex]::Escape($Id))\s+(\S+)") {
+            $v = $Matches[1]
+            if ($v -match '^\d') { return $v }
+            return $null
+        }
+    }
+    $null
+}
 
 function Format-WingetCode {
     # 0x8A15007D reads better than -1978335107 in a warning, and matches winget's own docs.
@@ -172,10 +228,18 @@ $script:PackageProbes = @{
         if (-not $exe) { $exe = "$env:ProgramFiles\YASB\yasb.exe" }
         Get-ExeProductVersion $exe
     }
-    # The plain exe -- the UI Access one next to it is the same build.
+    # The plain exe -- the UI Access one next to it is the same build. No v2 at all: AutoHotkey
+    # v1 (1.1.x) in the install folder's root, so a v1 machine reads "1.1.37 -- older than its
+    # pin" (fix: the upgrade step) rather than "not installed" -- which the packages step, where
+    # winget DOES list v1, answered "already installed" and pinned 1.1, round after round
+    # (Group 1 W7).
     'AutoHotkey.AutoHotkey' = {
         $exe = @("$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
-                 "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe") |
+                 "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe",
+                 "$env:ProgramFiles\AutoHotkey\AutoHotkeyU64.exe",
+                 "$env:ProgramFiles\AutoHotkey\AutoHotkey.exe",
+                 "$env:LOCALAPPDATA\Programs\AutoHotkey\AutoHotkeyU64.exe",
+                 "$env:LOCALAPPDATA\Programs\AutoHotkey\AutoHotkey.exe") |
                Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
         Get-ExeProductVersion $exe
     }
@@ -311,8 +375,8 @@ function Invoke-PinnedUpgrade {
     param($Row)
     $id  = $Row.InstallId
     $src = @(Get-WingetSourceArgs $Row)
-    $pinRemove = @('pin', 'remove', '--id', $id) + $src
-    $pinAdd    = @('pin', 'add', '--id', $id) + $src
+    $pinRemove = @('pin', 'remove', '--id', $id, '--exact') + $src
+    $pinAdd    = @('pin', 'add', '--id', $id, '--exact') + $src
     winget @pinRemove 2>$null | Out-Null
     try {
         $upgradeArgs = @('upgrade', '--id', $id, '--exact', '--version', $Row.Version, '--silent',
@@ -330,4 +394,64 @@ function Invoke-PinnedUpgrade {
     } finally {
         winget @pinAdd 2>$null | Out-Null
     }
+}
+
+function Invoke-MoveToPin {
+    <# One pinned package that's BELOW its pin, moved up to exactly its pin -- the one routine
+       install's packages step (what `winget list` shows is older than the pin: Group 1 W7) and
+       the upgrade step (what the probe reads is older) both run, so they can't differ. Stops
+       the app if it's running (Stop-PinnedApp), pin remove -> winget upgrade --version <pin> ->
+       pin add (Invoke-PinnedUpgrade -- as the user for a per-user package, Flow), reads the
+       version again, then starts the app through its own task if it was running before. Never
+       down: callers only come here for a package below its pin, never for one newer than it
+       (the user's call -- doctor's [!!]). Prints its own lines. $true when the package ended at
+       its pin (a restart-to-finish counts); $false when it didn't -- the caller counts that as
+       not installed (W2). #>
+    param([Parameter(Mandatory)]$Row, [string]$From)
+    $name = $Row.Component
+    Step-Info "$name $From -> $($Row.Version) (its pin) ..."
+    $ok = $false
+    # One package going wrong is that package's [XX], never the end of the step: whatever was
+    # stopped still gets started again below.
+    $wasRunning = $false
+    try {
+        $wasRunning = Stop-PinnedApp $Row
+        $code    = Invoke-PinnedUpgrade $Row
+        $outcome = Get-WingetOutcome $code
+        $after   = Get-PackageVersion $Row
+        $atPin   = $after.Probe -and (Compare-PinVersion $after.Version $Row.Version) -eq 0
+        if ($outcome -eq 'failed') {
+            Write-Host "  [XX] $($name): winget exited $(Format-WingetCode $code) -- still $(if ($after.Version) { $after.Version } else { $From }) (pin put back)" -ForegroundColor Red
+        } elseif ($outcome -eq 'restart') {
+            Step-Warn "$name $From -> $($Row.Version) -- restart Windows to finish its setup"
+            $ok = $true
+        } elseif ($atPin) {
+            Step-Ok "$name $From -> $($after.Version)"
+            $ok = $true
+        } elseif (-not $after.Probe -and $outcome -eq 'ok') {
+            # No local probe for this row: winget's own word is all there is.
+            Step-Ok "$name $From -> $($Row.Version)"
+            $ok = $true
+        } elseif ($outcome -eq 'timeout' -and $after.Installed) {
+            Step-Warn "$($name): the un-elevated upgrade was still running after 3 minutes -- it reports $($after.Version) so far; check again once it's done."
+        } else {
+            Write-Host "  [XX] $($name): winget finished, but it reports '$($after.Version)', not $($Row.Version)" -ForegroundColor Red
+        }
+    } catch {
+        # Invoke-PinnedUpgrade puts the pin back itself (finally), whatever went wrong.
+        Write-Host "  [XX] $($name): $($_.Exception.Message)" -ForegroundColor Red
+    }
+    $task = Get-PinnedAppTask $Row
+    if ($wasRunning -and $task) {
+        if (Test-Task -TaskName $task) {
+            $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $task) 2>&1
+            if ($LASTEXITCODE -eq 0) { Step-Ok "$($name): started again through its task" }
+            else { Step-Warn "$($name): its task didn't start (schtasks exit $LASTEXITCODE) -- 710sRice start brings it back." }
+        } else {
+            Step-Warn "$($name) was running but has no task -- 710sRice start brings it back."
+        }
+    } elseif ($wasRunning) {
+        Step-Info "$name was closed for the upgrade -- it starts again the next time you open it."
+    }
+    $ok
 }

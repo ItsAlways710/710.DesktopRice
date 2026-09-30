@@ -17,9 +17,11 @@
   command's user-PATH entry (<repo>\bin, only that exact entry) and winget pins
   install.ps1 sets, then removes the packages this repo's own install.ps1 installs --
   EXCEPT any row versions.md marks Pre-existing? = yes, which is left alone unless you
-  pass -Force (see versions.md for what that column means and why most rows currently
-  default to protected). -Keep <Install ID> protects additional specific packages beyond
-  whatever versions.md already protects.
+  pass -Force, and the `system` rows (PowerShell 7, Windows Terminal), which it never
+  removes, -Force included (see versions.md for what that column means). A Pre-existing?
+  value that isn't yes / no / system stops the uninstall before it changes anything.
+  -Keep <Install ID> protects additional specific packages beyond whatever versions.md
+  already protects.
 
   A genuine before-710.DesktopRice restore, not just a removal of what this repo added:
   the wallpaper, lock screen, accent color and Windows Terminal settings are restored to
@@ -260,7 +262,7 @@ Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
     # done -- the goal is no pin, however we got there.
     $failed = @()
     foreach ($row in ($wingetRows | Where-Object { Test-PinnedRow $_ })) {
-        $pinArgs = @('pin', 'remove', '--id', $row.InstallId) + @(Get-WingetSourceArgs $row)
+        $pinArgs = @('pin', 'remove', '--id', $row.InstallId, '--exact') + @(Get-WingetSourceArgs $row)
         winget @pinArgs 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $WingetNoPin) {
             $failed += "$($row.InstallId) ($(Format-WingetCode $LASTEXITCODE))"
@@ -273,6 +275,13 @@ Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
 Write-Host "`n-- Packages --" -ForegroundColor Cyan
 foreach ($row in $wingetRows) {
     $id = $row.InstallId
+    if ($row.System) {
+        # versions.md's `system` rows (PowerShell 7 -- this very uninstall runs on it, and a
+        # fresh install needs it first -- and Windows Terminal, part of Windows 11): installed
+        # if missing, never removed here, -Force included (user, 2026-09-30: "Keep both, always").
+        Step-Info "$($row.Component) -- kept (versions.md marks it system: never removed by uninstall, -Force included). To remove it anyway: Settings > Apps > Installed apps."
+        continue
+    }
     if ($Keep -contains $id) {
         Step-Info "$id -- kept (-Keep)"
         continue
@@ -306,7 +315,9 @@ foreach ($row in $wingetRows) {
 # --- 7. wallust binary -----------------------------------------------------------------
 $wallustRow = $allRows | Where-Object { $_.InstallId -like '*wallust*' } | Select-Object -First 1
 $wallustDir = Join-Path $Root 'tools\bin\wallust'
-if ($wallustRow -and ($Keep -contains $wallustRow.InstallId)) {
+if ($wallustRow -and $wallustRow.System) {
+    Step-Info "wallust -- kept (versions.md marks it system: never removed by uninstall)"
+} elseif ($wallustRow -and ($Keep -contains $wallustRow.InstallId)) {
     Step-Info "$($wallustRow.InstallId) -- kept (-Keep)"
 } elseif (Test-Path $wallustDir) {
     Invoke-Step "Remove downloaded wallust binary (tools\bin\wallust)" {
@@ -318,7 +329,9 @@ if ($wallustRow -and ($Keep -contains $wallustRow.InstallId)) {
 
 # --- 8. PSFzf module ----------------------------------------------------------------------
 $psfzfRow = $allRows | Where-Object { $_.InstallId -eq 'PSFzf' } | Select-Object -First 1
-if ($Keep -contains 'PSFzf') {
+if ($psfzfRow -and $psfzfRow.System) {
+    Step-Info "PSFzf -- kept (versions.md marks it system: never removed by uninstall)"
+} elseif ($Keep -contains 'PSFzf') {
     Step-Info "PSFzf -- kept (-Keep)"
 } elseif ($psfzfRow -and $psfzfRow.PreExisting -and -not $Force) {
     Step-Info "PSFzf -- kept (versions.md marks this Pre-existing?; pass -Force to remove it anyway)"

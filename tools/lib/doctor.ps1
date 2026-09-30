@@ -372,10 +372,13 @@ function Test-DoctorPinnedPackages {
 }
 
 function Start-DoctorWingetJob {
-    # `winget pin list`, in the background (3.2 s on the Dell). Reason says why there's no job.
+    # `winget pin list --source winget`, in the background (3.2 s on the Dell). Reason says why
+    # there's no job. The source named, like every winget call here (Get-WingetSourceArgs): with
+    # none, winget also opens the Store source, and a broken one fails the call (Group 1 W1) --
+    # every pinned row is a winget row.
     $winget = (Get-Command winget.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
     if (-not $winget) { return [pscustomobject]@{ Reason = "winget isn't installed"; Job = $null } }
-    [pscustomobject]@{ Reason = $null; Job = (Start-DoctorProcess -Exe $winget -Arguments @('pin', 'list')) }
+    [pscustomobject]@{ Reason = $null; Job = (Start-DoctorProcess -Exe $winget -Arguments @('pin', 'list', '--source', 'winget')) }
 }
 
 function Test-DoctorPins {
