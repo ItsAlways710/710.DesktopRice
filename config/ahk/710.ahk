@@ -154,7 +154,8 @@ CloseWindow() {
 #t::Komorebic('toggle-float')                    ; float/tile
 #p::Komorebic('toggle-pause')                    ; pause tiling
 #r::Komorebic('retile')                          ; force retile
-#+r::ReloadStack()                               ; reload whole stack
+#+r::ReloadStack()                               ; reload: re-apply config + rules, restart only what changed
+#^r::RestartStack()                              ; restart the whole stack (stop + start)
 #+Enter::Komorebic('promote')                    ; promote to largest tile
 #+l::Komorebic('cycle-layout next')              ; cycle to next layout
 #!l::ToggleScrolling()                           ; toggle scrolling layout - 2 cols
@@ -1758,6 +1759,65 @@ QuitStack() {
     try RunWait('taskkill /IM yasb.exe /F', , 'Hide')
     try RunWait('taskkill /IM ShareX.exe /F', , 'Hide')
     ExitApp()
+}
+
+; SUPER+Ctrl+R: `710sRice restart` -- the WHOLE stack, every time (SUPER+Shift+R only
+; restarts what changed). The restart's Stop-All stops this very script, so it runs in a
+; hidden pwsh of its own that outlives us, and two toasts bracket it: this one before, and
+; the NEW 710.ahk -- started by that same restart -- saying how it went (ReportRestart, at
+; load). -Command "& '...'" makes it an ordinary shell to 710sRice, so its "Press Enter to
+; close" can never wait on a window nobody can see. Everything it prints lands in
+; restart-hotkey.log in the logs folder, then an exit=N line; the report renames it
+; restart-hotkey.last.log. Single quotes in a path are doubled for PowerShell's '...'.
+RestartLog := EnvGet('LOCALAPPDATA') '\710.DesktopRice\restart-hotkey.log'
+
+RestartStack(*) {
+    global RepoRoot, RestartLog
+    ; A double-tap: one's already under way (a fresh log with no exit line yet).
+    try {
+        if FileExist(RestartLog) && DateDiff(A_Now, FileGetTime(RestartLog, 'M'), 'Seconds') < 120
+            && !InStr(FileRead(RestartLog, 'UTF-8'), 'exit=')
+            return
+    }
+    ps1 := StrReplace(RepoRoot '\710sRice.ps1', "'", "''")
+    log := StrReplace(RestartLog, "'", "''")
+    TrayTip('Restarting the whole stack...', '710sRice')
+    try Run(Format('pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& {1}{2}{1} restart *> {1}{3}{1}; Add-Content -LiteralPath {1}{3}{1} ({1}exit={1} + $LASTEXITCODE)"'
+        , "'", ps1, log), , 'Hide')
+    catch as e
+        TrayTip('Restart could not start: ' e.Message, '710sRice')
+}
+
+; At load: if SUPER+Ctrl+R started the restart that started us, say how it went once it's
+; done (Start-All is still finishing ShareX and its waits when 710.ahk comes up). A log
+; older than 10 minutes is a leftover (a restart cut short by a sign-out, say): set aside
+; quietly, no toast.
+try {
+    if FileExist(RestartLog) {
+        if DateDiff(A_Now, FileGetTime(RestartLog, 'M'), 'Seconds') > 600
+            FileMove(RestartLog, RegExReplace(RestartLog, '\.log$', '.last.log'), 1)
+        else
+            SetTimer(ReportRestart, 500)
+    }
+}
+
+ReportRestart() {
+    global RestartLog
+    static started := A_TickCount
+    try text := FileRead(RestartLog, 'UTF-8')
+    catch
+        return                  ; still being written -- try again next tick
+    if !RegExMatch(text, 'm)^exit=(-?\d+)', &m) {
+        if (A_TickCount - started < 120000)
+            return
+        msg := "The restart hasn't finished after 2 minutes -- see restart-hotkey.log (710sRice logs)"
+    } else if (m[1] = 0 && !RegExMatch(text, '\[(XX|!!)\]'))
+        msg := 'Stack restarted'
+    else
+        msg := 'Stack restarted, with problems -- run 710sRice doctor'
+    SetTimer(ReportRestart, 0)
+    TrayTip(msg, '710sRice')
+    try FileMove(RestartLog, RegExReplace(RestartLog, '\.log$', '.last.log'), 1)
 }
 
 ; ============================================================================

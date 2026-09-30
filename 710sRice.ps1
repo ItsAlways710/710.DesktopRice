@@ -136,7 +136,7 @@ $Commands = [ordered]@{
                      Run = { Invoke-RiceScript 'scripts\Stop-All.ps1' @args } }
     # restart: stop + start, with a wait in between (Invoke-RiceRestart). activation.ps1 for
     # Find-AhkWindow, loaded here for the same reason as reload's.
-    'restart'   = @{ Usage = 'restart'; Help = 'Stop the stack, then start it again (SUPER+Shift+R only reloads)'; Admin = 'Any'
+    'restart'   = @{ Usage = 'restart'; Help = 'Stop the stack, then start it again (= SUPER+Ctrl+R; SUPER+Shift+R only reloads)'; Admin = 'Any'
                      Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Invoke-RiceRestart } }
     # activation.ps1 (Send-AhkMessage) is loaded here, not at the top, so the other commands
     # -- help above all -- don't pay for parsing it. Dot-sourced into this block's scope,

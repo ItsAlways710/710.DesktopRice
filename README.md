@@ -210,8 +210,8 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | `710sRice doctor -repair` | Fix what doctor finds, then check again. Never touches your wallpaper, theme or choices *(admin)* |
 | `710sRice update` | Get the newest version from GitHub, then repair from it. Keeps your wallpaper, theme and choices *(admin)* |
 | `710sRice start` / `stop` | Start or stop the stack |
-| `710sRice restart` | Stop the stack and start it again (SUPER+Shift+R only restarts what it has to) |
-| `710sRice reload` | Reload the whole stack, same as SUPER+Shift+R |
+| `710sRice restart` | Stop the stack and start it again, same as SUPER+Ctrl+R (SUPER+Shift+R only restarts what it has to) |
+| `710sRice reload` | Re-apply config and rules, restarting only what changed; same as SUPER+Shift+R |
 | `710sRice reload bar` | Restart just the bar |
 | `710sRice logs` | Open the logs folder and list what's in it |
 | `710sRice palette` | List the [palette profiles](#palette-profiles), the one in use marked |
@@ -333,7 +333,8 @@ yourself if you're done with it.
 | SUPER+W | Wallpaper gallery |
 | SUPER+B / SUPER+E | Browser / File Explorer |
 | SUPER+Shift+A | Claude desktop app |
-| SUPER+Shift+R | Reload the whole stack (re-applies config and rules) |
+| SUPER+Shift+R | Reload: re-applies config and rules, restarting only what changed |
+| SUPER+Ctrl+R | Restart the whole stack (stop, then start everything); a toast before and after |
 | SUPER+Arrows | Move focus |
 | SUPER+Shift+Arrows | Move the window |
 | SUPER+Alt+Arrows | Stack the window with its neighbor (tabs show on the stack); SUPER+Alt+, / SUPER+Alt+. switch tabs, SUPER+Alt+U unstacks |
