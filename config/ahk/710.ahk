@@ -153,7 +153,7 @@ CloseWindow() {
 #+f::Komorebic('toggle-maximize')                ; real maximize
 #t::Komorebic('toggle-float')                    ; float/tile
 #p::Komorebic('toggle-pause')                    ; pause tiling
-#r::Komorebic('retile')                          ; force retile
+#^t::Komorebic('retile')                         ; force retile (SUPER+R is left to Windows: Win+R = Run)
 #+r::ReloadStack()                               ; reload: re-apply config + rules, restart only what changed
 #^r::RestartStack()                              ; restart the whole stack (stop + start)
 #+Enter::Komorebic('promote')                    ; promote to largest tile

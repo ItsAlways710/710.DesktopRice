@@ -341,7 +341,7 @@ yourself if you're done with it.
 | SUPER+1…9 | Go to workspace 1–9 |
 | SUPER+Shift+1…9 | Move the window to workspace 1–9 |
 | SUPER+F / SUPER+T | Monocle (fill the screen) / float or tile the window |
-| SUPER+R / SUPER+P | Retile / pause tiling |
+| SUPER+Ctrl+T / SUPER+P | Retile / pause tiling |
 | SUPER+, / SUPER+. | Focus the previous / next monitor |
 
 **Capture (ShareX):**
