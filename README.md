@@ -557,11 +557,19 @@ tested", so if something odd shows up around admin windows, that's the first thi
 
 ## Future plans
 
-- **More commands:** set the weather key and location, point the wallpaper gallery at a
-  folder, add or remove a game for game mode, and turn taskbar auto-hide on or off.
-- **A proper README pass:** screenshots and a short demo.
+Next up, being planned now:
+
+- **Weather with no API key.** Switch the weather widget to Open-Meteo, so there's no key
+  to sign up for.
+- **Flow Launcher ready from the first install,** set up on a fresh machine without a second
+  install run, and starting with Windows.
+- **Add or remove a game for game mode** without editing the tracked `games.toml`.
 - **Pin an app to a workspace.** A Quick add action that makes an app open on the monitor
   and workspace you pick, using komorebi's own workspace rules -- no extra background
   process. By default you can still move it afterwards; optionally lock it there. Saved in
   your machine-local `rules.local.toml`.
-- **Turn off a shipped rule locally,** without editing the tracked `rules.toml`.
+- **Quieter ShareX and Everything:** no update checks or tray icons of their own.
+- **Sturdier install and uninstall:** package installs that don't depend on the Microsoft
+  Store working, a failed package install reported as a failure, and a few edge cases
+  (a clone folder with an apostrophe in its path, uninstalling from a window opened before
+  the install).
