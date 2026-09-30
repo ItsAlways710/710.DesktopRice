@@ -468,7 +468,8 @@ layers, lowest to highest priority, and SUPER+Shift+R compiles them into komoreb
    menu) shows when one is running.
 3. `config/komorebi/rules.toml`: the rules this repo ships, tracked in git. Currently two:
    WinUI 3 apps (the new Photos app and others) stay opaque when unfocused, because
-   komorebi's transparency stops them taking clicks; and the Claude desktop app is tiled
+   komorebi's transparency stops them taking clicks (transparency is off by default;
+   SUPER+Shift+D turns it on); and the Claude desktop app is tiled
    (see [Tips and known issues](#tips-and-known-issues)).
 4. `config/komorebi/rules.local.toml`: **your** rules, for this machine only (git ignores
    it). They win over everything above. Want one on every machine? Move it into
@@ -489,7 +490,7 @@ one. Edit `rules.toml` for that.
 | Ignore (hands off) | komorebi leaves it completely alone | Right away |
 | Manage (force tile) | Tiles a window komorebi would normally skip | Right away |
 | Layered (tile an app komorebi skips) | For apps whose windows komorebi turns away because of how they're drawn, like the Claude desktop app | New windows: **relaunch the app** |
-| Opaque (never translucent) | Keeps it solid when unfocused, for apps that stop taking clicks when translucent | The next time you click it |
+| Opaque (never translucent) | Keeps it solid when unfocused, for apps that stop taking clicks when translucent. Only matters with transparency on (off by default; SUPER+Shift+D) | The next time you click it |
 
 If the window you picked looks like a Layered case (komorebi isn't managing it and it has
 the telltale window style), Layered moves to the top, marked **suggested**. Rules for
