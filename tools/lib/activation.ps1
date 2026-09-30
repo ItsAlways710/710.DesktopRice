@@ -36,6 +36,11 @@
 # uninstall use them below; the wallpaper pipeline dot-sources the same file).
 . (Join-Path $PSScriptRoot 'lockscreen.ps1')
 
+# The components (tools\components\<id>.ps1, Group 1 #12): a component can declare its own
+# sign-in task (its Autostart field), which Get-AutostartComponents below picks up. Only
+# functions -- nothing is read until something asks.
+if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Join-Path $PSScriptRoot 'components.ps1') }
+
 # --- Paths as they get printed ------------------------------------------------------------
 function ConvertTo-SafePath {
     # A path as it can be shown on screen: the user's own profile folders as %LOCALAPPDATA% /
@@ -645,6 +650,54 @@ function Restart-Explorer {
     Test-ExplorerShell
 }
 
+function Start-AsUser {
+    <# Starts an app as the signed-in user, NOT elevated, from an elevated install / uninstall /
+       repair (Group 1 #12's rule: a component never starts an app from there itself -- it
+       would run as admin, like the "ShareX running as admin" doctor already flags). The same
+       trick as Restart-Explorer and Invoke-WingetAsUser: a one-shot task, here written with
+       New-TaskXml (LeastPrivilege, interactive, Normal priority -- a plain `schtasks /SC ONCE`
+       task starts its process BelowNormal, and the app would keep that), fired, then deleted
+       once the app has started (deleting a task leaves the process it started running).
+       -Process: the process name to wait for -- a NEW one (a copy already running doesn't
+       count); without it, it waits for Task Scheduler to report the task started.
+       Returns $true once the app has started, $false if it didn't within -TimeoutSeconds
+       (or the task couldn't be made). Never throws for a start that didn't happen. #>
+    param([Parameter(Mandatory)][string]$Exe, [string]$Arguments = '', [string]$Process,
+          [string]$Name, [int]$TimeoutSeconds = 15)
+    if (-not $Name) { $Name = if ($Process) { $Process } else { [System.IO.Path]::GetFileNameWithoutExtension($Exe) } }
+    $taskName = 'as-user-' + (($Name.ToLowerInvariant() -replace '[^a-z0-9-]+', '-').Trim('-'))
+    $task = Get-TaskFullName -TaskName $taskName
+    $before = if ($Process) { @(Get-Process -Name $Process -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }) } else { @() }
+    $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) "710-task-$taskName.xml"
+    try {
+        $spec = [pscustomobject]@{ Key = $taskName; Exe = $Exe; Arguments = $Arguments; Delay = 'PT0S' }
+        Set-Content -Path $xmlPath -Value (New-TaskXml -Component $spec -User "$env:USERDOMAIN\$env:USERNAME" -NoTrigger) -Encoding Unicode
+        $null = & schtasks.exe /Create /TN $task /XML $xmlPath /F 2>&1
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $null = & schtasks.exe /Run /TN $task 2>&1
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        while ($true) {
+            if ($Process) {
+                if (@(Get-Process -Name $Process -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id }).Count) { return $true }
+            } else {
+                # LastTaskResult reads 0x41303 ("has not yet run") until Task Scheduler starts it
+                # (see Invoke-WingetAsUser). Where the ScheduledTasks module can't be read, a
+                # short wait stands in.
+                $result = $null
+                try { $result = (Get-ScheduledTaskInfo -TaskPath "\$script:TaskFolder\" -TaskName $taskName -ErrorAction Stop).LastTaskResult } catch { }
+                if ($null -eq $result) { Start-Sleep -Seconds 2; return $true }
+                if ($result -ne 0x41303) { return $true }
+            }
+            if ((Get-Date) -ge $deadline) { return $false }
+            Start-Sleep -Milliseconds 250
+        }
+    } finally {
+        $null = & schtasks.exe /Delete /TN $task /F 2>&1
+        Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Set-WindowsHardening {
     <# Applies (or, with -Revert, undoes) every setting from Get-HardeningSettings.
        Backs up each touched registry key first (Backup-RegistryKey, label 'hardening').
@@ -847,7 +900,11 @@ function Get-AutostartComponents {
        ConvertTo-HiddenLaunch -- see that function for why; their items also carry Spec (the
        launch-<key>.txt path) and SpecLines (what goes in it).
        -NoWrite: the same answer without writing any launch-<key>.txt -- for `710sRice doctor`
-       (read-only) and Get-AutostartStatus, which only need the names. #>
+       (read-only) and Get-AutostartStatus, which only need the names.
+       Since Group 1 (#12 / #4) a component (tools\components\<id>.ps1) can declare its own task
+       with an Autostart field: Key and TaskName = its Id, a GUI exe started directly (no
+       run-hidden.vbs), and Process -- the process name that means "already running" (the four
+       above leave it $null: their launchers check for themselves). #>
     param([switch]$NoWrite)
     $items = [System.Collections.Generic.List[object]]::new()
     $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -864,7 +921,7 @@ function Get-AutostartComponents {
             Exe = $hidden.Exe
             Arguments = $hidden.Arguments
             Delay = 'PT0S'
-            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines
+            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines; Process = $null
         })
     }
 
@@ -879,7 +936,7 @@ function Get-AutostartComponents {
             Exe = $hidden.Exe
             Arguments = $hidden.Arguments
             Delay = 'PT0S'
-            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines
+            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines; Process = $null
         })
     }
 
@@ -892,7 +949,7 @@ function Get-AutostartComponents {
             Exe = $sharexExe
             Arguments = '-silent'
             Delay = 'PT0S'
-            Spec = $null; SpecLines = $null
+            Spec = $null; SpecLines = $null; Process = $null
         })
     }
 
@@ -907,7 +964,23 @@ function Get-AutostartComponents {
             Exe = $hidden.Exe
             Arguments = $hidden.Arguments
             Delay = 'PT0S'
-            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines
+            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines; Process = $null
+        })
+    }
+
+    # The components' own tasks (their Autostart field), in install order. Exe returning
+    # nothing = not installed, so no task -- the same rule as the four above.
+    $order = @(Get-RiceStepOrder)
+    foreach ($comp in @(Get-RiceComponents | Where-Object { $_.Contains('Autostart') } | Sort-Object { $order.IndexOf($_.Id) })) {
+        $a = $comp.Autostart
+        $exe = & $a.Exe
+        if (-not $exe) { continue }
+        $items.Add([pscustomobject]@{
+            Key = $comp.Id; TaskName = $comp.Id; LnkName = "710.DesktopRice $($comp.Label).lnk"
+            Exe = "$exe"
+            Arguments = "$($a.Arguments)"
+            Delay = if ($a.Delay) { "$($a.Delay)" } else { 'PT0S' }
+            Spec = $null; SpecLines = $null; Process = "$($a.Process)"
         })
     }
 
@@ -976,7 +1049,8 @@ function New-TaskXml {
           [switch]$NoTrigger)
     $u = [System.Security.SecurityElement]::Escape($User)
     $cmd = [System.Security.SecurityElement]::Escape($Component.Exe)
-    $arg = [System.Security.SecurityElement]::Escape($Component.Arguments)
+    # No arguments = no <Arguments> element (a component's GUI exe may take none -- Flow).
+    $argLine = if ("$($Component.Arguments)") { "`n      <Arguments>$([System.Security.SecurityElement]::Escape($Component.Arguments))</Arguments>" } else { '' }
     $delay = if ($Component.Delay) { $Component.Delay } else { 'PT0S' }
     $label = if ($NoTrigger) { 'on demand' } else { 'autostart' }
     $triggers = if ($NoTrigger) { '  <Triggers />' } else { @"
@@ -1014,8 +1088,7 @@ $triggers
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$cmd</Command>
-      <Arguments>$arg</Arguments>
+      <Command>$cmd</Command>$argLine
     </Exec>
   </Actions>
 </Task>
@@ -1088,6 +1161,11 @@ function Unregister-Autostart {
     foreach ($c in Get-AutostartComponents) {
         $full = Get-TaskFullName -TaskName $c.TaskName
         & schtasks.exe /Delete /TN $full /F *> $null
+    }
+    # A component's task goes even when its app is already gone (Get-AutostartComponents only
+    # lists an installed one).
+    foreach ($comp in @(Get-RiceComponents | Where-Object { $_.Contains('Autostart') })) {
+        if (Test-Task -TaskName $comp.Id) { $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName $comp.Id) /F 2>&1 }
     }
     Remove-StartupShortcuts
     Remove-RetiredAutostart

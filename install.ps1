@@ -37,6 +37,8 @@
   STEPS. Each of the above is a named step, always run in this order:
     packages  upgrade  envvars  weather  path  wallust  theme  palette  monitors
     defender  profile  terminal  flow  compile  tasks  windows
+  plus one step per component (tools\components\<id>.ps1, named by its Id), each right after
+  the step it names (Group 1 #12; `710sRice install -?` lists the whole order).
   A plain run does every step but upgrade and palette (windows only with -Activate) -- the
   same run as always, default wallpaper and theme included. Its packages step brings a pinned
   package that's below its versions.md pin up to it, and never moves one down or touches an
@@ -126,8 +128,17 @@ if ($ElevatedTiling -and $NoElevatedTiling) {
 # repair plan all read. The step bodies are further down, in $Steps; this part only decides
 # which of them run -- before anything is touched, so a bad command line changes nothing.
 . (Join-Path $Root 'tools\lib\steps.ps1')
-$StepOrder      = $InstallStepOrder
-$NamedOnlySteps = $InstallNamedOnlySteps
+# Install's fixed steps plus one step per component (tools\components\<id>.ps1, Group 1 #12),
+# each right after its After step. A broken component file stops the run here, before anything.
+try {
+    $StepOrder      = @(Get-InstallStepOrder)
+    $NamedOnlySteps = @(Get-InstallNamedOnlySteps)
+    $Components     = @{}
+    foreach ($c in @(Get-RiceComponents)) { $Components[$c.Id] = $c }
+} catch {
+    Write-Host "  [XX] $($_.Exception.Message) -- nothing was changed." -ForegroundColor Red
+    exit 1
+}
 $OnlyRun = $PSBoundParameters.ContainsKey('Only')
 if ($OnlyRun) {
     # Through the 710sRice shim or its admin relaunch, `-Only path,envvars` arrives as ONE
@@ -714,10 +725,31 @@ $Steps['windows'] = {
     }
 }
 
+function Invoke-ComponentStep {
+    # A component's step (tools\components\<id>.ps1): its section header, then its Install with
+    # the run's $Ctx -- the machine's mode is -Activate's answer, else Test-FullTimeMachine, read
+    # once per run (the tasks step keeps that mode, so it's the same before and after it). A
+    # component that throws is that component's line, never the end of the install.
+    param($Component)
+    Write-Host "`n-- $($Component.Label) --" -ForegroundColor Cyan
+    if (-not $Component.Install) { Step-Info "$($Component.Label): nothing to install"; return }
+    if ($null -eq $script:ComponentFullTime) {
+        $script:ComponentFullTime = if ($Activate) { $true } else { try { [bool](Test-FullTimeMachine) } catch { $false } }
+    }
+    $ctx = New-RiceComponentContext -OnlyRun $OnlyRun -FullTime $script:ComponentFullTime
+    try { & $Component.Install $ctx }
+    catch { Write-Host "  [XX] $($Component.Label): $($_.Exception.Message)" -ForegroundColor Red }
+}
+$script:ComponentFullTime = $null
+
 # --- Run the steps ---------------------------------------------------------------------
 # Dot-sourced, so every step runs in this script's own scope -- exactly as the sections
-# did before they were steps (the theme step still sees what the wallust step set up).
-foreach ($step in $RunSteps) { . $Steps[$step] }
+# did before they were steps (the theme step still sees what the wallust step set up). A
+# component's step is its Install (Invoke-ComponentStep).
+foreach ($step in $RunSteps) {
+    if ($Components.ContainsKey($step)) { Invoke-ComponentStep $Components[$step] }
+    else { . $Steps[$step] }
+}
 
 # --- Start now (a full install -Activate only) -------------------------------------------
 if ($Activate -and -not $OnlyRun) {

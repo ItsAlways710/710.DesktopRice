@@ -2,7 +2,8 @@
 .SYNOPSIS
   `710sRice doctor` -- a read-only health report of this clone and its install. Dot-sourced
   by 710sRice.ps1 after tools\lib\activation.ps1 and tools\lib\packages.ps1 (it uses both;
-  the dispatcher has already loaded tools\lib\steps.ps1) -- never run directly.
+  the dispatcher has already loaded tools\lib\steps.ps1, and with it tools\lib\components.ps1:
+  each component file's Check joins its group) -- never run directly.
 
 .DESCRIPTION
   Read-only, and it has to stay that way: doctor changes nothing, starts or stops nothing and
@@ -65,8 +66,10 @@ function Write-DoctorResult {
 function Invoke-DoctorCheck {
     # One check's results; a check that throws is reported, never fatal. $Context carries the
     # background jobs (see Invoke-RiceDoctor) for the checks that collect one.
+    # The check itself is handed over too: a component's check (Get-DoctorGroups) finds its
+    # component on it.
     param($Check, $Context)
-    try { @(& $Check.Run $Context | Where-Object { $_ }) }
+    try { @(& $Check.Run $Context $Check | Where-Object { $_ }) }
     catch { New-DoctorResult -Id $Check.Id -Status '!!' -Text "$($Check.Name) -- couldn't check ($($_.Exception.Message))" }
 }
 
@@ -617,8 +620,15 @@ function Test-DoctorPaused {
 # the paths -- the launch files live under %LOCALAPPDATA%, whose path carries the user name.
 
 function Get-DoctorComponentName {
+    # A stack component's name as the report says it; a component file's own Label for the rest.
     param([string]$Key)
-    switch ($Key) { 'komorebi' { 'komorebi' } 'yasb' { 'YASB' } 'sharex' { 'ShareX' } 'ahk' { '710.ahk' } default { $Key } }
+    switch ($Key) {
+        'komorebi' { 'komorebi' } 'yasb' { 'YASB' } 'sharex' { 'ShareX' } 'ahk' { '710.ahk' }
+        default {
+            $c = try { Get-RiceComponent -Id $Key } catch { $null }
+            if ($c) { $c.Label } else { $Key }
+        }
+    }
 }
 
 function Test-DoctorSameText { param([string]$A, [string]$B) [string]::Equals("$A".Trim(), "$B".Trim(), [StringComparison]::OrdinalIgnoreCase) }
@@ -1197,7 +1207,7 @@ function Test-DoctorKomorebiScripts {
 # The report keeps this order whatever order they ran in. The first group has no title: it
 # prints right under the header.
 function Get-DoctorGroups {
-    @(
+    $groups = @(
         [pscustomobject]@{ Title = $null; Checks = @(
             @{ Id = 'update';        Name = 'Update check';  Late = $true; Run = { param($c) Get-DoctorUpdateResult $c.Git $c.Head } }
             @{ Id = 'local-changes'; Name = 'Local changes'; Late = $true; Run = { param($c) Get-DoctorLocalChangesResult $c.Git } }
@@ -1246,6 +1256,33 @@ function Get-DoctorGroups {
             @{ Id = 'komorebi-scripts'; Name = 'komorebi.ps1 / komorebi.ahk';    Run = { Test-DoctorKomorebiScripts } }
         ) }
     )
+    # Each component's own checks (tools\components\<id>.ps1, Group 1 #12), at the end of its Group,
+    # in install's order. Its [XX] carry Step = its Id, so repair runs its install step. A broken
+    # component file is its own [XX] -- the rest of the report still runs (install and uninstall
+    # refuse to start until it's fixed).
+    try { $comps = @(Get-RiceComponents); $order = @(Get-InstallStepOrder) }
+    catch {
+        $broken = $_.Exception.Message
+        $repo = $groups | Where-Object { $_.Title -eq 'Repo and command' } | Select-Object -First 1
+        $repo.Checks = @($repo.Checks) + @(@{ Id = 'components'; Name = 'Component files'; Broken = $broken
+            Run = { param($ctx, $check) New-DoctorResult -Id 'components' -Status 'XX' -Text "A component file is broken: $($check.Broken) -- install and uninstall won't start until it's fixed" -Fix 'put the file back as it was (git shows what changed), or fix what the line says' -NeedsYou } })
+        $comps = @(); $order = @()
+    }
+    foreach ($id in $order) {
+        $c = $comps | Where-Object { $_.Id -eq $id -and $_.Check } | Select-Object -First 1
+        if (-not $c) { continue }
+        $g = $groups | Where-Object { $_.Title -eq $c.Group } | Select-Object -First 1
+        $g.Checks = @($g.Checks) + @(@{ Id = "component:$($c.Id)"; Name = $c.Label; Component = $c
+                                          Run = { param($ctx, $check) & $check.Component.Check (Get-DoctorComponentContext $ctx) } })
+    }
+    $groups
+}
+
+function Get-DoctorComponentContext {
+    # A component check's $Ctx (New-RiceComponentContext), made once per report.
+    param($DoctorContext)
+    if (-not $DoctorContext.Component) { $DoctorContext.Component = New-RiceComponentContext }
+    $DoctorContext.Component
 }
 
 # --- The repair plan -----------------------------------------------------------------------
@@ -1295,11 +1332,14 @@ function Get-RepairPlan {
     }
     # The tasks step registers komorebi's task at the saved mode anyway.
     if ($plan.Tiling -and $steps.Contains('tasks')) { $plan.Tiling = $null }
-    # install's order (tools\lib\steps.ps1 -- the dispatcher loads it; loaded here if not).
-    if (-not $InstallStepOrder) { . (Join-Path $Root 'tools\lib\steps.ps1') }
-    $plan.Steps = @($InstallStepOrder | Where-Object { $steps.Contains($_) })
-    # The stack's own order (komorebi first: the rest look for it), whatever order they came in.
-    $order = @('komorebi', 'yasb', 'ahk', 'sharex')
+    # install's order, components included (tools\lib\steps.ps1 -- the dispatcher loads it;
+    # loaded here if not).
+    if (-not (Get-Command Get-InstallStepOrder -ErrorAction SilentlyContinue)) { . (Join-Path $Root 'tools\lib\steps.ps1') }
+    $installOrder = try { @(Get-InstallStepOrder) } catch { @($InstallFixedStepOrder) }
+    $plan.Steps = @($installOrder | Where-Object { $steps.Contains($_) })
+    # The stack's own order (komorebi first: the rest look for it), then the components' tasks in
+    # install's order, whatever order they came in.
+    $order = @('komorebi', 'yasb', 'ahk', 'sharex') + @($installOrder | Where-Object { $_ -notin 'komorebi', 'yasb', 'ahk', 'sharex' })
     $plan.Start = @($starts | Sort-Object { $i = $order.IndexOf($_); if ($i -lt 0) { 99 } else { $i } })
     $plan.Lines = @(
         if ($plan.Steps.Count) { "710sRice install -Only $($plan.Steps -join ',')" }
@@ -1319,7 +1359,7 @@ function Get-DoctorReport {
     <# Runs every check; prints nothing. Header (Title, Head), Groups, and Results -- one list
        per group, in report order -- plus All, every result in that order. #>
     # The slow outside calls start first, in the background; the Late checks collect them.
-    $ctx = [pscustomobject]@{ Git = Start-DoctorGitJobs; Winget = Start-DoctorWingetJob; Head = $null }
+    $ctx = [pscustomobject]@{ Git = Start-DoctorGitJobs; Winget = Start-DoctorWingetJob; Head = $null; Component = $null }
     $header   = Get-DoctorHeader $ctx.Git
     $ctx.Head = $header.Head
     $groups   = @(Get-DoctorGroups)

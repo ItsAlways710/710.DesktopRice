@@ -119,6 +119,17 @@ function Invoke-ActivationRevert {
 Write-Host "`n== 710.DesktopRice uninstall ==" -ForegroundColor Cyan
 if ($DryRun) { Step-Info "DRY RUN: nothing will be changed." }
 
+# The components (tools\components\<id>.ps1, Group 1 #12; activation.ps1 loaded the loader),
+# read before anything changes: a broken component file stops the uninstall here, not halfway.
+# Their context is taken now too -- FullTime reads the sign-in tasks, which section 2 deletes.
+try {
+    $RiceComponents = @(Get-RiceComponents)
+    $ComponentCtx = New-RiceComponentContext -DryRun ([bool]$DryRun)
+} catch {
+    Write-Host "  [XX] $($_.Exception.Message) -- nothing was changed." -ForegroundColor Red
+    exit 1
+}
+
 $versionsPath = Join-Path $Root 'versions.md'
 $allRows = @(Get-VersionsTable -Path $versionsPath)
 if ($allRows.Count -eq 0) {
@@ -226,6 +237,19 @@ Invoke-ActivationRevert 'Restore original Flow Launcher settings + remove the Ev
 Invoke-ActivationRevert 'Restore Flow Launcher''s own theme (Palette Profiles themed it)' {
     if (Restore-FlowTheme) { Step-Ok "Flow Launcher's theme put back and 710sRice.xaml removed" }
     else { Step-Info 'Flow Launcher was never themed by the palette -- nothing to restore.' }
+}
+
+# Each component's own revert (its Uninstall: restore from its snapshots, remove what it
+# added), the last one install runs first -- before the env vars and packages below go, like
+# the restores above. Each through Invoke-ActivationRevert: -DryRun lists it, a failure never
+# stops the rest.
+$componentReverts = @($RiceComponents | Where-Object { $_.Uninstall })
+if ($componentReverts.Count) {
+    Write-Host "`n-- Revert components --" -ForegroundColor Cyan
+    $componentOrder = @(Get-RiceStepOrder)
+    foreach ($component in @($componentReverts | Sort-Object { $componentOrder.IndexOf($_.Id) } -Descending)) {
+        Invoke-ActivationRevert "Revert $($component.Label)" { & $component.Uninstall $ComponentCtx }
+    }
 }
 
 # --- 4. Revert env vars -------------------------------------------------------------

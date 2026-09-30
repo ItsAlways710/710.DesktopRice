@@ -54,7 +54,8 @@
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 # install's steps, in their order (install -? lists them; doctor's repair plan orders by them).
-# Plain variables -- nothing to slow help down.
+# Only functions and the fixed list here -- the components are read when something asks for the
+# full order, so help stays fast.
 . (Join-Path $Root 'tools\lib\steps.ps1')
 
 # --- The commands -----------------------------------------------------------------------------
@@ -67,10 +68,11 @@ $Root = $PSScriptRoot
 $Commands = [ordered]@{
     'help'      = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'
                      Run = { Show-RiceHelp } }
-    # More: shown by `install -?` only -- the steps from tools\lib\steps.ps1.
+    # More: shown by `install -?` only -- the steps from tools\lib\steps.ps1 (a scriptblock, so the
+    # component files are only read when someone asks).
     'install'   = @{ Usage = 'install [-Activate] [-SkipPackages] [-ElevatedTiling | -NoElevatedTiling] | -Only <step>,...'
                      Help = 'Install (safe to run again); -Activate = start at sign-in; -Only = just those steps'; Admin = 'Required'
-                     More = "Steps: $($InstallStepOrder -join ', ')"
+                     More = { "Steps: $((Get-InstallStepOrder) -join ', ')" }
                      Run = { Invoke-RiceScript 'install.ps1' @args } }
     'uninstall' = @{ Usage = 'uninstall [-DryRun] [-Force] [-Keep <id>,<id>...]'
                      Help = 'Undo everything install did; -DryRun shows the plan first'; Admin = 'Required'
@@ -617,7 +619,7 @@ function Show-RiceCommandHelp {
     Write-Host ''
     Write-Host "  710sRice $($c.Usage)$(Get-RiceAdminTag $c)"
     Write-Host "    $($c.Help)"
-    if ($c.More) { Write-Host "    $($c.More)" }
+    if ($c.More) { Write-Host "    $(if ($c.More -is [scriptblock]) { & $c.More } else { $c.More })" }
     Write-Host ''
 }
 
