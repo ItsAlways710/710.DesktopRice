@@ -295,17 +295,29 @@ widgets:
     options:
       label: "<span>\udb83\udc8d</span>"
       change_automatically: false
-    # Scans both folders (and their subfolders) for wallpapers: the repo's own
-    # small tracked default set, and a separate, untracked personal collection
-    # that never touches git -- see claude/winarchy-decoupling-plan.md,
-    # Wallpapers section. Both go through YASB's own $env: expansion (applied to
-    # every config string before validation): DESKTOPRICE_HOME is the repo root,
-    # set by install.ps1, so the repo can be cloned anywhere; YASB_WALLPAPER_PATH
-    # is yours to set (`setx YASB_WALLPAPER_PATH "D:\wherever"`) -- if it's
-    # unset it expands to "" and YASB silently skips it, nothing breaks.
+    # Scans these folders (and their subfolders) for wallpapers: the repo's own
+    # small tracked default set, and up to ten personal folders that never touch
+    # git -- see claude/winarchy-decoupling-plan.md, Wallpapers section. All go
+    # through YASB's own $env: expansion (applied to every config string before
+    # validation; the name is matched whole, so _2 is its own variable):
+    # DESKTOPRICE_HOME is the repo root, set by install.ps1, so the repo can be
+    # cloned anywhere; YASB_WALLPAPER_PATH and _2 .. _10 are yours to set
+    # (`setx YASB_WALLPAPER_PATH_2 "D:\wherever"`, then `710sRice reload bar`)
+    # -- an unset one expands to "" and YASB silently skips it, nothing breaks.
+    # Ten slots so nobody has to edit this tracked file (that blocks `git pull`
+    # and `710sRice update`) just to add a folder.
       image_path:
         - "$env:DESKTOPRICE_HOME\\assets\\wallpapers"
         - "$env:YASB_WALLPAPER_PATH"
+        - "$env:YASB_WALLPAPER_PATH_2"
+        - "$env:YASB_WALLPAPER_PATH_3"
+        - "$env:YASB_WALLPAPER_PATH_4"
+        - "$env:YASB_WALLPAPER_PATH_5"
+        - "$env:YASB_WALLPAPER_PATH_6"
+        - "$env:YASB_WALLPAPER_PATH_7"
+        - "$env:YASB_WALLPAPER_PATH_8"
+        - "$env:YASB_WALLPAPER_PATH_9"
+        - "$env:YASB_WALLPAPER_PATH_10"
       engine:
         # Disabled -- YASB's WallpaperEngine crossfade transition has a real,
         # reproducible bug: it crashes the whole YASB process some time after

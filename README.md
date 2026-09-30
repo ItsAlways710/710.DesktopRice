@@ -386,27 +386,29 @@ The lock screen takes the wallpaper itself, as your own lock-screen picture (the
 Settings > Personalization > Lock screen sets), so it's there before sign-in straight away,
 even after a restart. A picture you pick in Settings stays until your next wallpaper change.
 
-The gallery shows two folders:
+The gallery shows:
 
 - `assets/wallpapers` in this repo, the wallpapers that ship with it.
-- Your own folder, from the `YASB_WALLPAPER_PATH` variable (subfolders included). It isn't
-  set by default. To use one:
+- Up to ten folders of your own (subfolders included), one per variable:
+  `YASB_WALLPAPER_PATH`, then `YASB_WALLPAPER_PATH_2` through `YASB_WALLPAPER_PATH_10`.
+  None is set by default, and an unset one is simply skipped. To add a folder:
 
   ```powershell
   setx YASB_WALLPAPER_PATH "C:\Users\<you>\Pictures\Wallpapers"
   ```
 
-  then restart the bar so it sees the new variable: `710sRice reload bar`.
+  ```powershell
+  setx YASB_WALLPAPER_PATH_2 "C:\Windows\Web\Wallpaper"
+  ```
 
-For more folders, add lines to `image_path` under the `wallpapers:` widget in
-`config/yasb/config.yaml`:
+  (that second one is a good start: Windows' own wallpapers, on every Windows 11 machine),
+  then restart the bar so it sees the change: `710sRice reload bar`. To drop one again:
 
-```yaml
-      image_path:
-        - "$env:DESKTOPRICE_HOME\\assets\\wallpapers"
-        - "$env:YASB_WALLPAPER_PATH"
-        - "D:\\Art\\Backgrounds"
-```
+  ```powershell
+  [Environment]::SetEnvironmentVariable('YASB_WALLPAPER_PATH_2', $null, 'User')
+  ```
+
+  (then `710sRice reload bar` again). No need to edit `config/yasb/config.yaml`.
 
 ### Palette profiles
 
