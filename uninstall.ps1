@@ -72,6 +72,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 
+# PATH as a new window would get it (Machine + User, from the registry): a window opened before
+# the install has none of the stack's folders on its PATH, and the stop below needs komorebic /
+# yasbc (winarchy ca66652, Group 1 W6; they're also looked for next to their apps now).
+$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+
 # -Keep A,B: typed at a PS7 prompt that's already two values, but through the 710sRice command
 # (its shim, and its admin relaunch -- both `pwsh -File`) it arrives as ONE string 'A,B', which
 # would protect nothing. Winget IDs never contain a comma, so split every value on them.

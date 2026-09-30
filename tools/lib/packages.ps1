@@ -9,8 +9,8 @@
   nothing keeps a second copy of a pin. A pin bump is one line in versions.md.
 
   Dot-source AFTER tools\lib\activation.ps1: Invoke-WingetAsUser uses its Get-TaskFullName
-  and $script:TaskFolder, Stop-PinnedApp its Find-AhkWindow / Send-AhkQuit and the caller's
-  $Root, the ShareX probe its Get-ShareXExe. (install-wallust.ps1 only needs
+  and $script:TaskFolder, Stop-PinnedApp its Find-AhkWindow / Send-AhkQuit / Get-KomorebicExe
+  and the caller's $Root, the ShareX probe its Get-ShareXExe. (install-wallust.ps1 only needs
   Get-VersionsTable, which stands alone.)
 #>
 
@@ -331,7 +331,7 @@ function Stop-PinnedApp {
     switch ($Row.InstallId) {
         'LGUG2Z.komorebi' {
             if (-not (Get-Process komorebi -ErrorAction SilentlyContinue)) { return $false }
-            $komorebic = (Get-Command komorebic -ErrorAction SilentlyContinue)?.Source
+            $komorebic = Get-KomorebicExe   # next to komorebi.exe first, then PATH (W6)
             if ($komorebic) { try { & $komorebic stop 2>$null | Out-Null } catch { } }
             $deadline = (Get-Date).AddSeconds(5)
             while ((Get-Process komorebi -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }

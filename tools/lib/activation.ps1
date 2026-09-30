@@ -365,6 +365,29 @@ function Get-KomorebiExe {
     $found
 }
 
+function Get-KomorebicExe {
+    <# komorebic.exe: next to the installed komorebi.exe first, then PATH; $null when neither.
+       A window opened before the install doesn't have komorebi on its PATH, and uninstall never
+       re-read it -- so `komorebic stop` was skipped and komorebi only force-killed, which leaves
+       the windows it had cloaked on other workspaces invisible (base.json's
+       window_hiding_behaviour Cloak; its own stop is what restores them). winarchy ca66652,
+       Group 1 W6. Used by Stop-RunningComponents and Stop-PinnedApp. #>
+    $komorebi = Get-KomorebiExe
+    if ($komorebi) {
+        $next = Join-Path (Split-Path -Parent $komorebi) 'komorebic.exe'
+        if (Test-Path -LiteralPath $next) { return $next }
+    }
+    (Get-Command komorebic.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+}
+
+function Get-YasbcExe {
+    <# yasbc.exe (YASB's CLI): next to the installed yasb.exe first (winget puts both in
+       Program Files\YASB), then PATH; $null when neither. Same reason as Get-KomorebicExe. #>
+    $next = Join-Path "$env:ProgramFiles" 'YASB\yasbc.exe'
+    if ($env:ProgramFiles -and (Test-Path -LiteralPath $next)) { return $next }
+    (Get-Command yasbc.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+}
+
 function Get-AhkExe {
     <# AutoHotkey v2, per-machine or per-user; $null if not installed. Prefers the UI Access
        build (AutoHotkey64_UIA.exe) so 710.ahk's hotkeys still reach an admin window that has
@@ -1018,6 +1041,10 @@ function Register-Autostart {
         return
     }
     $admin = Test-IsAdmin
+    # Only what actually got its task goes in the closing [OK] line (Group 1 #23): a task that
+    # couldn't be updated, or a component that fell back to a Startup shortcut, keeps its own
+    # warning and isn't listed -- the same pattern as Register-OnDemandTasks.
+    $registered = [System.Collections.Generic.List[string]]::new()
     foreach ($c in $components) {
         $runLevel = if ($c.Key -eq 'komorebi') { Get-KomorebiRunLevel } else { 'LeastPrivilege' }
         if ($runLevel -eq 'HighestAvailable' -and -not $admin) {
@@ -1035,6 +1062,7 @@ function Register-Autostart {
             $full = Get-TaskFullName -TaskName $c.TaskName
             & schtasks.exe /Create /TN $full /XML $xmlPath /F *> $null
             if ($LASTEXITCODE -ne 0) { throw "schtasks /Create exited with code $LASTEXITCODE" }
+            $registered.Add($c.Key + $(if ($c.Key -eq 'komorebi') { " ($(if ($runLevel -eq 'HighestAvailable') { 'elevated' } else { 'non-elevated' }))" }))
         } catch {
             # The task already exists and just couldn't be UPDATED (typically: it was
             # created from an elevated shell and this run isn't) -- the old task still
@@ -1051,7 +1079,9 @@ function Register-Autostart {
             Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
         }
     }
-    Step-Ok "Autostart registered (Scheduled Tasks At-LogOn): $($components.Key -join ', ')"
+    if ($registered.Count -gt 0) {
+        Step-Ok "Autostart registered (Scheduled Tasks At-LogOn): $($registered -join ', ')"
+    }
 }
 
 function Unregister-Autostart {
@@ -1438,8 +1468,11 @@ function Stop-RunningComponents {
     # komorebi: try its own graceful `stop` first (releases window-management hooks,
     # restores window styles/borders) before a hard kill, so a stray leftover style isn't
     # left on a window after uninstall.
+    # komorebic next to komorebi.exe first (Get-KomorebicExe): from a window whose PATH predates
+    # the install, a PATH lookup found nothing, the graceful stop never ran, and windows komorebi
+    # had cloaked on other workspaces stayed invisible after the kill (Group 1 W6).
     if (Get-Process komorebi -ErrorAction SilentlyContinue) {
-        $komorebic = (Get-Command komorebic -ErrorAction SilentlyContinue)?.Source
+        $komorebic = Get-KomorebicExe
         if ($komorebic) { try { & $komorebic stop 2>$null | Out-Null; Start-Sleep -Milliseconds 300 } catch { } }
         Stop-Process -Name komorebi -Force -ErrorAction SilentlyContinue
         # In elevated tiling mode komorebi runs as admin: `komorebic stop` still reaches it
@@ -1452,7 +1485,7 @@ function Stop-RunningComponents {
 
     # YASB: same graceful-stop-then-kill pattern.
     if (Get-Process yasb -ErrorAction SilentlyContinue) {
-        $yasbc = (Get-Command yasbc -ErrorAction SilentlyContinue)?.Source
+        $yasbc = Get-YasbcExe
         if ($yasbc) { try { & $yasbc stop 2>$null | Out-Null; Start-Sleep -Milliseconds 300 } catch { } }
         Stop-Process -Name yasb -Force -ErrorAction SilentlyContinue
     }
@@ -1574,11 +1607,15 @@ function Get-ShellProfilePath {
 
 function Get-ShellProfileBlock {
     # The exact block install writes into $PROFILE for this clone -- one definition, read by
-    # Install-ShellProfile and by `710sRice doctor` (Get-ShellProfileHookState).
+    # Install-ShellProfile and by `710sRice doctor` (Get-ShellProfileHookState). The path goes
+    # in single quotes, so a ' in it is doubled: a clone under a folder with an apostrophe broke
+    # every new PS7 window (winarchy 731a0a1, Group 1 W5). Every other path's block is
+    # byte-identical to before; an old unescaped one reads as "points somewhere else" to doctor,
+    # whose fix (-Only profile) rewrites it.
     $managed = Join-Path $Root 'config\pwsh\profile.ps1'
     @(
         $script:ProfileMarkerStart
-        ". '$managed'"
+        ". '$($managed.Replace("'", "''"))'"
         $script:ProfileMarkerEnd
     ) -join "`r`n"
 }
