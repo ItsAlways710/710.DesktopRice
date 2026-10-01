@@ -521,11 +521,13 @@ layers, lowest to highest priority, and SUPER+Shift+R compiles them into komoreb
 2. `games.toml`: the game launchers and games this repo knows, so they're never tiled. Game
    mode (in the main menu) shows while one is focused. Add your own with Quick add's Game
    (below); they go in your file, layer 4.
-3. `config/komorebi/rules.toml`: the rules this repo ships, tracked in git. Currently two:
+3. `config/komorebi/rules.toml`: the rules this repo ships, tracked in git. Currently three:
    WinUI 3 apps (the new Photos app and others) stay opaque when unfocused, because
    komorebi's transparency stops them taking clicks (transparency is off by default;
-   SUPER+Shift+D turns it on); and the Claude desktop app is tiled
-   (see [Tips and known issues](#tips-and-known-issues)).
+   SUPER+Shift+D turns it on); the Claude desktop app is tiled
+   (see [Tips and known issues](#tips-and-known-issues)); and komorebi leaves Flow Launcher
+   and ShareX alone, so ShareX's editor and settings, and Flow's settings window, open as
+   ordinary windows instead of being tiled.
 4. `config/komorebi/rules.local.toml`: **your** rules, for this machine only (git ignores
    it), your games and your pins included. They win over everything above. Want a rule on
    every machine? Move it into `rules.toml` (a game into `games.toml`) and commit it. Pins
