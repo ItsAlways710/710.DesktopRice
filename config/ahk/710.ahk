@@ -1018,12 +1018,15 @@ ToggleStayAwake() {
 #^w::ToggleStayAwake()             ; keep the machine awake
 
 ; ============================================================================
-; Game mode -- state tracking only, NOT floating. games.toml-listed exes are
-; already floated unconditionally by komorebi's own compiled rules (see
-; tools/compile-komorebi-rules.ps1 / the App rules section of the plan doc),
-; regardless of whether this flag is set. This watcher exists to (a) give the
-; tray/main menu a live ON/OFF indicator and (b) hot-reload games.toml when a
-; game is first detected. Ported from winarchy's winarchy.ahk @ 4574fc7 --
+; Game mode -- state tracking only, NOT floating. Games -- games.toml's exes
+; and your [[game]] blocks in rules.local.toml (Quick add's Game, Group 1 #5)
+; -- are already never tiled by komorebi's own compiled rules (an ignore rule
+; each; see tools/compile-komorebi-rules.ps1), regardless of whether this flag
+; is set. This watcher exists to (a) give the tray/main menu a live ON/OFF
+; indicator and (b) re-read the games when one is first detected (Quick add /
+; Remove a rule re-read them straight away too). It doesn't suspend SUPER
+; hotkeys, whatever games.toml's header says (a Group 3 item). Ported from
+; winarchy's winarchy.ahk @ 4574fc7 --
 ; ToggleGameMode() drops the Winarchy('game-mode on/off') CLI call per the
 ; plan doc's "gets a small rewrite" note and just flips the flag file
 ; directly, matching ToggleStayAwake()'s existing pattern in this file. The
@@ -1035,15 +1038,19 @@ GameExes := Map()
 LoadGames() {
     global GameExes, GamesToml
     GameExes := Map()
-    if !FileExist(GamesToml)
-        return
-    for line in StrSplit(FileRead(GamesToml, 'UTF-8'), '`n') {
-        if RegExMatch(line, 'i)^\s*exe\s*=\s*"([^"]+)"', &m) {
-            exe := StrLower(m[1])
-            if !InStr(exe, '*')
-                GameExes[exe] := true
+    if FileExist(GamesToml) {
+        for line in StrSplit(FileRead(GamesToml, 'UTF-8'), '`n') {
+            if RegExMatch(line, 'i)^\s*exe\s*=\s*"([^"]+)"', &m) {
+                exe := StrLower(m[1])
+                if !InStr(exe, '*')
+                    GameExes[exe] := true
+            }
         }
     }
+    ; Yours: the [[game]] blocks of rules.local.toml (ReadLocalRules, below).
+    for r in ReadLocalRules()
+        if (r.section = 'game' && r.field = 'exe')
+            GameExes[StrLower(r.value)] := true
 }
 LoadGames()
 
@@ -1200,8 +1207,13 @@ YasbLog(m) {
 ; every future window. Opaque needs no apply-now (it takes the next time the
 ; window is focused); Layered can't have one (komorebi still turns the window
 ; away until the reload lands), so its toast says to relaunch the app -- what
-; fixed Claude Desktop on 2026-09-25. "Remove a rule..." and "Edit my rules..."
-; below manage the same file (plan doc Open item 38). A rule addition always rides komorebi's fast hot-reload
+; fixed Claude Desktop on 2026-09-25. Matching on exe also offers Game (never
+; tiled + game mode, applied now like Ignore; Group 1 #5) and Pin to this
+; workspace (the app's windows open on the screen + workspace the picked one
+; is on now; Group 1 #7) -- add-rule.ps1 finds where that is and refuses the
+; windows a pin can't work for, each with its own exit code (below).
+; "Remove a rule..." and "Edit my rules..." below manage the same file (plan
+; doc Open item 38). A rule addition always rides komorebi's fast hot-reload
 ; path, so layouts survive. Every menu here is the palette -- same look,
 ; search and back-nav as SUPER+Esc / SUPER+Alt+Space.
 ;
@@ -1298,6 +1310,11 @@ QuickRuleItems(field, value, suggestLayered := false) {
         {text: 'Manage (force tile)', action: (*) => QuickApplyRule('manage', field, value)},
         layered,
         {text: 'Opaque (never translucent)', action: (*) => QuickApplyRule('transparency_ignore', field, value)} ]
+    ; Games and pins are by exe only -- every reader of them matches the exe.
+    if (field = 'exe') {
+        items.Push({text: 'Game (never tile ' Chr(0xB7) ' game mode)', action: (*) => QuickApplyRule('game', field, value)})
+        items.Push({text: 'Pin to this workspace',              action: (*) => QuickApplyRule('pin', field, value)})
+    }
     if suggestLayered {
         layered.hint := 'suggested'
         items.InsertAt(1, items.RemoveAt(4))    ; to the top, so Enter takes it
@@ -1307,7 +1324,10 @@ QuickRuleItems(field, value, suggestLayered := false) {
 
 ; Menu name for a rules-file section ([[transparency_ignore]] reads as "Opaque").
 QuickRuleLabel(cat) => Map('floating', 'Float', 'ignore', 'Ignore', 'manage', 'Manage',
-    'layered', 'Layered', 'transparency_ignore', 'Opaque').Get(cat, cat)
+    'layered', 'Layered', 'transparency_ignore', 'Opaque', 'game', 'Game', 'pin', 'Pin').Get(cat, cat)
+
+; A pin as menus show it: "chrome.exe -> screen 2, workspace 3".
+PinText(exe, screen, workspace) => exe ' ' Chr(0x2192) ' screen ' screen ', workspace ' workspace
 
 QuickApplyRule(cat, field, value) {
     global QuickTarget, RepoRoot
@@ -1330,7 +1350,22 @@ QuickApplyRule(cat, field, value) {
         return
     }
     EnvSet('QUICKADD_VALUE')
+    if (cat = 'pin') {
+        QuickPinResult(code, value)
+        return
+    }
     label := QuickRuleLabel(cat)
+    if (cat = 'game') {
+        if (code = 0 || code = 2)
+            LoadGames()                           ; game mode knows it straight away
+        switch code {
+            case 0: ReloadStack('Game added (' value ") -- never tiled, game mode while it's focused")
+            case 2: ReloadStack('Game added (' value '), not applied to that window (see add-rule.log)')
+            case 3: TrayTip('Already a game (' value ')', '710sRice')
+            default: TrayTip('Game not added (see add-rule.log)', '710sRice')
+        }
+        return
+    }
     applied := (cat = 'floating' || cat = 'ignore' || cat = 'manage')
     switch code {
         case 0: ReloadStack(label ' rule added (' field ' ' value ')' (cat = 'layered' ? ' -- relaunch the app to tile it' : ''))
@@ -1340,35 +1375,62 @@ QuickApplyRule(cat, field, value) {
     }
 }
 
+; add-rule.ps1 -Category pin's exit codes -> what happened. The pin's screen
+; and workspace come back out of rules.local.toml (add-rule.ps1 worked them out).
+QuickPinResult(code, exe) {
+    pinned := ''
+    for r in ReadLocalRules()
+        if (r.section = 'pin' && r.field = 'exe' && StrLower(r.value) = StrLower(exe))
+            pinned := PinText(r.value, r.screen, r.workspace)
+    switch code {
+        case 0: ReloadStack('Pinned ' (pinned != '' ? pinned : exe) ' -- its windows open there')
+        case 3: TrayTip('Already pinned there (' (pinned != '' ? pinned : exe) ')', '710sRice')
+        case 6: TrayTip("komorebi doesn't manage that window -- nothing pinned", '710sRice')
+        case 7: TrayTip("Terminal and Explorer can't be pinned (every window of theirs would follow) -- nothing pinned", '710sRice')
+        case 8: TrayTip("That's a game (never tiled) -- nothing pinned", '710sRice')
+        case 9: TrayTip("That screen has no number in the screen map -- run 710sRice doctor", '710sRice')
+        default: TrayTip('Not pinned (see add-rule.log)', '710sRice')
+    }
+}
+
 ; --- Remove a rule... / Edit my rules... (Tiling menu) -----------------------
 ; Both work on YOUR rules only (rules.local.toml). The rules this repo ships
 ; (rules.toml) aren't removable here -- edit and commit those like any config.
 LocalRulesPath() => RepoRoot '\config\komorebi\rules.local.toml'
 
-; Your rules as {section, field, value}, in file order. Same grammar as
-; compile-komorebi-rules.ps1 and tools\remove-rule.ps1: a block is a
-; [[section]] line plus the lines after it up to a blank line; its first
-; exe / class / title line names the rule.
+; Your rules as {section, field, value, screen, workspace}, in file order. Same
+; grammar as compile-komorebi-rules.ps1 and tools\remove-rule.ps1: a block is
+; a [[section]] line plus the lines after it up to a blank line; its first
+; exe / class / title line names the rule. A pin's screen = N / workspace = N
+; (bare numbers) ride along; '' for every other rule.
 ReadLocalRules() {
     rules := []
     if !FileExist(LocalRulesPath())
         return rules
-    section := ''
-    loop parse FileRead(LocalRulesPath(), 'UTF-8'), '`n', '`r' {
+    cur := ''
+    loop parse FileRead(LocalRulesPath(), 'UTF-8') '`n', '`n', '`r' {
         line := Trim(A_LoopField)
-        if RegExMatch(line, '^\[\[(\w+)\]\]$', &m) {
-            section := m[1]
-        } else if (line = '') {
-            section := ''
-        } else if (section != '' && RegExMatch(line, '^(exe|class|title)\s*=\s*"([^"]*)"$', &m)) {
-            rules.Push({section: section, field: m[1], value: m[2]})
-            section := ''                        ; one entry per block
+        if (line = '' || RegExMatch(line, '^\[\[(\w+)\]\]$', &m)) {
+            if (IsObject(cur) && cur.field != '')
+                rules.Push(cur)
+            cur := (line = '') ? '' : {section: m[1], field: '', value: '', screen: '', workspace: ''}
+        } else if IsObject(cur) {
+            if (cur.field = '' && RegExMatch(line, '^(exe|class|title)\s*=\s*"([^"]*)"$', &m))
+                cur.field := m[1], cur.value := m[2]
+            else if (cur.screen = '' && RegExMatch(line, '^screen\s*=\s*(\d+)$', &m))
+                cur.screen := m[1]
+            else if (cur.workspace = '' && RegExMatch(line, '^workspace\s*=\s*(\d+)$', &m))
+                cur.workspace := m[1]
         }
     }
     return rules
 }
 
-RuleText(r) => QuickRuleLabel(r.section) ' ' Chr(0xB7) ' ' r.field ' = ' r.value
+RuleText(r) {
+    if (r.section = 'pin')
+        return 'Pin ' Chr(0xB7) ' ' PinText(r.value, r.screen, r.workspace)
+    return QuickRuleLabel(r.section) ' ' Chr(0xB7) ' ' r.field ' = ' r.value
+}
 
 RemoveRuleMenu(*) {
     rules := ReadLocalRules()
@@ -1400,10 +1462,14 @@ RemoveRuleNow(r) {
     }
     EnvSet('REMOVERULE_VALUE')
     ; A removal takes reload-stack's komorebi-restart path -- the only way to drop
-    ; a live rule -- so every open window is checked again straight away.
-    if (code = 0)
+    ; a live rule -- so every open window is checked again straight away. A pin
+    ; is the exception: komorebi rebuilds workspace rules on every hot reload, so
+    ; unpinning rides the fast one (see tools\remove-rule.ps1).
+    if (code = 0) {
+        if (r.section = 'game')
+            LoadGames()                           ; no longer a game for game mode either
         ReloadStack('Removed ' RuleText(r))
-    else
+    } else
         TrayTip('Rule not removed (see remove-rule.log)', '710sRice')
 }
 
@@ -1419,7 +1485,8 @@ EditMyRules(*) {
             . "# community ASC rules. Quick add rule writes here; compiled into komorebi.json by`n"
             . "# tools\compile-komorebi-rules.ps1 (SUPER+Shift+R). Sections: [[floating]], [[ignore]],`n"
             . "# [[manage]], [[layered]], [[transparency_ignore]], ... with one of exe / class /`n"
-            . "# title per entry. Want a rule on every machine? Move it into rules.toml and commit.`n`n"
+            . "# title per entry; [[game]] with an exe; [[pin]] with an exe, screen = N, workspace = N.`n"
+            . "# Want a rule on every machine? Move it into rules.toml (a game: games.toml) and commit.`n`n"
         try FileAppend(header, path, 'UTF-8-RAW')
         catch as e {
             TrayTip("Couldn't create rules.local.toml: " e.Message, '710sRice')

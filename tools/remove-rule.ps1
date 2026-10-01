@@ -17,11 +17,18 @@
   touches rules.local.toml: the rules this repo ships (rules.toml) aren't removable here
   (plan doc Open item 38; edit and commit rules.toml for those).
 
+  A [[game]] or [[pin]] block goes the same way (-Category game / pin -Field exe): a pin's
+  screen = / workspace = lines are part of its block.
+
   Doesn't reload anything itself -- the caller runs SUPER+Shift+R's reload-stack.ps1, which
   sees a rule was REMOVED and restarts komorebi (its hot reload can only add rules), so
-  every open window gets checked again straight away.
+  every open window gets checked again straight away. A pin is the exception: it lives on
+  its workspace in komorebi.json's monitors, and komorebi clears and rebuilds workspace
+  rules on every hot reload (v0.1.41 static_config.rs reload()) -- so removing one rides the
+  fast hot reload, no restart (reload-stack's removed-rule count skips monitors).
 
   Same line grammar compile-komorebi-rules.ps1 reads: `key = "value"`, value taken raw.
+  The file keeps its line endings and its BOM, if it has one.
   The value comes from -Value, or from $env:REMOVERULE_VALUE when -Value isn't given -- so
   AHK never has to quote an arbitrary window title onto a command line.
 
@@ -54,7 +61,10 @@ if (-not $PSBoundParameters.ContainsKey('Value')) { $Value = $env:REMOVERULE_VAL
 if ([string]::IsNullOrEmpty($Value)) { Write-Log "refused: empty $Field value."; exit 1 }
 if (-not (Test-Path $RulesPath)) { Write-Log "refused: $RulesPath doesn't exist -- nothing to remove."; exit 1 }
 
-$text = [System.IO.File]::ReadAllText($RulesPath)
+$bytes = [System.IO.File]::ReadAllBytes($RulesPath)
+$bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+$skip = if ($bom) { 3 } else { 0 }
+$text = [System.Text.UTF8Encoding]::new($false).GetString($bytes, $skip, $bytes.Length - $skip)
 $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
 $lines = [System.Collections.Generic.List[string]]::new([string[]]($text -split '\r?\n'))
 # A trailing newline leaves one empty string at the end of the split -- set it aside so it
@@ -102,7 +112,7 @@ while ($out.Count -gt 0 -and $out[$out.Count - 1].Trim() -eq '') { $out.RemoveAt
 
 try {
     $newText = ($out -join $nl) + $(if ($out.Count -gt 0 -and $endsWithNewline) { $nl } else { '' })
-    [System.IO.File]::WriteAllText($RulesPath, $newText, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($RulesPath, $newText, [System.Text.UTF8Encoding]::new($bom))
 } catch {
     Write-Log "couldn't write ${RulesPath}: $($_.Exception.Message)"
     exit 1

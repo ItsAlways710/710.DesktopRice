@@ -223,22 +223,33 @@ while ((Get-Date) -lt $overallDeadline) {
                 } catch { Write-Log "couldn't re-apply wallust border colors: $($_.Exception.Message)" }
             } else { Write-Log 'pwsh not found -- wallust border colors not re-applied.' }
 
-            # Unmanage games.toml windows that komorebi already tiled on its initial scan
+            # Unmanage game windows that komorebi already tiled on its initial scan
             # (a retile/ignore-rule doesn't retroactively unmanage them). Only matters when
             # komorebi (re)starts with a game open -- SUPER+Shift+R removing a rule, or a
             # crash -- never at a normal boot.
-            # games.toml is read right here with a 5.1-safe loop (the `exe = "..."` grammar).
-            # Until 2026-09-23 this dot-sourced winarchy's window-slots.ps1 instead, which needs
-            # PS7's ?. just to parse -- so under this script's 5.1 host the step threw on every
-            # single start and never ran once.
+            # The games: every `exe = "..."` line of games.toml, plus the [[game]] blocks of
+            # your rules.local.toml (Group 1 #5 -- Quick add's Game) -- read right here with
+            # 5.1-safe loops, the same grammar the compile reads. Until 2026-09-23 this
+            # dot-sourced winarchy's window-slots.ps1 instead, which needs PS7's ?. just to
+            # parse -- so under this script's 5.1 host the step threw on every single start
+            # and never ran once.
             try {
                 $gamesToml = Join-Path $root 'games.toml'
+                $localRules = Join-Path $root 'config\komorebi\rules.local.toml'
                 # outer @() so 0 or 1 games still gives an array (the plan doc's
                 # collapse-to-scalar gotcha)
                 $games = @(@(
                     if (Test-Path $gamesToml) {
                         foreach ($line in Get-Content $gamesToml -Encoding UTF8) {
                             if ($line -match '^\s*exe\s*=\s*"([^"]+)"') { $Matches[1] }
+                        }
+                    }
+                    if (Test-Path $localRules) {
+                        $section = ''
+                        foreach ($line in Get-Content $localRules -Encoding UTF8) {
+                            $t = $line.Trim()
+                            if ($t -match '^\[\[(\w+)\]\]$') { $section = $Matches[1] }
+                            elseif ($section -eq 'game' -and $t -match '^exe\s*=\s*"([^"]+)"$') { $Matches[1] }
                         }
                     }
                 ) | Sort-Object -Unique)
@@ -259,11 +270,11 @@ while ((Get-Date) -lt $overallDeadline) {
                 }
                 if ($toFree.Count -gt 0) {
                     & $komorebic retile *> $null
-                    Write-Log "unmanaged $($toFree.Count) games.toml window(s) that were already tiled ($($toFree -join ', ')) + retile."
+                    Write-Log "unmanaged $($toFree.Count) game window(s) that were already tiled ($($toFree -join ', ')) + retile."
                 } else {
-                    Write-Log "games check: $($games.Count) games listed in games.toml, none tiled."
+                    Write-Log "games check: $($games.Count) games listed (games.toml + your [[game]] rules), none tiled."
                 }
-            } catch { Write-Log "couldn't unmanage games.toml windows post-startup: $($_.Exception.Message)" }
+            } catch { Write-Log "couldn't unmanage game windows post-startup: $($_.Exception.Message)" }
         }
         exit 0
     }

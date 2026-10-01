@@ -36,7 +36,9 @@
        static_config.rs never clears a rule list), so if any rule was REMOVED from
        komorebi.json, komorebi gets a clean stop + restart through its autostart task
        instead, then the same layout/column restore once Start-Komorebi.ps1 has finished.
-       Rule additions (quick-add-rule's whole job) stay on the fast hot-reload path.
+       Rule additions (quick-add-rule's whole job) stay on the fast hot-reload path. So
+       does every pin change, removals included: pins are workspace rules in `monitors`,
+       which komorebi clears and rebuilds on every hot reload (Group 1 #7).
     3. YASB: kill + restart, never `yasbc reload` -- its hot reload re-subscribes the
        komorebi widgets to the named pipe without closing the old subscription (watch_config
        stays off for the same reason). ONLY when needed, though: YASB isn't running,

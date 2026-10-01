@@ -1,8 +1,10 @@
-# Your own komorebi rule overrides -- highest priority layer, above games.toml and
-# the vendored community ASC rules. Compiled into komorebi.json by
-# tools\compile-komorebi-rules.ps1 (run by SUPER+Shift+R). Tracked in git on
-# purpose, so rules follow you to every machine. Sections: [[floating]],
-# [[ignore]], [[manage]], ... with one of exe / class / title per entry.
+# The komorebi rules this repo ships -- above games.toml and the vendored community
+# ASC rules, below your own rules.local.toml (Quick add's file, this machine only).
+# Compiled into komorebi.json by tools\compile-komorebi-rules.ps1 (run by
+# SUPER+Shift+R). Tracked in git on purpose, so rules follow you to every machine.
+# Sections: [[floating]], [[ignore]], [[manage]], ... with one of exe / class /
+# title per entry. Not [[game]] (shipped games go in games.toml) or [[pin]] (a pin
+# names this machine's screens -- rules.local.toml only).
 
 # WinUI 3 apps (new Photos, and others built on the same framework) stop taking
 # clicks when komorebi's transparency makes them translucent -- found with

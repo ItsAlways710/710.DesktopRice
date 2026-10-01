@@ -29,6 +29,19 @@
   "Same window" identity = kind+id (ignoring matching_strategy); a compound (array)
   rule's identity is the sorted combination of all its conditions.
 
+  Two more sections, in rules.local.toml only (Group 1 #5 / #7, 2026-09-30):
+    - [[game]] exe = "X.exe" -- your games: an ignore_rules entry at your (top) layer, the
+      same thing games.toml's entries become; 710.ahk's game-mode watcher and
+      Start-Komorebi.ps1 read them too. Shipped games go in games.toml.
+    - [[pin]] exe = "X.exe", screen = N, workspace = N -- an initial_workspace_rules entry on
+      that workspace: monitors[screen-1].workspaces[workspace-1], both numbers as you see
+      them (screen = the screen map's index + 1, so config block screen-1 IS that screen;
+      workspace = the bar's button number). komorebi moves a matching window there once,
+      when it first sees it. One pin per exe (a second one for the same exe wins, with a
+      warning); a screen or workspace that isn't in base.json is skipped with a warning.
+      Pins name this machine's screens, so rules.toml (shared by every machine) can't have
+      them.
+
   display_index_preferences is handled separately from the three rule layers above: it
   isn't a rule at all, it's a monitor-index -> serial_number_id map, and it's exactly as
   machine-specific as a secret (a different machine's monitor arrangement would make a
@@ -164,15 +177,20 @@ function Get-UserRulesLayer {
     #   exe = "SomeApp.exe"
     #   [[disable]]
     #   asc = "Some ASC App Name"     # skip a whole ASC-named app's rules entirely
+    # -Local (rules.local.toml) also takes [[game]] and [[pin]] (the header has them):
+    #   [[pin]]
+    #   exe = "chrome.exe"
+    #   screen = 2                    # a bare whole number -- the one unquoted value
+    #   workspace = 3
     #
-    # Returns a single [pscustomobject] with .Entries / .Disabled, not two separate
+    # Returns a single [pscustomobject] with .Entries / .Disabled / .Pins, not separate
     # return values - PowerShell flattens arrays written to the output stream, so
     # `return @(), @()` silently collapses to $null, $null when both are empty
     # (exactly the case on a first run, before rules.toml exists). Wrapping them in
     # one object sidesteps that footgun entirely.
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Source)
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Source, [switch]$Local)
     $name = Split-Path $Path -Leaf
-    if (-not (Test-Path $Path)) { return [pscustomobject]@{ Entries = @(); Disabled = @() } }
+    if (-not (Test-Path $Path)) { return [pscustomobject]@{ Entries = @(); Disabled = @(); Pins = @() } }
     $categories = Get-AllCategories
     $currentSection = $null
     $currentEntry = $null
@@ -187,14 +205,42 @@ function Get-UserRulesLayer {
         }
         if ($line -match '^(\w+)\s*=\s*"([^"]*)"$' -and $currentEntry) {
             $currentEntry[$Matches[1]] = $Matches[2]
+        } elseif ($line -match '^(\w+)\s*=\s*(\d+)$' -and $currentEntry) {
+            $currentEntry[$Matches[1]] = [int]$Matches[2]
         }
     }
     if ($currentEntry) { $sections.Add($currentEntry) }
 
     $disabled = @($sections | Where-Object { $_.__section -eq 'disable' } | ForEach-Object { $_['asc'] })
     $out = [System.Collections.Generic.List[object]]::new()
+    $pins = [System.Collections.Generic.List[object]]::new()
     foreach ($entry in ($sections | Where-Object { $_.__section -ne 'disable' })) {
         $section = $entry.__section
+        if ($section -in 'game', 'pin') {
+            if (-not $Local) {
+                $where = if ($section -eq 'game') { 'games.toml (shipped games) or rules.local.toml (yours)' } else { 'rules.local.toml -- a pin names this machine''s screens' }
+                Write-Warning "${name}: [[$section]] belongs in $where, skipping."
+                continue
+            }
+            $exe = if ($entry.Contains('exe')) { "$($entry['exe'])" } else { '' }
+            if (-not $exe.Trim()) { Write-Warning "${name}: [[$section]] entry needs exe = ""<name>.exe"", skipping."; continue }
+            if ($section -eq 'game') {
+                # Exactly what a games.toml entry becomes (Get-GamesLayer), at your layer.
+                $out.Add(@{
+                    Category = 'ignore_rules'
+                    Rule     = [pscustomobject]@{ kind = 'Exe'; id = $exe; matching_strategy = 'Equals' }
+                    Source   = $Source
+                })
+                continue
+            }
+            $screen = $entry['screen']; $workspace = $entry['workspace']
+            if ($screen -isnot [int] -or $workspace -isnot [int]) {
+                Write-Warning "${name}: [[pin]] $exe needs screen = <number> and workspace = <number> (bare numbers), skipping."
+                continue
+            }
+            $pins.Add([pscustomobject]@{ Exe = $exe; Screen = $screen; Workspace = $workspace })
+            continue
+        }
         if (-not $categories.Contains($section)) {
             Write-Warning "${name}: unknown section [[$section]], skipping."
             continue
@@ -211,7 +257,54 @@ function Get-UserRulesLayer {
             Source   = $Source
         })
     }
-    return [pscustomobject]@{ Entries = $out; Disabled = $disabled }
+    return [pscustomobject]@{ Entries = $out; Disabled = $disabled; Pins = $pins }
+}
+
+function Add-Pins {
+    <# Writes each [[pin]] onto its workspace in $Base.monitors as an initial_workspace_rules
+       entry (komorebi v0.1.41 static_config.rs: WorkspaceConfig.initial_workspace_rules, a
+       list of the same matching rules as everywhere else). One pin per exe -- the last one in
+       the file wins, with a warning -- and a pin whose screen / workspace base.json doesn't
+       have is skipped with a warning. $Ignored: exe ids the merged ignore_rules never tile --
+       a pin on one does nothing (komorebi never manages the window), so it's flagged. Returns
+       how many were written. #>
+    param([Parameter(Mandatory)]$Base, [object[]]$Pins = @(), [string[]]$Ignored = @())
+    $name = 'rules.local.toml'
+    $byExe = [ordered]@{}
+    foreach ($p in $Pins) {
+        $k = $p.Exe.ToLowerInvariant()
+        if ($byExe.Contains($k)) {
+            Write-Warning "${name}: $($p.Exe) is pinned more than once -- the last one (screen $($p.Screen), workspace $($p.Workspace)) is used."
+            $byExe.Remove($k)
+        }
+        $byExe[$k] = $p
+    }
+    $monitors = @($Base.monitors)
+    $written = 0
+    foreach ($p in $byExe.Values) {
+        $label = "[[pin]] $($p.Exe) -> screen $($p.Screen), workspace $($p.Workspace)"
+        if ($p.Screen -lt 1 -or $p.Screen -gt $monitors.Count) {
+            Write-Warning "${name}: $label -- there's no screen $($p.Screen) (screens 1-$($monitors.Count)), skipped."
+            continue
+        }
+        $ws = @($monitors[$p.Screen - 1].workspaces)
+        if ($p.Workspace -lt 1 -or $p.Workspace -gt $ws.Count) {
+            Write-Warning "${name}: $label -- screen $($p.Screen) has no workspace $($p.Workspace) (workspaces 1-$($ws.Count)), skipped."
+            continue
+        }
+        if ($Ignored -ccontains $p.Exe) {
+            Write-Warning "${name}: $label -- that exe is never tiled (an ignore rule or a game), so the pin does nothing."
+        }
+        $target = $ws[$p.Workspace - 1]
+        $rule = [pscustomobject]@{ kind = 'Exe'; id = $p.Exe; matching_strategy = 'Equals' }
+        if ($target.PSObject.Properties['initial_workspace_rules']) {
+            $target.initial_workspace_rules = @(@($target.initial_workspace_rules) + $rule)
+        } else {
+            $target | Add-Member -NotePropertyName 'initial_workspace_rules' -NotePropertyValue @($rule)
+        }
+        $written++
+    }
+    $written
 }
 
 function Get-DisplayIndexPreferences {
@@ -299,7 +392,7 @@ try {
     catch { throw "config\komorebi\base.json isn't valid JSON: $($_.Exception.Message)" }
 
     $userRules   = Get-UserRulesLayer -Path $RulesPath -Source 'user:rules.toml'
-    $localRules  = Get-UserRulesLayer -Path $LocalRulesPath -Source 'local:rules.local.toml'
+    $localRules  = Get-UserRulesLayer -Path $LocalRulesPath -Source 'local:rules.local.toml' -Local
     $disabledAsc = @($userRules.Disabled) + @($localRules.Disabled)
     $layers = @(
         ,(Get-AscLayer -Disabled $disabledAsc)   # level 0 - lowest priority
@@ -318,6 +411,11 @@ try {
         if ($base.PSObject.Properties[$cat]) { $base.$cat = $rules }
         else { $base | Add-Member -NotePropertyName $cat -NotePropertyValue $rules }
     }
+
+    # Your pins ([[pin]]) onto their workspaces -- after the merge, so a pin on an exe that
+    # ends up never tiled can be flagged.
+    $ignoredExes = @(@($merged['ignore_rules']) | Where-Object { $_ -isnot [System.Array] -and $_.kind -eq 'Exe' -and $_.matching_strategy -eq 'Equals' } | ForEach-Object { "$($_.id)" })
+    $pinCount = Add-Pins -Base $base -Pins @($localRules.Pins) -Ignored $ignoredExes
 
     # display_index_preferences: not a rule layer, machine-local, merged in only when
     # config/komorebi/display-index.local.json exists (see Get-DisplayIndexPreferences).
@@ -355,6 +453,9 @@ try {
     foreach ($cat in (Get-AllCategories).Values) {
         $count = @($merged[$cat]).Count
         if ($count -gt 0) { Write-Host ("  {0,-38} {1}" -f $cat, $count) }
+    }
+    if ($pinCount -gt 0) {
+        Write-Host ("  {0,-38} {1}" -f 'initial_workspace_rules (your pins)', $pinCount)
     }
     if ($displayIndex) {
         Write-Host ("  {0,-38} {1}" -f 'display_index_preferences', "$($displayIndex.Count) monitor(s)")
