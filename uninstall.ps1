@@ -324,8 +324,10 @@ foreach ($row in $wingetRows) {
         continue
     }
     if ($id -like '*NerdFont*') {
-        # The font goes: Windows Terminal must not be drawing with it then (see Clear-TerminalNerdFontFaces
-        # in tools\lib\activation.ps1 -- B2 of the 2026-10-01 Dell test lost its window here).
+        # The font goes: no Windows Terminal profile may still name it (Clear-TerminalNerdFontFaces,
+        # tools\lib\activation.ps1), and it goes through Windows Installer told to close nothing
+        # (Invoke-MsiUninstall, tools\lib\packages.ps1) -- winget's silent uninstall had Restart
+        # Manager shut down the Terminal running this very uninstall (B2 and T5, 2026-10-01).
         if ($DryRun) { Write-Host "  [ ] Point any Windows Terminal profile still on the Nerd Font back to Terminal's own font" }
         else {
             try {
@@ -338,6 +340,21 @@ foreach ($row in $wingetRows) {
         }
     }
     if ($DryRun) { Write-Host "  [ ] Uninstall $id"; continue }
+    if ($id -like '*NerdFont*') {
+        $msi = $null
+        try { $msi = Get-MsiProductCode -DisplayName '^JetBrainsMono Nerd Font' } catch { }
+        if ($msi) {
+            try {
+                $code = Invoke-MsiUninstall -ProductCode $msi
+                if ($code -eq 0)        { Step-Ok "$id uninstalled (Windows Installer, closing nothing)" }
+                elseif ($code -eq 3010) { Step-Ok "$id uninstalled (Windows Installer, closing nothing) -- a program still had the font open (this Windows Terminal, likely), so its files go at your next restart: restart before installing 710sRice again" }
+                elseif ($code -eq 1605) { Step-Info "$id -- not installed, nothing to remove" }
+                else                    { Step-Warn "$id -- Windows Installer couldn't remove it (exit $code); 'winget uninstall --id $id' by hand shows why (it may close Windows Terminal)" }
+            } catch { Step-Warn "Uninstall $($id): $($_.Exception.Message)" }
+            continue
+        }
+        # No Windows Installer entry for it (installed some other way, or not at all): winget, below.
+    }
     # Not Invoke-Step: the result line depends on winget's exit code (this used to discard
     # it and print "uninstalled" regardless -- Flow Launcher was never actually removed).
     try {

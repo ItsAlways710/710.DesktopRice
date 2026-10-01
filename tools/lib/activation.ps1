@@ -1852,9 +1852,11 @@ function Clear-TerminalNerdFontFaces {
     <# uninstall -Force, right before it removes the JetBrainsMono Nerd Font package: any Windows
        Terminal face that still names it (after uninstall put Terminal's own "before" back -- a
        "before" that was already the Nerd Font, winarchy's on the Dell, or yours) goes back to
-       Terminal's own font. Removing the font while Terminal draws with it is the likeliest reason
-       B2's uninstall window vanished before its exit code (2026-10-01; the Dell's Terminal used it
-       then). Returns the names of the places changed (empty: nothing to do; $null: no settings). #>
+       Terminal's own font, so no profile names a font that's gone. (B2's and T5's vanished
+       window, 2026-10-01, turned out to be Windows Installer's Restart Manager closing Terminal
+       during the font's MSI uninstall -- uninstall.ps1 now removes it with that off: see
+       Invoke-MsiUninstall in tools\lib\packages.ps1.) Returns the names of the places changed
+       (empty: nothing to do; $null: no settings). #>
     $path = @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
               "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (-not $path) { return $null }

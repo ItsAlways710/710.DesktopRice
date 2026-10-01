@@ -313,7 +313,9 @@ Two switches change what goes:
 - `-Keep <Install ID>` keeps a package that would otherwise be removed, e.g.
   `710sRice uninstall -Keep ShareX.ShareX`. Several at once:
   `-Keep ShareX.ShareX,Flow-Launcher.Flow-Launcher`.
-- `-Force` removes the `yes` rows too.
+- `-Force` removes the `yes` rows too. The Nerd Font goes without closing anything: Windows
+  Terminal (this window included) usually still has it open, so its files are deleted at your next
+  restart -- restart before you install 710sRice again.
 
 It forgets your elevated-tiling choice and which palette profile is in use, so a later
 install starts from the defaults again. Your palette profiles themselves stay in
