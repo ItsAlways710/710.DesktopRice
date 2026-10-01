@@ -1848,6 +1848,23 @@ function Set-TerminalFontFace {
     }
 }
 
+function Clear-TerminalNerdFontFaces {
+    <# uninstall -Force, right before it removes the JetBrainsMono Nerd Font package: any Windows
+       Terminal face that still names it (after uninstall put Terminal's own "before" back -- a
+       "before" that was already the Nerd Font, winarchy's on the Dell, or yours) goes back to
+       Terminal's own font. Removing the font while Terminal draws with it is the likeliest reason
+       B2's uninstall window vanished before its exit code (2026-10-01; the Dell's Terminal used it
+       then). Returns the names of the places changed (empty: nothing to do; $null: no settings). #>
+    $path = @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+              "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $path) { return $null }
+    $wt = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+    $hits = @(Get-TerminalFontFaces $wt | Where-Object { "$($_.Face)" -match '^JetBrainsMono (NF|NFM|NFP|Nerd Font)\b' })
+    foreach ($h in $hits) { Set-TerminalFontFace -Settings $wt -Key "$($h.Key)" -Face $null }
+    if ($hits.Count) { $wt | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $path -Encoding UTF8 }
+    @($hits | ForEach-Object Name)
+}
+
 function Test-TerminalUsesScheme {
     # Does any profile draw with colour scheme $Name -- profiles.defaults or one in profiles.list,
     # named directly or as either half of a { light, dark } pair?

@@ -323,6 +323,20 @@ foreach ($row in $wingetRows) {
         Step-Info "$id -- kept (versions.md marks this Pre-existing?; pass -Force to remove it anyway)"
         continue
     }
+    if ($id -like '*NerdFont*') {
+        # The font goes: Windows Terminal must not be drawing with it then (see Clear-TerminalNerdFontFaces
+        # in tools\lib\activation.ps1 -- B2 of the 2026-10-01 Dell test lost its window here).
+        if ($DryRun) { Write-Host "  [ ] Point any Windows Terminal profile still on the Nerd Font back to Terminal's own font" }
+        else {
+            try {
+                $moved = @(Clear-TerminalNerdFontFaces)
+                if ($moved.Count) {
+                    Step-Ok "Windows Terminal: $($moved -join ', ') still used the JetBrainsMono Nerd Font -- back to Terminal's own font before it's removed"
+                    Start-Sleep -Seconds 2   # Terminal re-reads its settings by itself; let it, before the font goes
+                }
+            } catch { Step-Warn "Windows Terminal's font couldn't be checked before removing the Nerd Font: $($_.Exception.Message)" }
+        }
+    }
     if ($DryRun) { Write-Host "  [ ] Uninstall $id"; continue }
     # Not Invoke-Step: the result line depends on winget's exit code (this used to discard
     # it and print "uninstalled" regardless -- Flow Launcher was never actually removed).
