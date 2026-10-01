@@ -306,18 +306,20 @@ function Compare-PinVersion {
 # --- Upgrading a pinned package to its pin (install's upgrade step) ---------------------
 # Each pinned app is stopped before winget touches it (a running app locks its files) and
 # started again afterwards through its own task -- only if it was running before, and never
-# directly from install's admin window (the task runs at its own level). Flow isn't
-# restarted: SUPER+Space cold-starts it. Everything is left to its own installer, which
-# stops and restarts its service itself.
+# directly from install's admin window (the task runs at its own level). Flow has its own
+# task since Group 1 #4 (its root Flow.Launcher.exe survives an upgrade; the versioned app
+# folder doesn't). Everything is left to its own installer, which stops and restarts its
+# service itself.
 
 function Get-PinnedAppTask {
-    # The autostart task that starts this row's app, or $null (Flow, Everything).
+    # The autostart task that starts this row's app, or $null (Everything).
     param($Row)
     switch ($Row.InstallId) {
-        'LGUG2Z.komorebi'       { 'komorebi' }
-        'AmN.yasb'              { 'yasb' }
-        'AutoHotkey.AutoHotkey' { 'ahk' }
-        default                 { $null }
+        'LGUG2Z.komorebi'             { 'komorebi' }
+        'AmN.yasb'                    { 'yasb' }
+        'AutoHotkey.AutoHotkey'       { 'ahk' }
+        'Flow-Launcher.Flow-Launcher' { 'flow' }
+        default                       { $null }
     }
 }
 

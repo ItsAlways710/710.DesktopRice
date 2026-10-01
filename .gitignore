@@ -40,9 +40,9 @@
 # absence on a fresh clone is fine.
 /config/ahk/user.ahk
 
-# Flow Launcher Settings.json backup written by tools/setup-flow-launcher.ps1
-# before its one-time JSON round-trip rewrite. Lives outside the repo tree
-# in practice (%APPDATA%), listed here only for completeness/safety.
+# Flow Launcher Settings.json backup written by install's flow step
+# (tools/components/flow.ps1) before it rewrites the file. Lives outside the
+# repo tree in practice (%APPDATA%), listed here only for completeness/safety.
 *.bak
 
 # Machine-local monitor identity, written by install.ps1 from a real

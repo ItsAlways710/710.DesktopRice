@@ -14,6 +14,7 @@ repair and the sign-in tasks pick a new file up by themselves.
 | `Check` | no | `{ param($Ctx) ... }`, doctor's results for it (`New-DoctorResult`). A fixable `[XX]` carries `Step = '<Id>'`, so `710sRice doctor -repair` runs this component's install step |
 | `Group` | no (`Integrations`) | the doctor group its results go under: `Repo and command`, `Packages and pins`, `Stack`, `Tasks and tiling mode`, `Generated configs`, `Integrations`, `Conflicts and leftovers` |
 | `NamedOnly` | no (`$false`) | `$true`: a plain install skips it; only `-Only <Id>` runs it (like `upgrade` and `palette`) |
+| `Functions` | no | `{ function ... }`, the component's own helper functions, dot-sourced before its `Install`, `Uninstall` or `Check` runs, so the three can share code. `Autostart.Exe` runs without them |
 | `Autostart` | no | its own task, `\710.DesktopRice\<Id>`: `@{ Exe = { <path, or nothing when it isn't installed> }; Arguments = '...'; Delay = 'PT2S'; Process = '<process name>' }`. A full-time machine starts it at sign-in; an on-demand one when you run `710sRice start`. `Exe` is a GUI exe, started directly. Only a console host goes through `tools\lib\run-hidden.vbs`, and none of those is a component. `Process` is the process name that means "already running" |
 
 `$Ctx` has `Root` (the repo), `OnlyRun` (this is a `-Only` run), `FullTime` (the machine's
@@ -25,6 +26,9 @@ The loader checks every file when it reads it. A broken one throws and names the
 field it doesn't know, a missing `Label` or `After`, an `After` that names no step, `Id` not
 the file's name. Nothing is skipped quietly, because an install that silently lost a step
 would be worse than one that stops.
+
+The worked example is `flow.ps1` (Flow Launcher): every field but `NamedOnly`, a first start through
+`Start-AsUser`, snapshots, and its own task.
 
 ## The rules
 

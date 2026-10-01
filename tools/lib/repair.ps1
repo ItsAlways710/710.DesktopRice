@@ -72,7 +72,8 @@ function Test-RepairKomorebiLauncherBusy {
 
 function Get-RepairStackState {
     # The stack components that are up right now, by key: komorebi / YASB / ShareX by process,
-    # 710.ahk by its window (its process name can't tell it from another AHK v2 script).
+    # 710.ahk by its window (its process name can't tell it from another AHK v2 script), a
+    # component with its own task (Flow) by the process it declares.
     # komorebi counts once its launcher has finished too (Test-RepairKomorebiLauncherBusy).
     $ahk = Join-Path $Root 'config\ahk\710.ahk'
     @(
@@ -81,6 +82,9 @@ function Get-RepairStackState {
         $w = try { Find-AhkWindow -ScriptPath $ahk } catch { [IntPtr]::Zero }   # can't tell = not up
         if ($w -and $w -ne [IntPtr]::Zero) { 'ahk' }
         if (Get-Process ShareX -ErrorAction SilentlyContinue) { 'sharex' }
+        foreach ($c in @(Get-RiceComponents | Where-Object { $_.Contains('Autostart') })) {
+            if (Get-Process -Name $c.Autostart.Process -ErrorAction SilentlyContinue) { $c.Id }
+        }
     )
 }
 

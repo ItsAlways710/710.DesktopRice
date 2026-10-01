@@ -5,9 +5,10 @@
 #
 # Flow 2.1.3 reads its theme once, at start (no file watcher -- Theme.cs in its source), and a
 # running Flow saves its in-memory settings over Settings.json, so: our theme is selected with
-# Flow stopped, and Flow is restarted when it was running -- unless this run is elevated (a Flow
-# started from here would run as admin; the next SUPER+Space starts it as you) or Flow is set to
-# show itself at start (HideOnStartup off -- a restart would pop it up on every wallpaper change).
+# Flow stopped, and Flow is restarted when it was running -- through its own task
+# (\710.DesktopRice\flow, as you) when this run is elevated, never directly (a Flow started from
+# here would run as admin); not at all when Flow is set to show itself at start (HideOnStartup
+# off -- a restart would pop it up on every wallpaper change).
 @{
     Id    = 'flow'
     Label = 'Flow Launcher'
@@ -64,14 +65,19 @@
             Save-PaletteOriginalStateOnce -Label 'flow-theme' -Data @{ ThemeExisted = $settings.Contains('Theme'); Theme = $settings['Theme'] }
             $settings = [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json -AsHashtable   # as the stopped Flow left it
             $settings['Theme'] = '710sRice'
-            # The same writer tools\setup-flow-launcher.ps1 uses for this file.
+            # The same writer the flow install step (tools\components\flow.ps1) uses for this file.
             $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
         }
         $how = if ($select) { 'selected' } else { 'updated' }
         if (-not $flow.Count) { return @{ Status = 'ok'; Message = "Flow Launcher theme $how (Flow picks it up when it starts)" } }
         $exe = Join-Path $env:LOCALAPPDATA 'FlowLauncher\Flow.Launcher.exe'
-        if ($Context.IsAdmin -or $settings['HideOnStartup'] -eq $false -or -not (Test-Path -LiteralPath $exe)) {
-            return @{ Status = 'ok'; Message = "Flow Launcher theme $how -- Flow was stopped; SUPER+Space starts it with the new colours" }
+        $stopped = @{ Status = 'ok'; Message = "Flow Launcher theme $how -- Flow was stopped; SUPER+Space starts it with the new colours" }
+        if ($settings['HideOnStartup'] -eq $false -or -not (Test-Path -LiteralPath $exe)) { return $stopped }
+        if ($Context.IsAdmin) {
+            # Its task runs it as you (Group 1 #4); no task (an install from before it) = left stopped.
+            $null = & schtasks.exe /Run /TN '\710.DesktopRice\flow' 2>&1
+            if ($LASTEXITCODE -ne 0) { return $stopped }
+            return @{ Status = 'ok'; Message = "Flow Launcher theme $how (Flow restarted through its task)" }
         }
         # ShellExecute, never a plain CreateProcess: whatever runs this pipeline may be reading
         # its output through a pipe (YASB's run_after does, and waits for it to close) -- a Flow

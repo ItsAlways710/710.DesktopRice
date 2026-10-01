@@ -460,10 +460,11 @@ function Test-DoctorOtherPackages {
 }
 
 # --- c. Is the stack running --------------------------------------------------------------------
-# The four components the stack starts (Flow isn't one: SUPER+Space cold-starts it). One line
-# each, carrying the worst thing found. Nothing running at all is a plain fact -- an on-demand
-# machine between sessions, or a full-time one after `710sRice stop` -- but some running and
-# some not means something died. Only komorebi may run as admin (the tiling mode's choice);
+# The four components the stack starts, then each component with its own task (Flow Launcher,
+# Group 1 #4). One line each, carrying the worst thing found. Nothing running at all is a plain
+# fact -- an on-demand machine between sessions, or a full-time one after `710sRice stop` -- but
+# some running and some not means something died. "Nothing running" is the four only: stop and
+# Quit leave Flow running on purpose. Only komorebi may run as admin (the tiling mode's choice);
 # anything else elevated makes everything it launches elevated too. Log paths are given by
 # name only: the full path carries the Windows user name, and a report may get pasted into an
 # issue.
@@ -546,17 +547,27 @@ function Test-DoctorStack {
     }
     # Not installed: group b already says so, and nothing here could start it.
     $parts = @($parts | Where-Object Installed)
-    if (-not @($parts | Where-Object { $procs[$_.Key].Count }).Count) {
+    # The components with their own task (tools\components\, Autostart): running = their process.
+    # A process that's up but running as admin gets its own install step (it restarts the app
+    # through its task) -- `710sRice restart` leaves these running.
+    $own = @(foreach ($comp in @(Get-AutostartComponents -NoWrite | Where-Object { $_.Process })) {
+        $procs[$comp.Key] = @(Get-Process -Name $comp.Process -ErrorAction SilentlyContinue)
+        [pscustomobject]@{ Key = $comp.Key; Name = (Get-DoctorComponentName $comp.Key); Log = $null; Installed = $true; Own = $true }
+    })
+    # (None of the four installed but Flow: just Flow's line below.)
+    if (-not @($parts | Where-Object { $procs[$_.Key].Count }).Count -and ($parts.Count -or -not $own.Count)) {
         # Nothing running: normal on an on-demand machine between sessions. A full-time
         # (-Activate'd) machine is meant to run from sign-in, so there it's a problem, and
-        # repair starts the lot (user, 2026-09-27: "repair just make it all on if possible").
+        # repair starts the lot (user, 2026-09-27: "repair just make it all on if possible") --
+        # with Flow, unless it's still up.
         if (Test-FullTimeMachine) {
+            $keys = @($parts | ForEach-Object Key) + @($own | Where-Object { -not $procs[$_.Key].Count } | ForEach-Object Key)
             return New-DoctorResult -Id 'stack' -Status 'XX' -Text "Stack not running -- this is a full-time machine (it starts at sign-in)" `
-                -Fix '710sRice start' -Repair "start:$(@($parts | ForEach-Object Key) -join ',')"
+                -Fix '710sRice start' -Repair "start:$($keys -join ',')"
         }
         return New-DoctorResult -Id 'stack' -Status '..' -Text 'Stack not running -- 710sRice start starts it'
     }
-    foreach ($c in $parts) {
+    foreach ($c in @($parts) + @($own)) {
         $id = "stack:$($c.Key)"
         $running = $procs[$c.Key]
         if (-not $running.Count) {
@@ -570,8 +581,9 @@ function Test-DoctorStack {
             New-DoctorResult -Id $id -Status 'XX' -Text "$($running.Count) YASB processes -- two bars fight over komorebi's events" -Fix '710sRice reload bar' -Repair 'reload-bar'
             continue
         }
-        if ($c.Key -ne 'komorebi' -and (Get-ProcessElevation -Id $running[0].Id) -eq 'elevated') {
-            New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" -Fix '710sRice restart' -Repair 'restart'
+        if ($c.Key -ne 'komorebi' -and @($running | Where-Object { (Get-ProcessElevation -Id $_.Id) -eq 'elevated' }).Count) {
+            $how = if ($c.Own) { @{ Fix = "710sRice install -Only $($c.Key)"; Step = $c.Key } } else { @{ Fix = '710sRice restart'; Repair = 'restart' } }
+            New-DoctorResult -Id $id -Status 'XX' -Text "$($c.Name) is running as admin -- nothing but komorebi should" @how
             continue
         }
         # Running files older than the ones on disk (a pull or an edit since they started):
@@ -1048,26 +1060,6 @@ function Test-DoctorFlowTheme {
     New-DoctorResult -Id 'flow-theme' -Status 'XX' -Text "Flow Launcher isn't on the palette's theme ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
 }
 
-function Test-DoctorFlow {
-    # setup-flow-launcher.ps1 -Check: install's own flow step, asked what it would change.
-    # Functional items (the search keywords, the Everything engine, the old plugin, Flow
-    # updating itself) are [XX]; preferences (the query box, the tray icon, the update prompt)
-    # are [!!].
-    if (-not (Test-Path -LiteralPath "$env:LOCALAPPDATA\FlowLauncher\Flow.Launcher.exe")) { return }   # group b says so
-    $global:LASTEXITCODE = 0
-    $found = @(& (Join-Path $Root 'tools\setup-flow-launcher.ps1') -Check 3>$null 6>$null)
-    $code = $LASTEXITCODE
-    if ($code -eq 2) { return New-DoctorResult -Id 'flow' -Status '..' -Text "Flow Launcher hasn't run yet -- SUPER+Space starts it" }
-    if ($code -notin 0, 3) { return New-DoctorResult -Id 'flow' -Status '!!' -Text "Flow Launcher -- couldn't check (its setup script exited $code)" }
-    $functional = @($found | Where-Object { $_.Kind -eq 'functional' } | ForEach-Object Item)
-    $preference = @($found | Where-Object { $_.Kind -eq 'preference' } | ForEach-Object Item)
-    $fix = @{ Fix = '710sRice install -Only flow'; Step = 'flow' }
-    if ($functional.Count) { New-DoctorResult -Id 'flow' -Status 'XX' -Text "Flow Launcher setup: $($functional -join '; ')" @fix }
-    else { New-DoctorResult -Id 'flow' -Status 'OK' -Text 'Flow Launcher set up (file search on Everything with f, apps with app, old plugin gone, auto-updates off)' }
-    if ($preference.Count) { New-DoctorResult -Id 'flow-prefs' -Status '!!' -Text "Flow Launcher preferences: $($preference -join '; ')" @fix }
-    else { New-DoctorResult -Id 'flow-prefs' -Status 'OK' -Text 'Flow Launcher preferences (opens empty, tray icon hidden, no update prompt)' }
-}
-
 function Test-DoctorEverything {
     # Flow's file search (SUPER+S) asks Everything's own app -- the tray process in this
     # session. Its Windows service indexes, but doesn't answer searches.
@@ -1243,7 +1235,6 @@ function Get-DoctorGroups {
             @{ Id = 'lock-screen';   Name = 'Lock screen';              Run = { Test-DoctorLockScreen } }
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
-            @{ Id = 'flow';       Name = 'Flow Launcher';        Run = { Test-DoctorFlow } }
             @{ Id = 'flow-theme'; Name = 'Flow Launcher theme';  Run = { Test-DoctorFlowTheme } }
             @{ Id = 'everything'; Name = 'Everything';           Run = { Test-DoctorEverything } }
             @{ Id = 'terminal';   Name = 'Windows Terminal';     Run = { Test-DoctorTerminal } }
@@ -1273,7 +1264,7 @@ function Get-DoctorGroups {
         if (-not $c) { continue }
         $g = $groups | Where-Object { $_.Title -eq $c.Group } | Select-Object -First 1
         $g.Checks = @($g.Checks) + @(@{ Id = "component:$($c.Id)"; Name = $c.Label; Component = $c
-                                          Run = { param($ctx, $check) & $check.Component.Check (Get-DoctorComponentContext $ctx) } })
+                                          Run = { param($ctx, $check) Invoke-RiceComponentPart -Component $check.Component -Part Check -Ctx (Get-DoctorComponentContext $ctx) } })
     }
     $groups
 }

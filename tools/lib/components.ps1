@@ -24,7 +24,7 @@ $script:RiceComponentsRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoo
 # doctor.ps1's group titles (Get-DoctorGroups) -- a component's Group must be one of them.
 $script:RiceComponentGroups = @('Repo and command', 'Packages and pins', 'Stack', 'Tasks and tiling mode',
                                 'Generated configs', 'Integrations', 'Conflicts and leftovers')
-$script:RiceComponentFields = @('Id', 'Label', 'After', 'Install', 'Uninstall', 'Check', 'Group', 'NamedOnly', 'Autostart')
+$script:RiceComponentFields = @('Id', 'Label', 'After', 'Install', 'Uninstall', 'Check', 'Group', 'NamedOnly', 'Autostart', 'Functions')
 $script:RiceAutostartFields = @('Exe', 'Arguments', 'Delay', 'Process')
 
 function Get-RiceComponentsDir { Join-Path $script:RiceComponentsRoot 'tools\components' }
@@ -60,7 +60,7 @@ function Get-RiceComponents {
         if ($def.Id -notmatch '^[a-z][a-z0-9-]*$') { throw "$where : an Id is lower-case letters, digits and dashes ('$($def.Id)')" }
         if ($def.Id -in $fixed) { throw "$where : '$($def.Id)' is already one of install's own steps" }
         foreach ($k in 'Label', 'After') { if (-not ($def[$k] -is [string]) -or -not $def[$k].Trim()) { throw "$where needs $k (text)" } }
-        foreach ($k in 'Install', 'Uninstall', 'Check') { if ($def.Contains($k) -and $def[$k] -isnot [scriptblock]) { throw "$where : $k has to be a scriptblock" } }
+        foreach ($k in 'Install', 'Uninstall', 'Check', 'Functions') { if ($def.Contains($k) -and $def[$k] -isnot [scriptblock]) { throw "$where : $k has to be a scriptblock" } }
         if ($def.Contains('Group') -and "$($def.Group)" -notin $script:RiceComponentGroups) { throw "$where : Group '$($def.Group)' isn't one of doctor's groups ($($script:RiceComponentGroups -join ', '))" }
         if ($def.Contains('NamedOnly') -and $def.NamedOnly -isnot [bool]) { throw "$where : NamedOnly is `$true or `$false" }
         if ($def.Contains('Autostart')) {
@@ -110,6 +110,16 @@ function Get-RiceStepOrder {
     }
     foreach ($s in $fixed) { & $emit $s }
     @($out)
+}
+
+function Invoke-RiceComponentPart {
+    <# Runs one of a component's parts -- Install, Uninstall or Check -- with its $Ctx: the
+       component's own Functions (if any) are dot-sourced here first, so the part (a child of
+       this scope) sees them, the same as the helpers of whoever called this. Its output is the
+       part's output (Check's doctor results). #>
+    param([Parameter(Mandatory)]$Component, [Parameter(Mandatory)][ValidateSet('Install', 'Uninstall', 'Check')][string]$Part, $Ctx)
+    if ($Component.Functions) { . $Component.Functions }
+    & $Component[$Part] $Ctx
 }
 
 function New-RiceComponentContext {

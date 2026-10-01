@@ -1673,7 +1673,7 @@ function Get-AhkWindowProcessId {
 # Ported from winarchy's ShellProfile.ps1 @ 4574fc7: a marker-delimited block inserted (or
 # updated) in pwsh's CurrentUserAllHosts $PROFILE, idempotent, snapshotting the profile
 # before any change (Copy-Item .bak, this repo's own established pattern -- see
-# tools/setup-flow-launcher.ps1 -- rather than winarchy's own New-WinarchySnapshot module).
+# tools/components/flow.ps1 -- rather than winarchy's own New-WinarchySnapshot module).
 $script:ProfileMarkerStart = '# >>> managed by 710.DesktopRice >>>'
 $script:ProfileMarkerEnd = '# <<< managed by 710.DesktopRice <<<'
 
@@ -1760,7 +1760,8 @@ function Remove-ShellProfile {
 # (Restore-OriginalWallpaper near Set-DesktopWallpaper, Restore-LockScreenPicture in the lock
 # screen's own section). These three cover the rest of what install.ps1 Section 4
 # and tools\apply-wallust-outputs.ps1 change on a real wallpaper/theme apply, plus Flow
-# Launcher's settings -- all called from uninstall.ps1.
+# Launcher's theme -- all called from uninstall.ps1. (Flow's own settings are its component's:
+# tools\components\flow.ps1.)
 function Restore-WindowsAccent {
     <# Reverts the accent-color/dark-mode values tools\apply-wallust-outputs.ps1 sets,
        back to its own 'windows-accent' snapshot (taken there, via a small duplicated
@@ -1836,97 +1837,6 @@ function Restore-WindowsTerminalSettings {
     return $true
 }
 
-function Restore-FlowLauncherSettings {
-    <# Reverts setup-flow-launcher.ps1 from its two once-only snapshots:
-         'flow-settings'          Program plugin ActionKeywords + identity toggles
-         'flow-explorer-settings' Explorer plugin ActionKeywords + its FileSearchActionKeyword /
-                                  FileSearchKeywordEnabled / IndexSearchEngine fields
-         'flow-querymode'         LastQueryMode (Flow's "open with the last query" setting)
-       and removes the legacy standalone Everything plugin folder if one is still there
-       (matched by its fixed plugin ID, not folder name -- this repo used to install it).
-       Flow is force-stopped first and NOT relaunched, same reasons as in
-       setup-flow-launcher.ps1: a running Flow saves its in-memory settings back over the
-       files on exit and holds its plugin DLLs locked; and uninstall.ps1 runs elevated, so
-       a Flow started from here would run as admin. A missing snapshot means that part was
-       never changed on this machine -- safe no-op. Same read-modify-write-current-file
-       approach as Restore-WindowsTerminalSettings, so anything else the person changed in
-       Flow's settings in between survives. #>
-    $snap  = Get-OriginalState -Label 'flow-settings'
-    $snapE = Get-OriginalState -Label 'flow-explorer-settings'
-    $snapQ = Get-OriginalState -Label 'flow-querymode'
-    $flowRoot   = Join-Path $env:APPDATA 'FlowLauncher'
-    $pluginsDir = Join-Path $flowRoot 'Plugins'
-    $legacyEverythingPluginId = 'D2D2C23B084D411DB66FE0C79D6C2A6E'
-
-    $flow = @(Get-Process -Name 'Flow.Launcher' -ErrorAction SilentlyContinue)
-    if ($flow.Count) {
-        $flow | Stop-Process -Force
-        $flow | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
-    }
-
-    if (Test-Path $pluginsDir) {
-        Get-ChildItem $pluginsDir -Directory -ErrorAction SilentlyContinue | Where-Object {
-            $manifest = Join-Path $_.FullName 'plugin.json'
-            (Test-Path $manifest) -and ((Get-Content $manifest -Raw | ConvertFrom-Json).ID -eq $legacyEverythingPluginId)
-        } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    if (-not $snap -and -not $snapE -and -not $snapQ) { return $false }
-
-    $settingsPath = Join-Path $flowRoot 'Settings\Settings.json'
-    if (-not (Test-Path $settingsPath)) {
-        Step-Info 'Flow Launcher Settings.json not found -- nothing to restore.'
-        Remove-OriginalState -Label 'flow-settings'
-        Remove-OriginalState -Label 'flow-explorer-settings'
-        Remove-OriginalState -Label 'flow-querymode'
-        return $true
-    }
-    $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-    $plugins = $settings['PluginSettings']['Plugins']
-
-    if ($snap) {
-        if ($plugins -and $plugins.ContainsKey($snap.ProgramPluginId)) {
-            $program = $plugins[$snap.ProgramPluginId]
-            if ($snap.ActionKeywordsExisted) { $program['ActionKeywords'] = @($snap.ActionKeywords) }
-            elseif ($program.ContainsKey('ActionKeywords')) { $program.Remove('ActionKeywords') }
-        }
-        foreach ($k in $snap.Identity.Keys) {
-            $field = $snap.Identity[$k]
-            if ($field.Existed) { $settings[$k] = $field.Value }
-            elseif ($settings.ContainsKey($k)) { $settings.Remove($k) }
-        }
-    }
-
-    if ($snapE) {
-        if ($plugins -and $plugins.ContainsKey($snapE.ExplorerPluginId)) {
-            $explorerEntry = $plugins[$snapE.ExplorerPluginId]
-            if ($snapE.ActionKeywordsExisted) { $explorerEntry['ActionKeywords'] = @($snapE.ActionKeywords) }
-            elseif ($explorerEntry.ContainsKey('ActionKeywords')) { $explorerEntry.Remove('ActionKeywords') }
-        }
-        $explorerPath = Join-Path $flowRoot 'Settings\Plugins\Flow.Launcher.Plugin.Explorer\Settings.json'
-        if ($snapE.ExplorerFileExisted -and (Test-Path $explorerPath)) {
-            $explorer = Get-Content $explorerPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-            foreach ($k in $snapE.Fields.Keys) {
-                $field = $snapE.Fields[$k]
-                if ($field.Existed) { $explorer[$k] = $field.Value }
-                elseif ($explorer.ContainsKey($k)) { $explorer.Remove($k) }
-            }
-            $explorer | ConvertTo-Json -Depth 50 | Set-Content -Path $explorerPath -Encoding UTF8
-        }
-    }
-
-    if ($snapQ) {
-        $field = $snapQ.LastQueryMode
-        if ($field.Existed) { $settings['LastQueryMode'] = $field.Value }
-        elseif ($settings.ContainsKey('LastQueryMode')) { $settings.Remove('LastQueryMode') }
-    }
-
-    $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
-    Remove-OriginalState -Label 'flow-settings'
-    Remove-OriginalState -Label 'flow-explorer-settings'
-    Remove-OriginalState -Label 'flow-querymode'
-    return $true
-}
-
 function Restore-FlowTheme {
     <# Undoes the palette pipeline's Flow target (tools\palette\targets\flow.ps1): Flow's selected
        theme goes back to what it was before (the 'flow-theme' snapshot) and our 710sRice.xaml is
@@ -1934,7 +1844,8 @@ function Restore-FlowTheme {
        old theme comes back only if its file still exists (Flow shows an error box at start for a
        theme it can't find -- winarchy's Winarchy.xaml, say, once that's gone); otherwise the key
        goes and Flow uses its own default. Flow is stopped first and NOT relaunched, as in
-       Restore-FlowLauncherSettings. $false when there was nothing to undo. #>
+       the flow component's uninstall (tools\components\flow.ps1). $false when there was nothing
+       to undo. #>
     $snap = Get-OriginalState -Label 'flow-theme'
     $flowRoot = Join-Path $env:APPDATA 'FlowLauncher'
     $xaml = Join-Path $flowRoot 'Themes\710sRice.xaml'

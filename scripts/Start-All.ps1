@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Starts 710.DesktopRice's whole stack now (komorebi, YASB, ShareX, AHK) --
+  Starts 710.DesktopRice's whole stack now (komorebi, YASB, ShareX, AHK, Flow Launcher) --
   the "on demand" way to run it, for a machine installed WITHOUT -Activate.
 
 .DESCRIPTION
@@ -39,7 +39,9 @@
   failure -- the launchers (scripts\Start-Komorebi.ps1 etc.) keep retrying for their own
   budget (up to 5 minutes for komorebi) and log to %LOCALAPPDATA%\710.DesktopRice\. Re-run
   this, or check those logs, if something's still settling. A component that's already
-  running is left alone (each launcher checks first).
+  running is left alone (each launcher checks first; Flow Launcher, which has no launcher, is
+  skipped here when it's running -- a second start of Flow shows its window, and
+  Stop-All.ps1 leaves it running on purpose).
 
 .NOTES
   The AHK check is a plain `Get-Process AutoHotkey64, AutoHotkey64_UIA` (the UI Access
@@ -69,6 +71,11 @@ if ($components.Count -eq 0) {
     Step-Warn "No components found installed (komorebi/YASB/ShareX/AHK all missing?) -- run ``.\710sRice.ps1 install`` from the repo folder first."
     exit 1
 }
+
+# Already running and it says how to tell (Flow): nothing to start.
+$already = @($components | Where-Object { $_.Process -and (Get-Process -Name $_.Process -ErrorAction SilentlyContinue) })
+foreach ($c in $already) { Step-Ok "$($c.Key): already running" }
+$components = @($components | Where-Object { $already.Key -notcontains $_.Key })
 
 $withTask = @($components | Where-Object { Test-Task -TaskName $_.TaskName })
 $direct   = @($components | Where-Object { $withTask.Key -notcontains $_.Key })
@@ -107,6 +114,11 @@ $checks = [ordered]@{
     'yasb'         = @{ Name = 'YASB';         Test = { [bool](Get-Process yasb -ErrorAction SilentlyContinue) };         Log = 'yasb-autostart.log' }
     'sharex'       = @{ Name = 'ShareX';       Test = { [bool](Get-Process ShareX -ErrorAction SilentlyContinue) };       Log = $null }
     'ahk'          = @{ Name = '710.ahk';      Test = { [bool](Get-Process AutoHotkey64, AutoHotkey64_UIA -ErrorAction SilentlyContinue) }; Log = 'ahk-autostart.log' }
+}
+# The components that declare their process (Flow): up when it's running.
+foreach ($c in @($components | Where-Object { $_.Process })) {
+    $proc = $c.Process
+    $checks[$c.Key] = @{ Name = (Get-RiceComponent -Id $c.Key).Label; Test = { [bool](Get-Process -Name $proc -ErrorAction SilentlyContinue) }.GetNewClosure(); Log = $null }
 }
 $pending = [System.Collections.Generic.List[string]]::new()
 foreach ($k in $checks.Keys) { if ($components.Key -contains $k) { $pending.Add($k) } }

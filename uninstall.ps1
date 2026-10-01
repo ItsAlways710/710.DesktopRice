@@ -5,7 +5,8 @@
 
 .DESCRIPTION
   Stops every process 710.DesktopRice may have started (komorebi, YASB, ShareX, AHK, and a
-  retired window-slots daemon if one is still running) regardless of whether -Activate was
+  retired window-slots daemon if one is still running; Flow Launcher is stopped by its own
+  revert, below) regardless of whether -Activate was
   ever used, then reverts
   everything install.ps1 -Activate touches (autostart Scheduled Tasks, native-taskbar
   auto-hide, HKCU registry hardening, Explorer's Startup-delay, and the retired lock-screen
@@ -13,7 +14,8 @@
   everything install.ps1 applies unconditionally (the pwsh $PROFILE hook, Windows Defender
   exclusions, the desktop wallpaper, your lock-screen picture, Windows accent
   color/dark-mode, Windows Terminal's colorScheme/theme/default shell, Flow Launcher's
-  ActionKeyword merge/identity toggles/Everything plugin), the env vars, the `710sRice`
+  theme, and each component's own changes -- tools\components\: Flow Launcher's keywords,
+  identity toggles, query box and its own sign-in start), the env vars, the `710sRice`
   command's user-PATH entry (<repo>\bin, only that exact entry) and winget pins
   install.ps1 sets, then removes the packages this repo's own install.ps1 installs --
   EXCEPT any row versions.md marks Pre-existing? = yes, which is left alone unless you
@@ -230,10 +232,6 @@ Invoke-ActivationRevert 'Restore original Windows Terminal colorScheme / theme /
     if (Restore-WindowsTerminalSettings) { Step-Ok 'Windows Terminal settings restored' }
     else { Step-Info 'Windows Terminal was never actually themed or had its default shell changed on this machine -- nothing to restore.' }
 }
-Invoke-ActivationRevert 'Restore original Flow Launcher settings + remove the Everything plugin' {
-    if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored (keywords, identity, Explorer file search) and any legacy Everything plugin removed' }
-    else { Step-Info 'setup-flow-launcher.ps1 never actually changed anything on this machine -- nothing to restore.' }
-}
 Invoke-ActivationRevert 'Restore Flow Launcher''s own theme (Palette Profiles themed it)' {
     if (Restore-FlowTheme) { Step-Ok "Flow Launcher's theme put back and 710sRice.xaml removed" }
     else { Step-Info 'Flow Launcher was never themed by the palette -- nothing to restore.' }
@@ -248,7 +246,7 @@ if ($componentReverts.Count) {
     Write-Host "`n-- Revert components --" -ForegroundColor Cyan
     $componentOrder = @(Get-RiceStepOrder)
     foreach ($component in @($componentReverts | Sort-Object { $componentOrder.IndexOf($_.Id) } -Descending)) {
-        Invoke-ActivationRevert "Revert $($component.Label)" { & $component.Uninstall $ComponentCtx }
+        Invoke-ActivationRevert "Revert $($component.Label)" { Invoke-RiceComponentPart -Component $component -Part Uninstall -Ctx $ComponentCtx }
     }
 }
 

@@ -26,8 +26,10 @@
     install it isn't yet, and scripts/Start-Komorebi.ps1 writes the file itself the first
     time komorebi starts (see tools/compile-komorebi-rules.ps1 for why it can never be a
     tracked file).
-  - Runs tools/setup-flow-launcher.ps1 (only meaningful once Flow Launcher has been run at
-    least once; that script warns and no-ops cleanly if it hasn't).
+  - Sets up Flow Launcher (tools/components/flow.ps1): its search keywords and identity
+    toggles, its own "start on system startup" switched off, and its task (it starts at sign-in
+    on a full-time machine, with `710sRice start` on an on-demand one). A Flow that has never
+    run is started once first, as you, so it creates its settings -- one install sets it up.
   - Regenerates config/komorebi/komorebi.json (tools/compile-komorebi-rules.ps1) so a
     fresh clone or a pin bump lands in a ready-to-use compiled config.
   - Safe to re-run: only touches what's missing or behind its pin. `git pull` then
@@ -36,9 +38,10 @@
 
   STEPS. Each of the above is a named step, always run in this order:
     packages  upgrade  envvars  weather  path  wallust  theme  palette  monitors
-    defender  profile  terminal  flow  compile  tasks  windows
+    defender  profile  terminal  compile  tasks  windows
   plus one step per component (tools\components\<id>.ps1, named by its Id), each right after
-  the step it names (Group 1 #12; `710sRice install -?` lists the whole order).
+  the step it names (Group 1 #12; `710sRice install -?` lists the whole order): flow, right
+  after wallust.
   A plain run does every step but upgrade and palette (windows only with -Activate) -- the
   same run as always, default wallpaper and theme included. Its packages step brings a pinned
   package that's below its versions.md pin up to it, and never moves one down or touches an
@@ -54,16 +57,17 @@
   (claude/cli-plan.md, Stage 2.)
 
 .NOTES
-  Windows Defender exclusions, the pwsh $PROFILE hook, and Flow Launcher's Everything
-  plugin are applied unconditionally on every run (matching winarchy's own install.ps1 @
+  Windows Defender exclusions, the pwsh $PROFILE hook, and Flow Launcher's setup are
+  applied unconditionally on every run (matching winarchy's own install.ps1 @
   4574fc7, tag v1.4.0 -- none of these are gated behind -Activate upstream either).
 
-  -Activate registers autostart (Scheduled Tasks At-LogOn: komorebi, YASB, ShareX, AHK),
+  -Activate registers autostart (Scheduled Tasks At-LogOn: komorebi, YASB, ShareX, AHK,
+  Flow Launcher),
   hides the native taskbar, applies HKCU-only Windows hardening (no Bing
   search / ad suggestions / Copilot-Widgets-TaskView buttons / Start recommendations),
   zeroes Explorer's Startup app-launch delay, and starts everything right away. Without
   -Activate, none of that happens -- packages, config, theming, Defender exclusions, the
-  profile hook and Everything plugin are still applied, but nothing autostarts and the
+  profile hook and Flow's setup are still applied, but nothing autostarts and the
   taskbar/hardening/Startup-delay registry settings are left alone. Each component still
   gets its Scheduled Task, just with no sign-in trigger, so `710sRice start` (the closing
   lines of a run say so) starts the stack on demand the same way sign-in would.
@@ -607,20 +611,6 @@ $Steps['terminal'] = {
     }
 }
 
-$Steps['flow'] = {
-    # --- 9. Flow Launcher setup (settings + Everything plugin) -------------------------------
-    Write-Host "`n-- Flow Launcher --" -ForegroundColor Cyan
-    # Reset first: $LASTEXITCODE only changes when a native exe runs or a script calls `exit`,
-    # so without this the check below could read a failure left over from an earlier,
-    # unrelated step (e.g. write-display-index.ps1's exit 2 when komorebi isn't running yet)
-    # and print a false "skipped".
-    $global:LASTEXITCODE = 0
-    & (Join-Path $Root 'tools\setup-flow-launcher.ps1')
-    if ($LASTEXITCODE -ne 0) {
-        Step-Info "Flow Launcher setup skipped this run (see message above) -- harmless if Flow hasn't been run yet; run ``710sRice install -Only flow`` after its first launch."
-    }
-}
-
 $Steps['compile'] = {
     # --- 10. Recompile komorebi.json -----------------------------------------------------------
     Write-Host "`n-- Compiling komorebi.json --" -ForegroundColor Cyan
@@ -737,7 +727,7 @@ function Invoke-ComponentStep {
         $script:ComponentFullTime = if ($Activate) { $true } else { try { [bool](Test-FullTimeMachine) } catch { $false } }
     }
     $ctx = New-RiceComponentContext -OnlyRun $OnlyRun -FullTime $script:ComponentFullTime
-    try { & $Component.Install $ctx }
+    try { Invoke-RiceComponentPart -Component $Component -Part Install -Ctx $ctx }
     catch { Write-Host "  [XX] $($Component.Label): $($_.Exception.Message)" -ForegroundColor Red }
 }
 $script:ComponentFullTime = $null
@@ -765,9 +755,12 @@ if ($Activate -and -not $OnlyRun) {
     # stay one code path. A component whose task couldn't be registered (Register-
     # Autostart fell back to a Startup shortcut) is started from that shortcut only when
     # this shell is NOT elevated; elevated, it says so and waits for the next sign-in.
+    # A component that declares its process (Flow) is left alone when it's already running:
+    # a second start of Flow shows its window.
     $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     $startupDir = [Environment]::GetFolderPath('Startup')
     foreach ($c in @(Get-AutostartComponents)) {
+        if ($c.Process -and (Get-Process -Name $c.Process -ErrorAction SilentlyContinue)) { Step-Ok "$($c.Key): already running"; continue }
         if (Test-Task -TaskName $c.TaskName) {
             $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $c.TaskName) 2>&1
             if ($LASTEXITCODE -eq 0) { Step-Ok "$($c.Key): started via its autostart task" }
