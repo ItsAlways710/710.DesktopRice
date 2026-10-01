@@ -571,18 +571,20 @@ widgets:
         on_left: "toggle_group"
         on_middle: "toggle_label"
         on_right: "exec explorer C:\\"
+  # Open-Meteo (Group 1 #1): no account, no key. Click the widget and search for your city the
+  # first time; YASB keeps it in %LOCALAPPDATA%\YASB\weather.json under this widget's name
+  # ("weather" -- renaming the widget forgets the city), shared by every bar on every monitor.
+  # Clicking the city on the card picks a new one. (Was yasb.weather.WeatherWidget, which needed
+  # a weatherapi.com key; its alerts have no Open-Meteo equivalent.)
   weather:
-    type: "yasb.weather.WeatherWidget"
+    type: "yasb.open_meteo.OpenMeteoWidget"
     options:
       label: "<span>{icon}</span> {temp}"
       label_alt: "{location}: Min {min_temp}, Max {max_temp}, Humidity {humidity}"
-      api_key: "$env:YASB_WEATHER_API_KEY" # set via `setx YASB_WEATHER_API_KEY "..."` on each machine - never commit the real key
-      show_alerts: true
       tooltip: true
       update_interval: 600
       hide_decimal: true
       units: "imperial" # °F
-      location: "$env:YASB_WEATHER_LOCATION" # set via `setx YASB_WEATHER_LOCATION "<your zip>"` on each machine - a zip is the most unambiguous query for weatherapi.com; kept out of this public repo like the API key
       callbacks:
         on_left: "toggle_card"
         on_middle: "do_nothing"

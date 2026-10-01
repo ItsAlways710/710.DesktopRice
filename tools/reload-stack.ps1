@@ -56,8 +56,8 @@
   logged and skipped.
 
   -BarOnly (`710sRice reload bar`, never AHK -- SUPER+Shift+R is exactly the above): step 3
-  alone, and ALWAYS -- the manual "restart the bar" for what step 3 deliberately skips (a
-  weather setting change, a bar that's up but wrong). Same kill/wait/start-through-its-task
+  alone, and ALWAYS -- the manual "restart the bar" for what step 3 deliberately skips (an
+  environment variable change, a bar that's up but wrong). Same kill/wait/start-through-its-task
   code, same log, no rule compile, no komorebi steps. First a pause check: a bar started
   while komorebi is paused never connects its komorebi widgets (plan doc Open item 41), so
   with komorebi paused (`komorebic state` -> is_paused, komorebi 0.1.41) it leaves YASB alone

@@ -48,7 +48,7 @@
   710sRice doctor                     # what's wrong, and the command that fixes each thing
   710sRice doctor -repair             # ...and fix it (never the wallpaper or theme)
   710sRice update                     # the newest version from GitHub, then doctor -repair
-  710sRice reload bar                 # just the bar, e.g. after a weather setting change
+  710sRice reload bar                 # just the bar, e.g. after a config.yaml change
   710sRice tiling normal              # komorebi stops running as admin (next start)
 #>
 $ErrorActionPreference = 'Stop'

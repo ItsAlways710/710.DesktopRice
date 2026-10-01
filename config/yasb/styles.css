@@ -1541,114 +1541,118 @@ which is 16 pixels same as the other sections. */
     border-radius: 4px;
 }
 
-/* Weather widget */
-.weather-widget .widget-container .icon {
+/* Weather widget -- YASB's Open-Meteo widget (Group 1 #1). The old weatherapi.com widget's rules,
+   retargeted to its classes (.open-meteo-widget / .open-meteo-card*, from YASB 2.0.7's
+   open_meteo.py) with the same theme variables, plus the pieces only this widget has: the
+   location search (first click), the "no data" placeholder, sunrise / sunset on the card. */
+.open-meteo-widget .widget-container .icon {
     color: var(--text);
     padding-right: 4px;
 }
-.weather-widget .widget-container .label {
+.open-meteo-widget .widget-container .label {
     padding-left: 2px;
 }
-.weather-widget .widget-container .label.alt {
+.open-meteo-widget .widget-container .label.alt {
     padding-left: 2px;
 }
-.weather-widget {
+.open-meteo-widget {
     border: none;
 }
-.weather-widget .icon.sunnyDay,
-.weather-widget .icon.clearNight,
-.weather-widget .icon.cloudyDay,
-.weather-widget .icon.cloudyNight,
-.weather-widget .icon.rainyDay,
-.weather-widget .icon.rainyNight,
-.weather-widget .icon.snowyDay,
-.weather-widget .icon.snowyNight,
-.weather-widget .icon.blizzardDay,
-.weather-widget .icon.blizzardNight,
-.weather-widget .icon.foggyDay,
-.weather-widget .icon.foggyNight,
-.weather-widget .icon.thunderstormDay,
-.weather-widget .icon.thunderstormNight,
-.weather-widget .icon.default {
+.open-meteo-widget .icon.sunnyDay,
+.open-meteo-widget .icon.clearNight,
+.open-meteo-widget .icon.cloudyDay,
+.open-meteo-widget .icon.cloudyNight,
+.open-meteo-widget .icon.drizzleDay,
+.open-meteo-widget .icon.drizzleNight,
+.open-meteo-widget .icon.rainyDay,
+.open-meteo-widget .icon.rainyNight,
+.open-meteo-widget .icon.snowyDay,
+.open-meteo-widget .icon.snowyNight,
+.open-meteo-widget .icon.foggyDay,
+.open-meteo-widget .icon.foggyNight,
+.open-meteo-widget .icon.thunderstormDay,
+.open-meteo-widget .icon.thunderstormNight,
+.open-meteo-widget .icon.default {
     color: var(--text);
 }
 
 /* Weather card popup */
-.weather-card {
+.open-meteo-card {
     background-color: var(--background);
     border: 1px solid var(--border);
     border-radius: var(--border-radius);
 }
-.weather-card-today {
+.open-meteo-card-today {
     border: 1px solid var(--border);
     border-radius: var(--border-radius2);
     background-color: var(--background2);
 }
-.weather-card-today .label {
+.open-meteo-card-today .label {
     font-size: 12px;
     color: var(--text);
 }
-.weather-card-today .label.location {
+.open-meteo-card-today .label.location {
     font-size: 24px;
     font-weight: 700;
     color: var(--text);
 }
-.weather-card-today .label.alert {
-    font-size: 12px;
-    font-weight: 700;
-    background-color: var(--mutedBG);
-    border: 1px solid var(--border);
-    color: var(--redFlash);
-    border-radius: var(--border-radius2);
-    padding: 5px 0;
+.open-meteo-card-today .label.sunrisesunset,
+.open-meteo-card-today .label.sunrisesunset-icon {
+    font-size: 14px;
+    color: var(--subtext);
 }
-.weather-card-day {
+.open-meteo-card-day {
     border: 1px solid var(--border);
     border-radius: var(--border-radius2);
     background-color: var(--background2);
 }
-.weather-card-day.active {
+.open-meteo-card-day.active {
     background-color: var(--hover);
     border: 1px solid var(--accent);
 }
-.weather-card-day:hover {
+.open-meteo-card-day:hover {
     background-color: var(--hover);
 }
-.weather-card-day .label {
+.open-meteo-card-day .day-name,
+.open-meteo-card-day .day-temp-max,
+.open-meteo-card-day .day-temp-min {
     font-size: 12px;
     color: var(--text);
 }
-.weather-card .hourly-container {
+.open-meteo-card-day .day-temp-max {
+    font-weight: 700;
+}
+.open-meteo-card .hourly-container {
     border: 1px solid var(--border);
     background-color: var(--background2);
     border-radius: var(--border-radius2);
     min-height: 150px;
 }
-.weather-card .hourly-data {
+.open-meteo-card .hourly-data {
     font-size: 12px;
     font-weight: bold;
 }
-.weather-card .hourly-data.temperature {
+.open-meteo-card .hourly-data.temperature {
     background-color: var(--accent);
 }
-.weather-card .hourly-data.rain {
+.open-meteo-card .hourly-data.rain {
     background-color: var(--accent);
 }
-.weather-card .hourly-data.snow {
+.open-meteo-card .hourly-data.snow {
     background-color: var(--subtext);
 }
-.weather-card .hourly-data .hourly-rain-animation {
+.open-meteo-card .hourly-data .hourly-rain-animation {
     color: var(--accent);
     background-color: rgba(0, 0, 0, 0.1);
 }
-.weather-card .hourly-data .hourly-snow-animation {
+.open-meteo-card .hourly-data .hourly-snow-animation {
     color: var(--text);
     background-color: rgba(0, 0, 0, 0.1);
 }
-.weather-card .hourly-data-buttons {
+.open-meteo-card .hourly-data-buttons {
     margin: 0px;
 }
-.weather-card .hourly-data-button {
+.open-meteo-card .hourly-data-button {
     border-radius: var(--border-radius2);
     min-height: 24px;
     min-width: 24px;
@@ -1658,8 +1662,51 @@ which is 16 pixels same as the other sections. */
     color: var(--subtext);
     border: 1px solid transparent;
 }
-.weather-card .hourly-data-button.active {
+.open-meteo-card .hourly-data-button.active {
     color: var(--text);
     background-color: var(--hover);
     border: 1px solid var(--border);
+}
+/* The location search (the card's first click, and after clicking the city to change it) */
+.open-meteo-card .search-head {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+}
+.open-meteo-card .search-description {
+    font-size: 13px;
+    color: var(--subtext);
+    padding-bottom: 8px;
+}
+.open-meteo-card .search-input {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius2);
+    background-color: var(--background2);
+    color: var(--text);
+    font-size: 14px;
+}
+.open-meteo-card .search-input:focus {
+    border: 1px solid var(--accent);
+}
+.open-meteo-card .search-results {
+    border: none;
+    background-color: transparent;
+    color: var(--text);
+    font-size: 13px;
+}
+.open-meteo-card .search-results::item {
+    padding: 6px;
+}
+.open-meteo-card .search-results::item:hover {
+    background-color: var(--hover);
+}
+/* No weather yet (no network, or the first fetch still running) */
+.open-meteo-card .no-data-icon {
+    font-size: 64px;
+    color: var(--subtext);
+}
+.open-meteo-card .no-data-text {
+    font-size: 14px;
+    color: var(--subtext);
 }

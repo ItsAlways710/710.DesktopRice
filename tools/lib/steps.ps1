@@ -14,7 +14,8 @@
 # install's own steps, in the order install runs them -- whatever order `-Only` names them in.
 # (flow was one until Group 1 #4: it's a component now, tools\components\flow.ps1, run right after
 # wallust.)
-$InstallFixedStepOrder = @('packages', 'upgrade', 'envvars', 'weather', 'path', 'wallust', 'theme', 'palette',
+# (weather was one until Group 1 #1: the Open-Meteo widget needs nothing from install.)
+$InstallFixedStepOrder = @('packages', 'upgrade', 'envvars', 'path', 'wallust', 'theme', 'palette',
                            'monitors', 'defender', 'profile', 'terminal', 'compile', 'tasks', 'windows')
 
 # Steps a plain run never includes -- only -Only runs them. upgrade: doctor's named fix for "older

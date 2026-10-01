@@ -18,7 +18,7 @@
     4. `reload` -- after the starts, so 710.ahk is back to run it
   then a note when the config env vars changed under a running komorebi / YASB, and a wait
   for everything that was running when repair began to be up again before the re-check.
-  Never: theme (the default-wallpaper reset) or weather (needs someone at the keyboard), and
+  Never: theme (the default-wallpaper reset), and
   never an [!!] or [..] line -- those are the user's call, or plain facts.
 
   Rounds: after the fixes the checks run again. A fix can uncover a problem the first round

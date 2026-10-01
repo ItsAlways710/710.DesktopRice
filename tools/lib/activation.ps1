@@ -225,6 +225,21 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
     [TenSeven.Native.SettingChange]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, $Area, 2, 1000, [ref]$result) | Out-Null
 }
 
+# --- User environment variables ---------------------------------------------------------------
+# (Not PATH: that one is read and written raw -- see below.)
+function Get-UserEnvVar {
+    # A variable as registered for the user (what a new window gets).
+    param([Parameter(Mandatory)][string]$Name)
+    [Environment]::GetEnvironmentVariable($Name, 'User')
+}
+
+function Remove-UserEnvVar {
+    # Gone from the user's registered variables and from this process.
+    param([Parameter(Mandatory)][string]$Name)
+    [Environment]::SetEnvironmentVariable($Name, $null, 'User')
+    Remove-Item -Path "env:$Name" -ErrorAction SilentlyContinue
+}
+
 # --- User PATH: the 710sRice command -------------------------------------------------------
 # install.ps1 puts <repo>\bin on the user PATH (bin\ holds exactly one file, 710sRice.cmd);
 # uninstall.ps1 takes it off again. Doctor can use the same helpers later.

@@ -269,6 +269,14 @@ Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (
         [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $null, 'User')
     }
 } 'Env vars reverted'
+# The old weather widget's variables (Group 1 #1: unused since the bar's weather moved to
+# Open-Meteo) -- install's envvars step removes them too; whatever is still there goes.
+$oldWeather = @('YASB_WEATHER_API_KEY', 'YASB_WEATHER_LOCATION' | Where-Object { Get-UserEnvVar $_ })
+if ($oldWeather.Count) {
+    Invoke-Step "Remove the old weather variables ($($oldWeather -join ', '))" {
+        foreach ($name in $oldWeather) { Remove-UserEnvVar $name }
+    } "Old weather variables removed ($($oldWeather -join ', '))"
+}
 
 # The 710sRice command: only this clone's bin\ comes off the user PATH; every other entry is
 # written back exactly as stored (Remove-UserPathEntry). Reports its own result line, hence

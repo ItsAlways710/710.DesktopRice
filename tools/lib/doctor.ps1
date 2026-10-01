@@ -248,7 +248,7 @@ function Get-DoctorUserEnv {
     # A variable as registered for the user (what a new window gets) -- not doctor's own
     # process, which only knows what was set when its window opened.
     param([Parameter(Mandatory)][string]$Name)
-    [Environment]::GetEnvironmentVariable($Name, 'User')
+    Get-UserEnvVar $Name
 }
 
 function Get-DoctorScriptCommand {
@@ -311,14 +311,24 @@ function Test-DoctorEnvVars {
 }
 
 function Test-DoctorWeather {
-    # Set or not set -- NEVER the values: the key is a secret, the location is where someone
-    # lives, and doctor output gets pasted into issues. Optional, so never a problem.
-    $key = [bool](Get-DoctorUserEnv 'YASB_WEATHER_API_KEY')
-    $loc = [bool](Get-DoctorUserEnv 'YASB_WEATHER_LOCATION')
-    $text = "Weather widget: API key $(if ($key) { 'set' } else { 'not set' }), location $(if ($loc) { 'set' } else { 'not set' })"
-    if ($key -and $loc) { return New-DoctorResult -Id 'weather' -Status 'OK' -Text $text }
-    New-DoctorResult -Id 'weather' -Status '..' -Text "$text -- 710sRice install -Only weather asks for $(if ($key -or $loc) { 'it' } else { 'them' })" `
-        -Step 'weather' -NeedsYou
+    # The bar's weather is YASB's Open-Meteo widget (Group 1 #1): no key, no account -- you pick the
+    # location in the widget, and YASB keeps it in %LOCALAPPDATA%\YASB\weather.json under the
+    # widget's name ('weather'), shared by every bar. Whether one is picked is a plain fact (never
+    # counted); the city is never printed. The old weather widget's two variables are an [XX]
+    # until the envvars step removes them -- how update's repair cleans an existing install.
+    $old = @('YASB_WEATHER_API_KEY', 'YASB_WEATHER_LOCATION' | Where-Object { Get-DoctorUserEnv $_ })
+    if ($old.Count) {
+        New-DoctorResult -Id 'weather-vars' -Status 'XX' -Text "Old weather variables still set ($($old -join ', ')) -- no longer used" `
+            -Fix '710sRice install -Only envvars' -Step 'envvars'
+    }
+    $file = Join-Path $env:LOCALAPPDATA 'YASB\weather.json'
+    $picked = $false
+    if (Test-Path -LiteralPath $file) {
+        $entry = try { ([IO.File]::ReadAllText($file) | ConvertFrom-Json -AsHashtable)['weather'] } catch { $null }
+        $picked = $entry -and $null -ne $entry['latitude'] -and $null -ne $entry['longitude']
+    }
+    if ($picked) { New-DoctorResult -Id 'weather' -Status '..' -Text 'Weather: location picked' }
+    else { New-DoctorResult -Id 'weather' -Status '..' -Text 'Weather: no location yet -- click the weather widget in the bar and pick your city' }
 }
 
 # --- b. Packages and pins -----------------------------------------------------------------------
@@ -1286,9 +1296,9 @@ function Get-RepairPlan {
     foreach ($r in $problems) {
         if ($r.NeedsYou) { $plan.NeedsYou += $r; continue }
         $covered = $false
-        # theme is the default-wallpaper reset and weather needs someone at the keyboard: never
-        # repair's, whatever a check says.
-        if ($r.Step -and $r.Step -notin 'theme', 'weather') { [void]$steps.Add($r.Step); $covered = $true }
+        # theme is the default-wallpaper reset: never repair's, whatever a check says. (weather,
+        # which needed someone at the keyboard, was a step until Group 1 #1.)
+        if ($r.Step -and $r.Step -ne 'theme') { [void]$steps.Add($r.Step); $covered = $true }
         switch -Regex ($r.Repair) {
             '^reload$'                 { $plan.Reload = $true; $covered = $true }
             '^reload-bar$'             { $plan.ReloadBar = $true; $covered = $true }

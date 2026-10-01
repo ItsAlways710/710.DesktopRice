@@ -37,7 +37,7 @@
     updates" feature by design (see claude/winarchy-decoupling-plan.md).
 
   STEPS. Each of the above is a named step, always run in this order:
-    packages  upgrade  envvars  weather  path  wallust  theme  palette  monitors
+    packages  upgrade  envvars  path  wallust  theme  palette  monitors
     defender  profile  terminal  compile  tasks  windows
   plus one step per component (tools\components\<id>.ps1, named by its Id), each right after
   the step it names (Group 1 #12; `710sRice install -?` lists the whole order): flow, right
@@ -367,37 +367,14 @@ $Steps['envvars'] = {
     Step-Ok "KOMOREBI_CONFIG_HOME = $(ConvertTo-SafePath $komorebiConfigHome)"
     Step-Ok "YASB_CONFIG_HOME     = $(ConvertTo-SafePath $yasbConfigHome)"
     Step-Ok "DESKTOPRICE_HOME     = $(ConvertTo-SafePath $Root)"
-}
-
-$Steps['weather'] = {
-    # --- 2b. Weather widget (optional) ----------------------------------------------------
-    # YASB's weather widget reads its API key and location from these two per-user variables
-    # ($env:... in config\yasb\config.yaml) -- kept out of this public repo on purpose. They
-    # belong to the person, not the repo: install only fills in what's missing, never echoes
-    # what's stored, and uninstall.ps1 leaves both alone -- so a reinstall finds them already
-    # set and asks nothing. Enter skips; an unattended run (no one to answer) skips quietly.
-    Write-Host "`n-- Weather widget (optional) --" -ForegroundColor Cyan
-    $canAsk = [Environment]::UserInteractive -and -not ([Environment]::GetCommandLineArgs() -contains '-NonInteractive')
-    $weatherVars = @(
-        @{ Name = 'YASB_WEATHER_API_KEY';  Prompt = 'weatherapi.com API key (free at https://www.weatherapi.com) -- Enter to skip' },
-        @{ Name = 'YASB_WEATHER_LOCATION'; Prompt = 'Weather location -- zip/postal code or city name -- Enter to skip' }
-    )
-    $weatherMissing = $false
-    foreach ($v in $weatherVars) {
-        if ([Environment]::GetEnvironmentVariable($v.Name, 'User')) { Step-Ok "$($v.Name) already set"; continue }
-        $answer = ''
-        if ($canAsk) { try { $answer = "$(Read-Host "  $($v.Prompt)")".Trim() } catch { $answer = '' } }
-        if ($answer) {
-            [Environment]::SetEnvironmentVariable($v.Name, $answer, 'User')
-            Set-Item -Path "env:$($v.Name)" -Value $answer
-            Step-Ok "$($v.Name) set"
-        } else {
-            $weatherMissing = $true
-            Step-Info "$($v.Name) not set -- skipped."
+    # The old weather widget's two variables (weatherapi.com's key and a location), unused since
+    # the bar's weather moved to Open-Meteo (Group 1 #1: no account, no key -- the location is
+    # picked in the widget). A key shouldn't sit in the environment, so they go. Names only.
+    foreach ($name in 'YASB_WEATHER_API_KEY', 'YASB_WEATHER_LOCATION') {
+        if (Get-UserEnvVar $name) {
+            Remove-UserEnvVar $name
+            Step-Ok "$name removed (the weather widget doesn't use it any more)"
         }
-    }
-    if ($weatherMissing) {
-        Step-Info 'The weather widget shows an error until both are set -- run `710sRice install -Only weather`, or `setx` them yourself (see README).'
     }
 }
 
