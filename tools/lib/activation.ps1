@@ -1848,6 +1848,21 @@ function Set-TerminalFontFace {
     }
 }
 
+function Test-TerminalUsesScheme {
+    # Does any profile draw with colour scheme $Name -- profiles.defaults or one in profiles.list,
+    # named directly or as either half of a { light, dark } pair?
+    param([Parameter(Mandatory)]$Settings, [Parameter(Mandatory)][string]$Name)
+    $p = $Settings['profiles']
+    if ($p -isnot [System.Collections.IDictionary]) { return $false }
+    foreach ($x in @($p['defaults']) + @($p['list'])) {
+        if ($x -isnot [System.Collections.IDictionary] -or -not $x.Contains('colorScheme')) { continue }
+        $cs = $x['colorScheme']
+        if ($cs -is [System.Collections.IDictionary]) { if ("$($cs['light'])" -eq $Name -or "$($cs['dark'])" -eq $Name) { return $true } }
+        elseif ("$cs" -eq $Name) { return $true }
+    }
+    $false
+}
+
 function Restore-WindowsTerminalSettings {
     <# Reverts both Terminal changes back to their own independent snapshots: 'terminal-
        colorscheme' (profiles.defaults.colorScheme/theme/the "wallust" themes[] entry --
@@ -1893,6 +1908,13 @@ function Restore-WindowsTerminalSettings {
         elseif ($wt.ContainsKey('theme')) { $wt.Remove('theme') }
         if (-not $colorSnap.WallustThemeEntryExisted -and $wt['themes'] -is [array]) {
             $wt['themes'] = @($wt['themes'] | Where-Object { $_['name'] -ne 'wallust' })
+        }
+        # The "wallust" colour scheme itself (the palette's Terminal target adds it to schemes[]): gone
+        # too once nothing uses it -- the defaults or a profile of its own, as a name or as a light /
+        # dark pair. It used to stay in Terminal's scheme list forever (found 2026-10-01). Still
+        # used = kept (a "before" that already said wallust -- the Dell's -- or your own pick).
+        if ($wt['schemes'] -is [array] -and -not (Test-TerminalUsesScheme -Settings $wt -Name 'wallust')) {
+            $wt['schemes'] = @($wt['schemes'] | Where-Object { -not ($_ -is [System.Collections.IDictionary] -and $_['name'] -eq 'wallust') })
         }
         Remove-OriginalState -Label 'terminal-colorscheme'
     }
