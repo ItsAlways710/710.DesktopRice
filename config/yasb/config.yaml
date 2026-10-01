@@ -280,7 +280,10 @@ widgets:
       # either way regardless of this toggle.
       show_network: false
       use_hook: false # Whether to use the new systray hook instead of the legacy systray monitor
-      hide_icons: [] # Optional, list of process names to hide (e.g. ["discord"])
+      # ShareX's icon: ShareX keeps its own tray icon ON -- it honours -silent (the sign-in
+      # task's "no window") only with it -- so the bar hides it instead (Group 1 W4; YASB
+      # matches an icon's exe name up to its first dot, case-insensitively).
+      hide_icons: ["ShareX"] # process names to hide
       popup:
         blur: false
         round_corners: true

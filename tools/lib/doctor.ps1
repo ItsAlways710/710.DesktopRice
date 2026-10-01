@@ -1060,19 +1060,6 @@ function Test-DoctorFlowTheme {
     New-DoctorResult -Id 'flow-theme' -Status 'XX' -Text "Flow Launcher isn't on the palette's theme ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
 }
 
-function Test-DoctorEverything {
-    # Flow's file search (SUPER+S) asks Everything's own app -- the tray process in this
-    # session. Its Windows service indexes, but doesn't answer searches.
-    $exe = @("$env:ProgramFiles\Everything\Everything.exe", "${env:ProgramFiles(x86)}\Everything\Everything.exe") |
-           Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    if (-not $exe) { return }   # group b says so
-    $session = (Get-Process -Id $PID).SessionId
-    if (@(Get-Process Everything -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session }).Count) {
-        return New-DoctorResult -Id 'everything' -Status 'OK' -Text 'Everything running'
-    }
-    New-DoctorResult -Id 'everything' -Status '!!' -Text "Everything isn't running -- SUPER+S (Flow's file search) needs it" -Fix 'start Everything from the Start menu'
-}
-
 function Get-DoctorTerminalSettings {
     # Windows Terminal's settings.json, from the same two places install and the palette look.
     $path = @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
@@ -1236,7 +1223,6 @@ function Get-DoctorGroups {
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
             @{ Id = 'flow-theme'; Name = 'Flow Launcher theme';  Run = { Test-DoctorFlowTheme } }
-            @{ Id = 'everything'; Name = 'Everything';           Run = { Test-DoctorEverything } }
             @{ Id = 'terminal';   Name = 'Windows Terminal';     Run = { Test-DoctorTerminal } }
             @{ Id = 'profile';    Name = 'Shell profile hook';   Run = { Test-DoctorProfileHook } }
             @{ Id = 'defender';   Name = 'Defender exclusions';  Run = { Test-DoctorDefender } }
