@@ -18,21 +18,30 @@
   fix like any step. (claude/group1-plan.md, #12.)
 #>
 
-# The repo root: this file lives in tools\lib.
-$script:RiceComponentsRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+# The repo root, and the loader's fixed lists, as FUNCTIONS -- never script-scoped variables.
+# This file is dot-sourced once per process when a script finds the loader already defined
+# (tools\lib\steps.ps1 / activation.ps1 skip it then), and PowerShell's `$script:` means the
+# CALLER's script scope at call time: the 710sRice command loads this file, then runs
+# install.ps1 / uninstall.ps1 / Start-All.ps1 in place, and inside those `$script:` variables set
+# here were empty -- every `710sRice install` stopped with "Cannot bind argument to parameter
+# 'Path' because it is null" (found on the Dell, Group 1's final test, 2026-10-01). $PSScriptRoot
+# inside a function is the file that DEFINES it (tools\lib), whoever calls.
+function Get-RiceComponentsRoot { Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
 
 # doctor.ps1's group titles (Get-DoctorGroups) -- a component's Group must be one of them.
-$script:RiceComponentGroups = @('Repo and command', 'Packages and pins', 'Stack', 'Tasks and tiling mode',
-                                'Generated configs', 'Integrations', 'Conflicts and leftovers')
-$script:RiceComponentFields = @('Id', 'Label', 'After', 'Install', 'Uninstall', 'Check', 'Group', 'NamedOnly', 'Autostart', 'Functions')
-$script:RiceAutostartFields = @('Exe', 'Arguments', 'Delay', 'Process')
+function Get-RiceComponentGroups {
+    @('Repo and command', 'Packages and pins', 'Stack', 'Tasks and tiling mode',
+      'Generated configs', 'Integrations', 'Conflicts and leftovers')
+}
+function Get-RiceComponentFields { @('Id', 'Label', 'After', 'Install', 'Uninstall', 'Check', 'Group', 'NamedOnly', 'Autostart', 'Functions') }
+function Get-RiceAutostartFields { @('Exe', 'Arguments', 'Delay', 'Process') }
 
-function Get-RiceComponentsDir { Join-Path $script:RiceComponentsRoot 'tools\components' }
+function Get-RiceComponentsDir { Join-Path (Get-RiceComponentsRoot) 'tools\components' }
 
 function Get-RiceFixedSteps {
     # install's fixed steps (tools\lib\steps.ps1), loaded here when the caller hasn't.
     if (-not (Get-Variable -Name InstallFixedStepOrder -ErrorAction SilentlyContinue)) {
-        . (Join-Path $script:RiceComponentsRoot 'tools\lib\steps.ps1')
+        . (Join-Path (Get-RiceComponentsRoot) 'tools\lib\steps.ps1')
     }
     $InstallFixedStepOrder
 }
@@ -54,19 +63,19 @@ function Get-RiceComponents {
         $def = & $f.FullName
         if ($def -isnot [System.Collections.IDictionary]) { throw "$where doesn't return a component definition (a hashtable)" }
         foreach ($k in @($def.Keys)) {
-            if ("$k" -notin $script:RiceComponentFields) { throw "$where has a field this loader doesn't know: '$k' (the fields: $($script:RiceComponentFields -join ', '))" }
+            if ("$k" -notin (Get-RiceComponentFields)) { throw "$where has a field this loader doesn't know: '$k' (the fields: $((Get-RiceComponentFields) -join ', '))" }
         }
         if ("$($def.Id)" -ne $f.BaseName) { throw "$where says its Id is '$($def.Id)' -- it has to be the file's own name, '$($f.BaseName)'" }
         if ($def.Id -notmatch '^[a-z][a-z0-9-]*$') { throw "$where : an Id is lower-case letters, digits and dashes ('$($def.Id)')" }
         if ($def.Id -in $fixed) { throw "$where : '$($def.Id)' is already one of install's own steps" }
         foreach ($k in 'Label', 'After') { if (-not ($def[$k] -is [string]) -or -not $def[$k].Trim()) { throw "$where needs $k (text)" } }
         foreach ($k in 'Install', 'Uninstall', 'Check', 'Functions') { if ($def.Contains($k) -and $def[$k] -isnot [scriptblock]) { throw "$where : $k has to be a scriptblock" } }
-        if ($def.Contains('Group') -and "$($def.Group)" -notin $script:RiceComponentGroups) { throw "$where : Group '$($def.Group)' isn't one of doctor's groups ($($script:RiceComponentGroups -join ', '))" }
+        if ($def.Contains('Group') -and "$($def.Group)" -notin (Get-RiceComponentGroups)) { throw "$where : Group '$($def.Group)' isn't one of doctor's groups ($((Get-RiceComponentGroups) -join ', '))" }
         if ($def.Contains('NamedOnly') -and $def.NamedOnly -isnot [bool]) { throw "$where : NamedOnly is `$true or `$false" }
         if ($def.Contains('Autostart')) {
             $a = $def.Autostart
             if ($a -isnot [System.Collections.IDictionary]) { throw "$where : Autostart has to be a hashtable" }
-            foreach ($k in @($a.Keys)) { if ("$k" -notin $script:RiceAutostartFields) { throw "$where : Autostart has a field this loader doesn't know: '$k' (the fields: $($script:RiceAutostartFields -join ', '))" } }
+            foreach ($k in @($a.Keys)) { if ("$k" -notin (Get-RiceAutostartFields)) { throw "$where : Autostart has a field this loader doesn't know: '$k' (the fields: $((Get-RiceAutostartFields) -join ', '))" } }
             if ($a.Exe -isnot [scriptblock]) { throw "$where : Autostart.Exe has to be a scriptblock returning the exe's path (nothing = not installed)" }
             if (-not ($a.Process -is [string]) -or -not $a.Process.Trim()) { throw "$where : Autostart.Process (the process name that means 'already running') is needed" }
             if ($a.Contains('Delay') -and "$($a.Delay)" -notmatch '^PT\d+[SM]$') { throw "$where : Autostart.Delay is a task delay like 'PT2S'" }
@@ -131,7 +140,7 @@ function New-RiceComponentContext {
     if ($null -eq $FullTime) { try { $FullTime = [bool](Test-FullTimeMachine) } catch { $FullTime = $false } }
     $admin = try { [bool](Test-IsAdmin) } catch { $false }
     [pscustomobject]@{
-        Root     = $script:RiceComponentsRoot
+        Root     = Get-RiceComponentsRoot
         OnlyRun  = $OnlyRun
         FullTime = [bool]$FullTime
         IsAdmin  = $admin
