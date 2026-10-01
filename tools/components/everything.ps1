@@ -11,6 +11,12 @@
 # search on the Everything engine) needs that session process -- the service indexes but doesn't
 # answer searches -- hence doctor's "running" line, moved here from doctor.ps1.
 #
+# And it leaves Everything running: when it isn't (a fresh winget install never starts it -- its
+# installer's own sign-in entry, `Everything.exe -startup` in HKLM's Run key on the Dell, only
+# runs at the NEXT sign-in), it's started the same way, as you, in the background. Found in the
+# Dell's final test (T3, 2026-10-01): install and doctor both exit 0, SUPER+S says "Everything
+# isn't running" until you sign out and in.
+#
 # Snapshot 'everything-settings' (each key: existed + value); uninstall puts them back with
 # Everything closed and starts it again as you if it was running, so its icon is back at once.
 @{
@@ -111,23 +117,27 @@
         $ini = Get-EverythingIniPath
         $now = Read-EverythingValues $ini
         $done = { param($v) $v.show_tray_icon -eq '0' -and $v.check_for_updates_on_startup -eq '0' }
+        $wasUp = $false
         if (& $done $now) {
             Save-OriginalState -Label 'everything-settings' -Data @{ FileExisted = $true; show_tray_icon = @{ Existed = $true; Value = '0' }; check_for_updates_on_startup = @{ Existed = $true; Value = '0' } }
             Step-Ok 'Everything already set up (no tray icon, no update check)'
-            return
+        } else {
+            $wasUp = Stop-EverythingApp $exe
+            if ($wasUp) { Step-Info 'Everything closed to write its settings (its service keeps indexing)' }
+            $now = Read-EverythingValues $ini   # as the closed Everything left it
+            $snap = @{ FileExisted = $now.FileExisted }
+            foreach ($k in 'show_tray_icon', 'check_for_updates_on_startup') { $snap[$k] = @{ Existed = $null -ne $now.$k; Value = $now.$k } }
+            Save-OriginalState -Label 'everything-settings' -Data $snap
+            Set-EverythingValues $ini ([ordered]@{ show_tray_icon = '0'; check_for_updates_on_startup = '0' })
+            $what = @(if ($now.show_tray_icon -ne '0') { 'tray icon off' }; if ($now.check_for_updates_on_startup -ne '0') { 'update check off' })
+            Step-Ok "Everything set up: $($what -join '; ')$(if (-not $now.FileExisted) { ' (it had no settings file yet: created with just these)' })"
         }
-        $wasUp = Stop-EverythingApp $exe
-        if ($wasUp) { Step-Info 'Everything closed to write its settings (its service keeps indexing)' }
-        $now = Read-EverythingValues $ini   # as the closed Everything left it
-        $snap = @{ FileExisted = $now.FileExisted }
-        foreach ($k in 'show_tray_icon', 'check_for_updates_on_startup') { $snap[$k] = @{ Existed = $null -ne $now.$k; Value = $now.$k } }
-        Save-OriginalState -Label 'everything-settings' -Data $snap
-        Set-EverythingValues $ini ([ordered]@{ show_tray_icon = '0'; check_for_updates_on_startup = '0' })
-        $what = @(if ($now.show_tray_icon -ne '0') { 'tray icon off' }; if ($now.check_for_updates_on_startup -ne '0') { 'update check off' })
-        Step-Ok "Everything set up: $($what -join '; ')$(if (-not $now.FileExisted) { ' (it had no settings file yet: created with just these)' })"
-        if ($wasUp) {
-            if (Start-AsUser -Exe $exe -Arguments '-startup' -Process 'Everything' -Name 'everything') { Step-Ok 'Everything started again in the background (as you)' }
-            else { Step-Warn "Everything didn't start again -- start it from the Start menu (SUPER+S needs it)" }
+        # Running before = started again; not running (a fresh install, or you'd quit it) = started
+        # now. Either way the one SUPER+S talks to, in your session, never from this admin window.
+        if (-not (Get-EverythingSessionProcess).Count) {
+            if (Start-AsUser -Exe $exe -Arguments '-startup' -Process 'Everything' -Name 'everything') {
+                Step-Ok $(if ($wasUp) { 'Everything started again in the background (as you)' } else { "Everything started in the background (as you) -- SUPER+S's file search needs it" })
+            } else { Step-Warn "Everything didn't start -- start it from the Start menu (SUPER+S needs it)" }
         }
     }
 

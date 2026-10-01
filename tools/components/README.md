@@ -42,7 +42,7 @@ components still revert, a `Check` that throws is "couldn't check".
 | `bluetooth.ps1` | `envvars` | The bar's Bluetooth icon: left out on a machine with no adapter (`DESKTOPRICE_NO_BLUETOOTH = _none`, for a YASB started outside 710sRice -- `scripts\Start-Yasb.ps1` sets it from the hardware at every bar start), doctor's line |
 | `commands.ps1` | `envvars` (after `bluetooth`; before Flow's first start, so it indexes them) | The Start-menu commands: ten shortcuts in Start Menu\Programs\710sRice, each `config\ahk\send-command.ahk <name>` (710.ahk's `RiceCommands`); Flow's program cache cleared when it isn't running to see a change; doctor's line |
 | `flow.ps1` | `wallust` (so `theme` themes a Flow set up in the same run) | Flow Launcher: its first start on a new machine, its settings, its own startup turned off, its sign-in task, doctor's Flow lines |
-| `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), doctor's "running" line |
+| `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), started (as you) when it isn't running, doctor's "running" line |
 | `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), doctor's ShareX lines |
 
 The worked example is `flow.ps1`: every field but `NamedOnly`, a first start through

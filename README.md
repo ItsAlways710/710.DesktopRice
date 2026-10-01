@@ -104,6 +104,8 @@ Either way, the installer:
 - Turns off ShareX's and Everything's own update checks (the pins and `710sRice update` bring
   updates) and keeps their icons out of the bar: Everything's tray icon is off, and ShareX's
   is hidden from the bar's tray (ShareX keeps it on: it needs it to start hidden at sign-in).
+  If Everything isn't running, install starts it in the background (SUPER+S's file search
+  needs it; Everything freshly installed by winget only starts at your next sign-in).
 - Sets the default wallpaper and themes everything from it.
 - Removes the desktop shortcuts the installers drop (Flow Launcher and ShareX add one; ones
   you already had are left alone).
@@ -232,7 +234,7 @@ only runs with `-Activate`).
 | `path` | Puts the `710sRice` command on your PATH |
 | `wallust` | Installs wallust at its pinned version |
 | `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran): keywords, fonts, fullscreen; switches its own startup off and registers its task |
-| `everything` | Turns Everything's tray icon and update check off |
+| `everything` | Turns Everything's tray icon and update check off, and starts it if it isn't running |
 | `sharex` | Turns ShareX's update check off (and its tray icon on, which its hidden start needs) |
 | `theme` | Sets the default wallpaper and themes everything from it |
 | `palette` | Re-themes everything from the wallpaper you have now, with the palette profile in use (no wallpaper change) |
