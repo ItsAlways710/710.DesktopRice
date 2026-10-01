@@ -1836,7 +1836,7 @@ NativeMenuName(item) => item.text (item.HasOwnProp('hint') ? '`t' item.hint : ''
 SetupTray() {
     ico := RepoRoot "\assets\logo\710rice.ico"
     if FileExist(ico)
-        try TraySetIcon(ico)   ; no logo asset exists yet -- keeps AHK's default until one does
+        try TraySetIcon(ico)   ; 710 in Chiefs red on dark, gold outline; AutoHotkey's own icon if the file is missing
     A_IconTip := '710sRice'
 
     RebuildTrayMenu()

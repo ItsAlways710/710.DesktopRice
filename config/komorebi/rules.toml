@@ -22,3 +22,14 @@ class = "WinUIDesktopWin32WindowClass"
 # a manage rule beats ignore rules, which tiled Claude's file picker (#26).
 [[layered]]
 exe = "claude.exe"
+
+# Flow Launcher and ShareX: never tiled, moved or bordered (winarchy's own template
+# had both). Without them ShareX's main window, image editor and settings tiled when
+# they opened, and so did Flow's Settings window. [[ignore]] like winarchy's, not
+# [[floating]] -- komorebi keeps its hands off entirely. (Flow's search box was
+# never managed either way.)
+[[ignore]]
+exe = "Flow.Launcher.exe"
+
+[[ignore]]
+exe = "ShareX.exe"

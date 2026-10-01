@@ -16,7 +16,7 @@
     "height": 26,
     "mode": "OnStack",
     "label": "Title",
-    "tabs": { "width": 220, "font_size": 12 }
+    "tabs": { "width": 220, "font_size": 12, "font_family": "JetBrainsMono NF" }
   },
   "monitors": [
     {
