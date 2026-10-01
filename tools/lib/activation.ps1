@@ -235,6 +235,14 @@ function Remove-UserEnvVar {
     Remove-Item -Path "env:$Name" -ErrorAction SilentlyContinue
 }
 
+function Set-UserEnvVar {
+    # Registered for the user (new windows and tasks get it; .NET tells Explorer) and set in this
+    # process too.
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Value)
+    [Environment]::SetEnvironmentVariable($Name, $Value, 'User')
+    Set-Item -Path "env:$Name" -Value $Value
+}
+
 # --- User PATH: the 710sRice command -------------------------------------------------------
 # install.ps1 puts <repo>\bin on the user PATH (bin\ holds exactly one file, 710sRice.cmd);
 # uninstall.ps1 takes it off again. Doctor can use the same helpers later.

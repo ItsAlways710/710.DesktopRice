@@ -35,10 +35,11 @@ Once loaded, a component that fails is reported and the rest go on: an `Install`
 its own `[XX]` line (the run finishes), an `Uninstall` that throws is reported and the other
 components still revert, a `Check` that throws is "couldn't check".
 
-## The three today
+## The four today
 
 | File | Runs after | What it owns |
 |---|---|---|
+| `bluetooth.ps1` | `envvars` | The bar's Bluetooth icon: left out on a machine with no adapter (`DESKTOPRICE_NO_BLUETOOTH = _none`, for a YASB started outside 710sRice -- `scripts\Start-Yasb.ps1` sets it from the hardware at every bar start), doctor's line |
 | `flow.ps1` | `wallust` (so `theme` themes a Flow set up in the same run) | Flow Launcher: its first start on a new machine, its settings, its own startup turned off, its sign-in task, doctor's Flow lines |
 | `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), doctor's "running" line |
 | `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), doctor's ShareX lines |
@@ -52,7 +53,7 @@ overridden by repair).
 
 ## Adding one
 
-1. Copy the smallest of the three that's like your app; rename it `<id>.ps1` and set `Id`,
+1. Copy the smallest one that's like your app; rename it `<id>.ps1` and set `Id`,
    `Label` and `After`.
 2. `710sRice install -?` lists its step where you expect it; `710sRice install -Only <id>` runs
    it; `710sRice doctor` shows its checks in their group; `710sRice uninstall -DryRun` lists its

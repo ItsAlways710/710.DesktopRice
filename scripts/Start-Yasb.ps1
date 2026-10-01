@@ -57,6 +57,20 @@ if (Test-YasbRunning) { Write-Log 'YASB already running; nothing to do.'; exit 0
 
 Write-Log '--- startup (autostart) ---'
 
+# Bluetooth in the bar: config.yaml's network group lists "bluetooth$env:DESKTOPRICE_NO_BLUETOOTH"
+# -- 'bluetooth' (YASB's icon, "off" while the radio is off) on a machine with an adapter,
+# 'bluetooth_none' (an empty widget) on one without (tools\lib\bluetooth.ps1). Asked at every bar
+# start, so the bar always matches the hardware -- the user variable the install's bluetooth step
+# sets is only for a YASB started some other way. Anything wrong here: no variable, the icon shows.
+try {
+    . (Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\lib\bluetooth.ps1')
+    $env:DESKTOPRICE_NO_BLUETOOTH = Get-BluetoothBarValue
+    Write-Log $(if ($env:DESKTOPRICE_NO_BLUETOOTH) { 'bluetooth: no adapter -- the bar leaves its icon out' } else { 'bluetooth: adapter found -- the bar shows its icon' })
+} catch {
+    Remove-Item Env:DESKTOPRICE_NO_BLUETOOTH -ErrorAction SilentlyContinue
+    Write-Log "bluetooth: couldn't check ($($_.Exception.Message)) -- the bar shows its icon"
+}
+
 # Fingerprint of the config.yaml this YASB is about to load. tools\reload-stack.ps1 compares
 # against it and leaves YASB running when nothing it reads has changed -- because every YASB
 # restart hands its screen strip back and takes it again (it's a Windows app bar), Windows

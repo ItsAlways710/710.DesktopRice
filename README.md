@@ -167,7 +167,9 @@ settings, the bar's config, `710.ahk` and the theme templates. Update won't pull
 what to run instead. Nothing new? It says so and runs a health check.
 
 There's no separate update checker, by design: `710sRice doctor` tells you when GitHub has a
-newer version, when you ask it.
+newer version, when you ask it. The apps' own update checks are off too (YASB's, ShareX's,
+Everything's, Flow Launcher's): [versions.md](versions.md) pins them, and `710sRice update`
+moves them.
 
 From a copy older than the `update` command, or if you'd rather run git yourself,
 `git pull` and then `710sRice doctor -repair` does the same thing by hand.
@@ -222,6 +224,7 @@ only runs with `-Activate`).
 | `packages` | Installs what's missing from [versions.md](versions.md), pinned ones at their pin, and moves a pinned one that's older than its pin up to it |
 | `upgrade` | Moves a pinned package that's older than its pin up to it (and nothing else) |
 | `envvars` | Points komorebi and YASB at this repo's config (and removes the old weather variables, if a past install set them) |
+| `bluetooth` | Tells the bar whether this machine has a Bluetooth adapter (no adapter: no Bluetooth icon) |
 | `path` | Puts the `710sRice` command on your PATH |
 | `wallust` | Installs wallust at its pinned version |
 | `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran): keywords, fonts, fullscreen; switches its own startup off and registers its task |
@@ -237,7 +240,7 @@ only runs with `-Activate`).
 | `tasks` | Registers the scheduled tasks, for whichever way this machine runs |
 | `windows` | The Windows settings of a full-time install (taskbar, hardening, Startup delay) |
 
-`flow`, `everything` and `sharex` are components: each app's install, uninstall and doctor
+`bluetooth`, `flow`, `everything` and `sharex` are components: each app's install, uninstall and doctor
 code lives in one file in `tools/components/`, and a new file there becomes a step of its own
 ([its README](tools/components/README.md) explains how).
 
@@ -383,8 +386,19 @@ and runs on komorebi's defaults (a single workspace); `710sRice doctor` mentions
   another. It uses [Open-Meteo](https://open-meteo.com/): no account, no key. It shows
   **°F**; for °C, open `config/yasb/config.yaml`, find the `weather:` widget and change
   `units: "imperial"` to `units: "metric"`.
+- **Network:** Wi-Fi and Bluetooth sit together on the right, folded behind their button (the
+  network icon; click it to unfold, the arrow folds them again). Wi-Fi: click for the networks
+  around you, right-click for the one you're on (on a cable it shows the Ethernet icon, and
+  right-click gives the IP address). Bluetooth: click for your devices and its on/off switch;
+  it's dimmed while Bluetooth is off, and a machine with no Bluetooth adapter doesn't show it
+  at all. Middle-click either one for its page in Windows Settings.
+- **Battery:** next to them, on a machine that has one. Click it for the percentage.
+- **Capture drawer:** the arrow after the window title unfolds six ShareX buttons (region,
+  screen recording, stop recording, text from screen, scan a QR code, colour picker) and the
+  power plan (click it, pick a plan). Hover a button for its name.
 - **Tray:** ShareX's icon is hidden here and Everything has none (see
-  [What install always does](#what-install-always-does)).
+  [What install always does](#what-install-always-does)). YASB's own tray icon is off too;
+  `710sRice restart` (SUPER+Ctrl+R) restarts the bar.
 
 ## Make it yours
 

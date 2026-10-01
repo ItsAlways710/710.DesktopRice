@@ -15,7 +15,12 @@ watch_stylesheet: true
 watch_config: false
 system_colors: false
 debug: false
-update_check: true
+# YASB's own update check and tray icon off (winarchy did both; ported 2026-10-01). YASB is pinned
+# in versions.md and `710sRice update` moves it -- its own "new version" prompt would offer one we
+# haven't tried. Its tray icon (Reload / Exit) isn't needed: 710sRice restart and SUPER+Ctrl+R
+# restart the bar. The bar's systray widget below is a different thing and stays.
+update_check: false
+show_systray: false
 bars:
   primary-bar:
     enabled: true
@@ -53,6 +58,8 @@ bars:
       - komorebi_workspaces
       - lines
       - active_window
+      - lines
+      - capture-drawer
       center:
       - clock
       - weather
@@ -60,6 +67,9 @@ bars:
       - systray
       - lines
       - systeminfo-grouper
+      - lines
+      - network-grouper
+      - battery
       - lines
       - wallpapers
       - lines
@@ -269,15 +279,9 @@ widgets:
       show_in_popup: 1
       show_volume: false
       icons_per_row: 3
-      # show_network / use_hook used to be listed twice here with conflicting values
-      # (true then false for both) -- a genuine duplicate-key typo, not an intentional
-      # override. YAML's last-key-wins meant `false` was already what actually applied;
-      # this just removes the dead duplicate rather than changing behavior. false matches
-      # the show_battery/show_volume/show_unpinned pattern above (native icon categories
-      # off, surfaced elsewhere in the bar instead) -- and separately, this repo skips
-      # winarchy's net-icon autostart component (a different mechanism entirely; see
-      # claude/winarchy-decoupling-plan.md), so there's currently no network status shown
-      # either way regardless of this toggle.
+      # Windows' own network, battery and volume icons stay out of this tray: network and
+      # battery have their own widgets in the bar (network-grouper, battery -- winarchy port,
+      # 2026-10-01), volume is in the control center.
       show_network: false
       use_hook: false # Whether to use the new systray hook instead of the legacy systray monitor
       # ShareX's icon: ShareX keeps its own tray icon ON -- it honours -silent (the sign-in
@@ -522,6 +526,197 @@ widgets:
           button_menu_icon: "\ue76c"
       callbacks:
         on_left: "toggle_menu"
+  # --- Network and battery (winarchy port audit, 2026-10-01) -------------------------------------
+  # Wi-Fi and Bluetooth in one group, folded behind its button like the system-info group; the
+  # battery next to it, always shown.
+  # Bluetooth: "bluetooth$env:DESKTOPRICE_NO_BLUETOOTH" is 'bluetooth' (YASB's icon -- dimmed while
+  # the radio is off) on a machine with an adapter and 'bluetooth_none' (an empty widget) on one
+  # without: scripts\Start-Yasb.ps1 sets the variable from the hardware at every bar start
+  # (tools\lib\bluetooth.ps1), and the install's bluetooth step registers it for a YASB started any
+  # other way. YASB 2.0.7's own widget can't tell "no adapter" from "off" (both are its bt-off),
+  # and a name here that isn't defined pops an error dialog -- so the name is always one of the two.
+  network-grouper:
+    type: "yasb.grouper.GrouperWidget"
+    options:
+      class_name: "network-grouper"
+      widgets: ["wifi", "bluetooth$env:DESKTOPRICE_NO_BLUETOOTH"]
+      collapse_options:
+        enabled: true
+        label_position: "left"
+        collapsed_label: "\udb80\udc02"
+        expanded_label: "\uf054"
+  # YASB's own Wi-Fi widget (the user's pick over winarchy's net-icon script). Click: its network
+  # list; right-click: the network's name (Ethernet: the IP address); middle: Windows' network page.
+  wifi:
+    type: "yasb.wifi.WifiWidget"
+    options:
+      label: "<span>{wifi_icon}</span>"
+      label_alt: "<span>{wifi_icon}</span> {wifi_name}"
+      ethernet_label: "<span>{wifi_icon}</span>"
+      ethernet_label_alt: "<span>{wifi_icon}</span> {ip_addr}"
+      ethernet_icon: "\udb80\ude00"
+      update_interval: 5000
+      callbacks:
+        on_left: "toggle_menu"
+        on_middle: "exec explorer.exe ms-settings:network"
+        on_right: "toggle_label"
+      menu_config:
+        blur: false
+        round_corners: true
+        round_corners_type: "normal"
+        border_color: "System"
+        alignment: "right"
+        direction: "down"
+        offset_top: 6
+        offset_left: 0
+  # Click: its device list (and the on/off switch); right-click: what's connected; middle:
+  # Windows' Bluetooth page.
+  bluetooth:
+    type: "yasb.bluetooth.BluetoothWidget"
+    options:
+      label: "<span>{icon}</span>"
+      label_alt: "<span>{icon}</span> {device_name}"
+      icons:
+        bluetooth_on: "\udb80\udcaf"
+        bluetooth_off: "\udb80\udcb2"
+        bluetooth_connected: "\udb80\udcb1"
+      callbacks:
+        on_left: "toggle_menu"
+        on_middle: "exec explorer.exe ms-settings:bluetooth"
+        on_right: "toggle_label"
+      menu_config:
+        blur: false
+        round_corners: true
+        round_corners_type: "normal"
+        border_color: "System"
+        alignment: "right"
+        direction: "down"
+        offset_top: 6
+        offset_left: 0
+  # A machine with no Bluetooth adapter: nothing at all in the group's second place.
+  bluetooth_none:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: ""
+      class_name: "bluetooth-none"
+      callbacks:
+        on_left: "do_nothing"
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
+  # hide_unsupported: a machine with no battery shows nothing (winarchy's, as it was). Click: the
+  # percentage.
+  battery:
+    type: "yasb.battery.BatteryWidget"
+    options:
+      label: "<span>{icon}</span>"
+      label_alt: "<span>{icon}</span> {percent}%"
+      hide_unsupported: true
+      update_interval: 10000
+      callbacks:
+        on_left: "toggle_label"
+        on_right: "toggle_label"
+  # --- The capture drawer (winarchy port audit, 2026-10-01) --------------------------------------
+  # After the window title, folded behind its arrow: six ShareX buttons, each calling ShareX
+  # directly with its own command-line action (the ones 710.ahk's Capture menu uses), and the power
+  # plan. ShareX is where winget puts it ($env:ProgramFiles -- YASB expands it, as everywhere here).
+  capture-drawer:
+    type: "yasb.grouper.GrouperWidget"
+    options:
+      class_name: "capture-drawer"
+      widgets: ["capture_region", "capture_record", "capture_stop", "capture_ocr", "capture_qr", "capture_color", "power_plan"]
+      collapse_options:
+        enabled: true
+        label_position: "left"
+        collapsed_label: "\uf054"
+        expanded_label: "\uf053"
+  capture_region:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "<span>\udb80\udd9e</span>"
+      class_name: "capture-widget"
+      tooltip: true
+      tooltip_label: "Region capture"
+      callbacks:
+        on_left: 'exec "$env:ProgramFiles\ShareX\ShareX.exe" -RectangleRegion'
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
+  capture_record:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "<span>\udb81\udc4a</span>"
+      class_name: "capture-widget"
+      tooltip: true
+      tooltip_label: "Screen recording"
+      callbacks:
+        on_left: 'exec "$env:ProgramFiles\ShareX\ShareX.exe" -ScreenRecorder'
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
+  capture_stop:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "<span>\udb81\udcdb</span>"
+      class_name: "capture-widget"
+      tooltip: true
+      tooltip_label: "Stop recording"
+      callbacks:
+        on_left: 'exec "$env:ProgramFiles\ShareX\ShareX.exe" -StopScreenRecording'
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
+  capture_ocr:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "<span>\udb84\udd3a</span>"
+      class_name: "capture-widget"
+      tooltip: true
+      tooltip_label: "Text from screen (OCR)"
+      callbacks:
+        on_left: 'exec "$env:ProgramFiles\ShareX\ShareX.exe" -OCR'
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
+  capture_qr:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "<span>\udb81\udc33</span>"
+      class_name: "capture-widget"
+      tooltip: true
+      tooltip_label: "Scan a QR code on screen"
+      callbacks:
+        on_left: 'exec "$env:ProgramFiles\ShareX\ShareX.exe" -QRCodeScanRegion'
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
+  capture_color:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "<span>\udb80\ude0a</span>"
+      class_name: "capture-widget"
+      tooltip: true
+      tooltip_label: "Colour picker"
+      callbacks:
+        on_left: 'exec "$env:ProgramFiles\ShareX\ShareX.exe" -ScreenColorPicker'
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
+  # The power plan: click for the list, pick one. YASB 2.0.7's power_plan widget only uses the four
+  # power-plan functions (PowerEnumerate / PowerReadFriendlyName / PowerGetActiveScheme /
+  # PowerSetActiveScheme -- all on the Dell, state\g2-probe.json), not the power-mode call that
+  # crashed the control center's power section (that one stays off, below in control_center).
+  power_plan:
+    type: "yasb.power_plan.PowerPlanWidget"
+    options:
+      label: "<span>\udb81\udcc5</span>"
+      label_alt: "<span>\udb81\udcc5</span> {active_plan}"
+      callbacks:
+        on_left: "toggle_menu"
+        on_middle: "do_nothing"
+        on_right: "toggle_label"
+      menu:
+        blur: false
+        round_corners: true
+        round_corners_type: "normal"
+        border_color: "System"
+        alignment: "left"
+        direction: "down"
+        offset_top: 6
+        offset_left: 0
   gpu:
     type: "yasb.gpu.GpuWidget"
     options:
