@@ -34,9 +34,41 @@
     },
     {
       "workspaces": [
-        { "name": "A", "layout": "BSP" },
-        { "name": "B", "layout": "BSP" },
-        { "name": "C", "layout": "BSP" }
+        { "name": "2-1", "layout": "BSP" },
+        { "name": "2-2", "layout": "BSP" },
+        { "name": "2-3", "layout": "BSP" },
+        { "name": "2-4", "layout": "BSP" },
+        { "name": "2-5", "layout": "BSP" },
+        { "name": "2-6", "layout": "BSP" },
+        { "name": "2-7", "layout": "BSP" },
+        { "name": "2-8", "layout": "BSP" },
+        { "name": "2-9", "layout": "BSP" }
+      ]
+    },
+    {
+      "workspaces": [
+        { "name": "3-1", "layout": "BSP" },
+        { "name": "3-2", "layout": "BSP" },
+        { "name": "3-3", "layout": "BSP" },
+        { "name": "3-4", "layout": "BSP" },
+        { "name": "3-5", "layout": "BSP" },
+        { "name": "3-6", "layout": "BSP" },
+        { "name": "3-7", "layout": "BSP" },
+        { "name": "3-8", "layout": "BSP" },
+        { "name": "3-9", "layout": "BSP" }
+      ]
+    },
+    {
+      "workspaces": [
+        { "name": "4-1", "layout": "BSP" },
+        { "name": "4-2", "layout": "BSP" },
+        { "name": "4-3", "layout": "BSP" },
+        { "name": "4-4", "layout": "BSP" },
+        { "name": "4-5", "layout": "BSP" },
+        { "name": "4-6", "layout": "BSP" },
+        { "name": "4-7", "layout": "BSP" },
+        { "name": "4-8", "layout": "BSP" },
+        { "name": "4-9", "layout": "BSP" }
       ]
     }
   ]

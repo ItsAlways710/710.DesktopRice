@@ -4,9 +4,8 @@
   Clean uninstall of 710.DesktopRice.
 
 .DESCRIPTION
-  Stops every process 710.DesktopRice may have started (komorebi, YASB, ShareX, AHK, and a
-  retired window-slots daemon if one is still running; Flow Launcher is stopped by its own
-  revert, below) regardless of whether -Activate was
+  Stops every process 710.DesktopRice may have started (komorebi, YASB, ShareX, AHK; Flow
+  Launcher is stopped by its own revert, below) regardless of whether -Activate was
   ever used, then reverts
   everything install.ps1 -Activate touches (autostart Scheduled Tasks, native-taskbar
   auto-hide, HKCU registry hardening, Explorer's Startup-delay, and the retired lock-screen
@@ -33,9 +32,8 @@
 
   Never touches the repo itself (config/, tools/, this script) or anything outside what
   install.ps1 itself touches -- delete the folder yourself if you want it gone too. Does
-  not remove config/windows.toml (your saved window-slot preferences) or the wallust-
-  generated palette files under config/wallust/generated/ -- those are your data/output,
-  not install state.
+  not remove the wallust-generated palette files under config/wallust/generated/ -- those
+  are your data/output, not install state.
 
 .NOTES
   winarchy's own uninstall.ps1 never stops a running process, never reverts autostart, the

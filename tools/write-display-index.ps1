@@ -1,30 +1,33 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Writes config\komorebi\display-index.local.json -- which physical monitor is komorebi's
-  monitor 0, 1, 2, 3 -- from a live `komorebic monitor-information` on this machine.
+  Keeps config\komorebi\display-index.local.json -- which physical screen is screen 1, 2, 3,
+  4 (komorebi's monitor 0-3) -- up to date from a live `komorebic monitor-information`.
 
 .DESCRIPTION
   Windows doesn't guarantee the order it lists monitors in, so komorebi's
-  display_index_preferences pins each config index to a monitor's serial_number_id. The
-  serials are this machine's real hardware, so the map is generated here, gitignored, and
-  merged into komorebi.json by compile-komorebi-rules.ps1.
+  display_index_preferences ties each config block (base.json's four screens) to a screen's
+  identity. Those are this machine's real hardware, so the map is generated here, gitignored,
+  and merged into komorebi.json by compile-komorebi-rules.ps1.
+
+  A stable map (Group 1 #7): numbers already given are kept -- an unplugged screen keeps its
+  number for when it's back; a connected screen the map doesn't have takes the lowest free one;
+  four at most. A screen is identified by its serial_number_id, or its device_id when it has no
+  serial or shares it with another connected screen. The rules live in tools\lib\monitors.ps1
+  (doctor reads the same ones). Nothing changed = the file isn't touched at all.
 
   komorebic can only answer while komorebi is running. Two callers:
-    - install.ps1, every run: refreshes the map when komorebi is up (that's how a new
-      monitor gets picked up); when it isn't, says so and leaves it to the next one.
+    - install.ps1's monitors step, every run: adds a screen that's new since (komorebi up);
+      when komorebi isn't running, says so and leaves it to the next one.
     - scripts\Start-Komorebi.ps1, with -Compile, once komorebi is up and only if the file
       doesn't exist yet (a fresh install, or after uninstall): writes it and recompiles
       komorebi.json, which komorebi then hot-reloads.
-  Moved here out of install.ps1 on 2026-09-24: on a fresh install komorebi had never run
-  yet, so the install-time call always failed (komorebic panicked, "os error 10061" --
-  nothing listening) and the map only appeared after a second install run.
 
-  Never writes a guessed map, and any failure leaves an existing file alone. A monitor
-  without a serial_number_id is left out of the map with a warning (same as before).
+  Never writes a guessed map, and any failure leaves an existing file alone. The identities are
+  hardware identifiers: counted, never printed.
 
-  Exit codes: 0 = written (and compiled, with -Compile); 2 = komorebi isn't running, so
-  nothing was done; 1 = detection, the write or the compile failed.
+  Exit codes: 0 = up to date (written, or already right; compiled with -Compile); 2 = komorebi
+  isn't running, so nothing was done; 1 = detection, the write or the compile failed.
 #>
 param([switch]$Compile)
 $ErrorActionPreference = 'Stop'
@@ -69,31 +72,33 @@ if ($monitors.Count -eq 0) {
     Write-Warning 'komorebic.exe monitor-information reported zero monitors.'
     exit 1
 }
-if ($monitors.Count -gt 4) {
-    Write-Warning "$($monitors.Count) monitors detected; this repo's design supports 4, using the first 4 in reported order."
-    $monitors = $monitors[0..3]
+. (Join-Path $PSScriptRoot 'lib\monitors.ps1')
+try { $old = Read-DisplayIndexMap -Path $target }
+catch {
+    # A broken file is replaced by a fresh map (nothing in it could be kept anyway).
+    Write-Warning "$($_.Exception.Message) -- writing a fresh one."
+    $old = $null
 }
-$map = [ordered]@{}
-for ($i = 0; $i -lt $monitors.Count; $i++) {
-    $serial = $monitors[$i].serial_number_id
-    if ([string]::IsNullOrWhiteSpace($serial)) {
-        Write-Warning "Monitor index $i has no serial_number_id -- leaving it out (the map will be incomplete for this monitor)."
-        continue
+$r = Update-DisplayIndexMap -Map $old -Monitors $monitors
+if ($r.NoId) { Write-Warning "$($r.NoId) screen(s) report neither a serial nor a device_id -- left out of the map." }
+if ($r.Beyond) { Write-Warning "$($r.Beyond) screen(s) beyond the 4 this repo maps -- they run on komorebi's defaults (one workspace, no config)." }
+if ($r.Map.Count -eq 0) {
+    Write-Warning 'No screen could be identified -- nothing to write.'
+    exit 1
+}
+$same = $old -and ((ConvertTo-Json $old -Compress) -eq (ConvertTo-Json $r.Map -Compress))
+if ($same) {
+    Write-Host "Screen map up to date ($($r.Map.Count) screen(s); unchanged)"
+} else {
+    try {
+        $r.Map | ConvertTo-Json | Set-Content -Path $target -Encoding UTF8
+    } catch {
+        Write-Warning "couldn't write ${target}: $($_.Exception.Message)"
+        exit 1
     }
-    $map["$i"] = "$serial"
+    $what = if (-not $old) { "$($r.Map.Count) screen(s) mapped" } else { "screen(s) $(($r.Added | ForEach-Object { $_ + 1 }) -join ', ') added; the others kept their numbers" }
+    Write-Host "Wrote config\komorebi\display-index.local.json: $what"
 }
-if ($map.Count -eq 0) {
-    Write-Warning 'No monitor had a usable serial_number_id -- nothing to write.'
-    exit 1
-}
-
-try {
-    $map | ConvertTo-Json | Set-Content -Path $target -Encoding UTF8
-} catch {
-    Write-Warning "couldn't write ${target}: $($_.Exception.Message)"
-    exit 1
-}
-Write-Host "Wrote $($map.Count) monitor(s) to config\komorebi\display-index.local.json"
 
 if ($Compile) {
     # compile-komorebi-rules.ps1 throws on failure (after printing why) rather than

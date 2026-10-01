@@ -60,12 +60,6 @@
 # rules. Want one on every machine? Move it into rules.toml and commit.
 /config/komorebi/rules.local.toml
 
-# Window placement preferences for THIS machine -- `monitor` is keyed by the same
-# machine-local serial_number_id as display-index.local.json above, so this can't be
-# shared across machines either. Captured with extras/window-slots/save-window-layout.ps1; see
-# extras/window-slots/windows.toml.example (tracked) for the format.
-/config/windows.toml
-
 # wallust-generated starship prompt config (see config/wallust/wallust.toml's
 # [templates] and tools/apply-wallust-outputs.ps1). Absent until wallust has run once;
 # starship just uses its own built-in defaults until then. Never commit.

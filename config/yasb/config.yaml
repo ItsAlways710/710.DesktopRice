@@ -200,12 +200,12 @@ widgets:
       label_workspace_populated_btn: "{index}"
       label_default_name: ""
       label_zero_index: false
-      # false, matching winarchy's own config: true hides every workspace button
-      # except whichever one currently has focus on that specific monitor -- which
-      # explains "connects fine, shows nothing" on a secondary monitor whose
-      # workspace isn't the globally-focused one, and loses the multi-workspace
-      # view on the extra monitor entirely.
-      hide_empty_workspaces: false
+      # true (Group 1 #7, 2026-09-30): each bar shows its own screen's current workspace plus
+      # any workspace with windows. YASB 2.0.7 reads each screen's own focused workspace
+      # (client.py) and hides a button only when it's empty AND not that screen's focused one
+      # (workspaces.py). The 2026-09-21 "false, permanently" (3330cff) came from "shows nothing
+      # on a secondary monitor", seen while four other causes were broken and fixed together.
+      hide_empty_workspaces: true
       hide_if_offline: true
       toggle_workspace_layer:
         enabled: false

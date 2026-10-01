@@ -10,7 +10,7 @@ and the full license text follows.
 - Copyright (c) 2026 Guido Naselli
 - Used for: much of the AutoHotkey dispatcher (`config/ahk/710.ahk`), the install and
   uninstall logic (`install.ps1`, `uninstall.ps1`, `tools/lib/activation.ps1`), Flow
-  Launcher setup, the rule compiler, and `extras/window-slots/`, ported and modified.
+  Launcher setup, and the rule compiler, ported and modified.
 
 ## komorebi-application-specific-configuration
 

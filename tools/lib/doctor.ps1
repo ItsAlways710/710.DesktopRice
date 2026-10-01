@@ -835,10 +835,13 @@ function Test-DoctorAscPin {
 }
 
 function Test-DoctorDisplayIndex {
-    # display-index.local.json: which physical monitor is komorebi's 0, 1, ... It's written
-    # from a live `komorebic monitor-information` -- by install, or by komorebi's launcher on
-    # the first start without one -- so the connected monitors can only be compared while
-    # komorebi runs. A monitor in the file but not connected is normal (a laptop off its dock).
+    # display-index.local.json: which physical screen is screen 1, 2, 3, 4 (komorebi's 0-3).
+    # A stable map (Group 1 #7, tools\lib\monitors.ps1 -- the writer's own rules): numbers are
+    # kept, a new screen takes the next free one, so the monitors step can always be run safely
+    # to add one -- hence [XX] for a connected screen the map doesn't have. A screen in the map
+    # but not connected is normal (a laptop off its dock). A fifth screen has no number to take:
+    # a plain fact. The connected screens can only be compared while komorebi runs.
+    if (-not (Get-Command Update-DisplayIndexMap -ErrorAction SilentlyContinue)) { . (Join-Path $Root 'tools\lib\monitors.ps1') }
     $file = Join-Path $Root 'config\komorebi\display-index.local.json'
     $fix  = @{ Fix = '710sRice install -Only monitors, then 710sRice reload'; Step = 'monitors' }
     $running = [bool](Get-Process komorebi -ErrorAction SilentlyContinue)
@@ -851,25 +854,31 @@ function Test-DoctorDisplayIndex {
         if ($running) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is missing' @fix -Repair 'reload' }
         return New-DoctorResult -Id 'display-index' -Status '..' -Text 'display-index.local.json not written yet -- komorebi writes it when it next starts'
     }
-    try { $map = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable }
-    catch { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json isn't valid JSON" @broken }
+    try { $map = Read-DisplayIndexMap -Path $file }
+    catch {
+        $why = if ("$($_.Exception.Message)" -match 'empty') { 'is empty' } else { "isn't valid ($($_.Exception.Message -replace '^display-index\.local\.json ', ''))" }
+        return New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json $why" @broken
+    }
     if (-not $map -or -not $map.Count) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is empty' @broken }
-    $mapped = @($map.Values | ForEach-Object { "$_" })
     if (-not $running) {
-        return New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $(Get-DoctorPlural $map.Count 'monitor' 'monitors') mapped (komorebi isn't running -- not compared)"
+        return New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $(Get-DoctorPlural $map.Count 'screen' 'screens') mapped (komorebi isn't running -- not compared)"
     }
     $kc = Get-DoctorKomorebic
     if (-not $kc) { return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json -- couldn't check (komorebic.exe not found)" }
     $raw = @(& $kc monitor-information 2>$null) -join "`n"
     if (-not $raw.Trim()) { return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json -- couldn't check (komorebic monitor-information said nothing)" }
-    # Monitors without a serial can't be mapped at all (write-display-index.ps1 leaves them out).
-    $connected = @(@($raw | ConvertFrom-Json) | ForEach-Object { "$($_.serial_number_id)" } | Where-Object { $_.Trim() })
-    $missing   = @($connected | Where-Object { $mapped -notcontains $_ })
-    if ($missing.Count) {
-        return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json doesn't list $($missing.Count) of the $($connected.Count) connected monitors" @fix
+    $connected = @($raw | ConvertFrom-Json)
+    $r = Update-DisplayIndexMap -Map $map -Monitors $connected
+    if ($r.Added.Count) {
+        New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json doesn't have $($r.Added.Count) of the $($connected.Count) connected screens (it would give $(if ($r.Added.Count -eq 1) { 'it number' } else { 'them numbers' }) $(($r.Added | ForEach-Object { $_ + 1 }) -join ', '); the others keep theirs)" @fix -Repair 'reload'
+    } else {
+        $which = switch ($connected.Count) { 1 { 'the connected screen' } 2 { 'both connected screens' } default { "all $($connected.Count) connected screens" } }
+        $which = if ($r.Beyond -or $r.NoId) { "$($connected.Count - $r.Beyond - $r.NoId) of the $($connected.Count) connected screens" } else { $which }
+        New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $which mapped"
     }
-    $which = switch ($connected.Count) { 1 { 'the connected monitor' } 2 { 'both connected monitors' } default { "all $($connected.Count) connected monitors" } }
-    New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $which mapped"
+    if ($r.Beyond) {
+        New-DoctorResult -Id 'display-index-more' -Status '..' -Text "$(Get-DoctorPlural $r.Beyond 'screen' 'screens') beyond the 4 this repo maps -- komorebi runs $(if ($r.Beyond -eq 1) { 'it' } else { 'them' }) on its defaults (one workspace)"
+    }
 }
 
 function Test-DoctorWallustToml {

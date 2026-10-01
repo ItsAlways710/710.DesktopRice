@@ -53,11 +53,10 @@ function Write-Log([string]$m) {
 function Test-KomorebiRunning { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) }
 
 function Invoke-Komorebic {
-    <# Runs komorebic.exe with no console window and returns its stdout. Same technique
-       as extras\window-slots\window-slots.ps1's own Invoke-Komorebic, duplicated locally here
-       rather than dot-sourced -- this script runs under legacy Windows PowerShell 5.1
-       (see Get-AutostartComponents), and window-slots.ps1 needs PS7's ?. operator just to
-       parse, so dot-sourcing it would throw. .NET Framework's ProcessStartInfo also lacks
+    <# Runs komorebic.exe with no console window and returns its stdout. This script runs
+       under legacy Windows PowerShell 5.1 (see Get-AutostartComponents), so nothing PS7-only
+       is dot-sourced here (winarchy's window-slots.ps1, where this came from, needs PS7's ?.
+       just to parse). .NET Framework's ProcessStartInfo also lacks
        .ArgumentList (added in .NET Core 2.1), so this builds a plain .Arguments string
        instead -- fine for every call site here (bare subcommands/digits, no spaces).
        Without CreateNoWindow, Windows allocates a fresh, briefly-visible console per
@@ -228,10 +227,10 @@ while ((Get-Date) -lt $overallDeadline) {
             # (a retile/ignore-rule doesn't retroactively unmanage them). Only matters when
             # komorebi (re)starts with a game open -- SUPER+Shift+R removing a rule, or a
             # crash -- never at a normal boot.
-            # games.toml is read right here with a 5.1-safe loop (same `exe = "..."` grammar
-            # as window-slots.ps1's Get-GameExes). Until 2026-09-23 this dot-sourced
-            # window-slots.ps1 instead, which needs PS7's ?. just to parse -- so under this
-            # script's 5.1 host the step threw on every single start and never ran once.
+            # games.toml is read right here with a 5.1-safe loop (the `exe = "..."` grammar).
+            # Until 2026-09-23 this dot-sourced winarchy's window-slots.ps1 instead, which needs
+            # PS7's ?. just to parse -- so under this script's 5.1 host the step threw on every
+            # single start and never ran once.
             try {
                 $gamesToml = Join-Path $root 'games.toml'
                 # outer @() so 0 or 1 games still gives an array (the plan doc's

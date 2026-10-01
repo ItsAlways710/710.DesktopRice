@@ -19,17 +19,12 @@
   it's a different mechanism than our YASB systray's show_network, and with the taskbar
   hidden there's currently no network status shown either way regardless of which we'd pick.
 
-  display_index_preferences: winarchy's own newest window-slots refinement (see
-  extras/window-slots/window-slots.ps1) writes a LIVE, device_id-keyed copy of this key into
-  komorebi.json every time window placement rules are re-applied. This repo already has its
-  own, older, INSTALL-TIME mechanism for the same key (install.ps1 Section 4, serial_number_id
-  -keyed, via `komorebic monitor-information`) -- kept deliberately instead of winarchy's,
-  documented as a design deviation in the plan doc (untested against a real multi-monitor
-  reconnect/disconnect, unlike winarchy's, so worth revisiting if ours turns out not to hold
-  up). komorebi's own docs (github.com/LGUG2Z/komorebi multi-monitor-setup.md) actually
-  recommend serial_number_id over device_id for exactly this key, since device_id changes
-  across a restart and serial_number_id doesn't -- so this deviation isn't just "different",
-  it's arguably the sounder of the two, for whatever that's worth pending a real test.
+  display_index_preferences (which screen is screen 1-4): install's monitors step keeps the
+  stable map in config\komorebi\display-index.local.json (tools\write-display-index.ps1,
+  rules in tools\lib\monitors.ps1) -- keyed by serial_number_id, which komorebi's own docs
+  (multi-monitor-setup.md) recommend for this key, or the device_id when a screen has no serial
+  or shares it. winarchy writes a live, device_id-keyed copy from its window-slots daemon
+  instead; that daemon's port was dropped from this repo (Group 1 #7).
 #>
 
 # Your lock-screen picture: Invoke-LockScreenSetter and its record (install's tasks step and
@@ -906,9 +901,8 @@ function ConvertTo-HiddenLaunch {
 
 function Get-AutostartComponents {
     <# Definition of the 4 autostart components this repo actually uses (komorebi, YASB,
-       ShareX, AHK). net-icon is deliberately not ported -- see this file's header comment;
-       window-slots was unwired 2026-09-24 (see Remove-RetiredAutostart). Returns only the
-       components whose executable is actually present.
+       ShareX, AHK). net-icon is deliberately not ported -- see this file's header comment.
+       Returns only the components whose executable is actually present.
        Each item: Key, TaskName, LnkName, Exe, Arguments, Delay (ISO-8601 duration, for the
        LogonTrigger's Delay). The 3 powershell-hosted components (all but ShareX, which
        launches its own GUI exe directly and has no console to begin with) go through
@@ -1114,14 +1108,11 @@ function Register-Autostart {
     <# Registers every present component as an At-LogOn Scheduled Task, delay 0 (or per-
        component), unelevated, interactive-session-only. Deletes legacy .lnk files first
        (migration). Idempotent. Falls back to a Startup .lnk for any component whose task
-       registration fails. Also removes retired components (Remove-RetiredAutostart).
-       -Key: just that one component, and neither whole-install cleanup (Startup shortcuts,
-       retired components) -- `710sRice tiling` re-registers komorebi alone. #>
+       registration fails.
+       -Key: just that one component, and no whole-install cleanup (Startup shortcuts) --
+       `710sRice tiling` re-registers komorebi alone. #>
     param([string]$Key)
-    if (-not $Key) {
-        Remove-StartupShortcuts
-        Remove-RetiredAutostart
-    }
+    if (-not $Key) { Remove-StartupShortcuts }
     $user = "$env:USERDOMAIN\$env:USERNAME"
     $components = @(Get-AutostartComponents | Where-Object { -not $Key -or $_.Key -eq $Key })
     if ($components.Count -eq 0) {
@@ -1183,37 +1174,6 @@ function Unregister-Autostart {
         if (Test-Task -TaskName $comp.Id) { $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName $comp.Id) /F 2>&1 }
     }
     Remove-StartupShortcuts
-    Remove-RetiredAutostart
-}
-
-function Remove-RetiredAutostart {
-    <# Cleans autostart components this repo no longer runs off a machine that still has
-       them: the sign-in task, its launch spec file, and a copy still running. Called by
-       Register-Autostart (install -Activate) and Unregister-Autostart (uninstall). A
-       leftover Startup .lnk is already covered by Remove-StartupShortcuts' wildcard.
-         window-slots -- unwired 2026-09-24 (the user never pinned an app, so the daemon
-                         sat idle); the code is kept under extras\window-slots\ as a
-                         possible future feature (plan doc item 2). #>
-    foreach ($name in @('window-slots')) {
-        if (Test-Task -TaskName $name) {
-            $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName $name) /F 2>&1
-            Step-Info "Removed the retired '$name' sign-in task."
-        }
-        Remove-Item (Join-Path $env:LOCALAPPDATA "710.DesktopRice\launch-$name.txt") -Force -ErrorAction SilentlyContinue
-    }
-    Stop-RetiredWindowSlots
-}
-
-function Stop-RetiredWindowSlots {
-    <# Stops a still-running window-slots daemon (retired 2026-09-24): the pwsh running
-       Start-WindowSlots.ps1, and the powershell.exe that launched it, matched by command
-       line so no other PowerShell is touched -- the same match its own
-       Stop-WindowSlotsDaemon used. A no-op on a machine that never ran it. #>
-    try {
-        Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe' OR Name = 'powershell.exe'" -ErrorAction Stop |
-            Where-Object { $_.CommandLine -and $_.CommandLine.Contains('Start-WindowSlots.ps1') } |
-            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    } catch { }
 }
 
 function Get-ComponentTaskInfo {
@@ -1554,9 +1514,6 @@ function Stop-RunningComponents {
        of whatever -Activate state the install was left in. Each component is independent
        and best-effort (one failing to stop doesn't block the rest of the uninstall), and
        nothing here touches a process this repo didn't start -- see the AHK note below. #>
-
-    # A window-slots daemon still running from before it was unwired (2026-09-24).
-    Stop-RetiredWindowSlots
 
     # komorebi: try its own graceful `stop` first (releases window-management hooks,
     # restores window styles/borders) before a hard kill, so a stray leftover style isn't
