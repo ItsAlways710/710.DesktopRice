@@ -296,6 +296,30 @@ WebApp(url) {
 #b::Run(DefaultBrowser())                         ; default browser
 #e::Run('explorer.exe')                           ; file explorer
 #y::WebApp('https://youtube.com')                 ; YouTube
+#m::WebApp('https://music.youtube.com')           ; YouTube Music (instead of Windows' minimize-all)
+#o::LaunchObsidian()                              ; Obsidian
+#^d::Run('ms-settings:display')                   ; Windows display settings (instead of a new virtual desktop)
+
+; Obsidian (winarchy's SUPER+O, ported 2026-10-01). Its installer is per-user: winarchy looked in
+; %LOCALAPPDATA%\Obsidian, today's installer uses %LOCALAPPDATA%\Programs\Obsidian. Neither there
+; (a portable or moved copy): the obsidian:// link it registers, if there is one -- for you (what
+; its installer writes) or for the machine. None of those: a toast. Obsidian keeps one window --
+; a second start just brings it forward.
+LaunchObsidian() {
+    for dir in [EnvGet('LOCALAPPDATA') '\Obsidian', EnvGet('LOCALAPPDATA') '\Programs\Obsidian']
+        if FileExist(dir '\Obsidian.exe') {
+            Run('"' dir '\Obsidian.exe"')
+            return
+        }
+    for key in ['HKCU\Software\Classes\obsidian\shell\open\command', 'HKLM\Software\Classes\obsidian\shell\open\command']
+        try {
+            if (RegRead(key) != '') {
+                Run('obsidian://')
+                return
+            }
+        }
+    TrayTip('Obsidian is not installed', '710sRice')
+}
 
 ; Best-effort path -- %LOCALAPPDATA%\Claude is walled off from the device
 ; bridge that built this (Claude's own app-data folders are protected), so
@@ -1115,6 +1139,15 @@ ToggleGameMode() {
     }
 }
 
+; "710sRice Game mode on" / "... off" (the Start-menu commands): the switch set, not flipped.
+SetGameMode(on) {
+    global GameFlag
+    if (on = !!FileExist(GameFlag))
+        TrayTip('Game mode: already ' (on ? 'on' : 'off'), '710sRice')
+    else
+        ToggleGameMode()
+}
+
 ; ============================================================================
 ; YASB watchdog
 ; ============================================================================
@@ -1530,22 +1563,26 @@ EditMyRules(*) {
 ; WinarchyTilingItems(). Themes and Bar submenus are dropped (both
 ; eliminated entirely elsewhere in this repo -- see the plan doc's Palette
 ; and YASB sections); Doctor runs `710sRice doctor` in a new Terminal window
-; (RunDoctor, below). Capture's action strings are Sharex()'s real ShareX CLI switches,
-; matching this file's own 8 already-wired capture hotkeys exactly (not
-; winarchy's old Winarchy('screenshot ...') CLI pass-through, and not the 5
-; extra ShareX actions winarchy exposes that this repo never wired a hotkey
-; for) -- the exact fix the plan doc's App rules/AHK section already flagged
-; as still owed ("Capture menu items -- small consistency fix while
-; rewriting").
+; (RunDoctor, below). Capture's action strings are Sharex()'s real ShareX CLI
+; switches (ShareX's own HotkeyType names), not winarchy's old
+; Winarchy('screenshot ...') CLI pass-through. All thirteen of winarchy's
+; entries, in its order: the 09-22 rewrite kept only the eight with a hotkey
+; and dropped Repeat last region, Scrolling capture, Colour picker, Pin to
+; screen and Ruler -- back since the winarchy port audit (2026-10-01).
 CaptureItems := [
     {text: 'Region',                 hint: 'SUPER+Shift+S', action: (*) => Sharex('RectangleRegion')},
     {text: 'Active window',          hint: 'SUPER+Shift+W', action: (*) => Sharex('ActiveWindow')},
     {text: 'Full screen',            hint: 'SUPER+Shift+P', action: (*) => Sharex('PrintScreen')},
+    {text: 'Repeat last region',                            action: (*) => Sharex('LastRegion')},
+    {text: 'Scrolling capture',                             action: (*) => Sharex('ScrollingCapture')},
     {text: 'Record',                 hint: 'SUPER+Shift+V', action: (*) => Sharex('ScreenRecorder')},
     {text: 'Stop recording',         hint: 'SUPER+Ctrl+V',  action: (*) => Sharex('StopScreenRecording')},
     {text: 'Record as GIF',          hint: 'SUPER+Shift+G', action: (*) => Sharex('ScreenRecorderGIF')},
     {text: 'Text from screen (OCR)', hint: 'SUPER+Ctrl+O',  action: (*) => Sharex('OCR')},
-    {text: 'Scan QR code',           hint: 'SUPER+Ctrl+Q',  action: (*) => Sharex('QRCodeScanRegion')} ]
+    {text: 'Scan QR code',           hint: 'SUPER+Ctrl+Q',  action: (*) => Sharex('QRCodeScanRegion')},
+    {text: 'Colour picker',                                 action: (*) => Sharex('ScreenColorPicker')},
+    {text: 'Pin to screen',                                 action: (*) => Sharex('PinToScreen')},
+    {text: 'Ruler',                                         action: (*) => Sharex('Ruler')} ]
 
 TilingItems := [
     {text: 'Quick add rule...',                          action: (*) => QuickAddRule()},
@@ -1812,6 +1849,26 @@ OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710s
 
 ; The wallpaper pipeline, when wallust couldn't make a palette (PaletteFailedToast).
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.PaletteFailed', 'UInt')), (*) => SetTimer(PaletteFailedToast, -1))
+
+; The Start-menu commands ("710sRice Doctor", ... in Start Menu\Programs\710sRice -- Flow Launcher
+; finds them; tools\components\commands.ps1 makes them, from this same list's names) each run
+; config\ahk\send-command.ahk <name>, which posts '710sRice.Command.<name>' here (winarchy's
+; command palette, ported 2026-10-01; its shortcuts ran its CLI, ours ask the running 710.ahk).
+; Same door and UIPI opening as the messages above; each on a new thread.
+RiceCommands := Map(
+    'menu',              OpenMainMenu,
+    'reload-stack',      ReloadStack,
+    'doctor',            (*) => RunDoctor(),
+    'game-mode-on',      (*) => SetGameMode(true),
+    'game-mode-off',     (*) => SetGameMode(false),
+    'screenshot-region', (*) => Sharex('RectangleRegion'),
+    'screenshot-window', (*) => Sharex('ActiveWindow'),
+    'screen-recording',  (*) => Sharex('ScreenRecorder'),
+    'stop-recording',    (*) => Sharex('StopScreenRecording'),
+    'text-from-screen',  (*) => Sharex('OCR'))
+for name, fn in RiceCommands
+    OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.Command.' name, 'UInt')), RiceCommandHandler(fn))
+RiceCommandHandler(fn) => (*) => SetTimer(() => fn(), -1)
 
 ; Builds a native Menu() tree from the shared {text, action}/{text, sub}
 ; structure -- recursive so Capture/Tiling/System (all one level deep today)

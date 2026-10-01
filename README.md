@@ -337,6 +337,9 @@ Delete the folder yourself if you're done with it.
 | SUPER+X | Close the window |
 | SUPER+W | Wallpaper gallery |
 | SUPER+B / SUPER+E | Browser / File Explorer |
+| SUPER+Y / SUPER+M | YouTube / YouTube Music, each in its own browser window (SUPER+M instead of Windows' "minimize all") |
+| SUPER+O | Obsidian (a toast says so if it isn't installed) |
+| SUPER+Ctrl+D | Windows' display settings (instead of Windows' "new virtual desktop") |
 | SUPER+Shift+A | Claude desktop app |
 | SUPER+Shift+R | Reload: re-applies config and rules, restarting only what changed |
 | SUPER+Ctrl+R | Restart the whole stack (stop, then start everything); a toast before and after |
@@ -360,6 +363,10 @@ Delete the folder yourself if you're done with it.
 | SUPER+Shift+G | Record as GIF |
 | SUPER+Ctrl+O | Text from screen (OCR) |
 | SUPER+Ctrl+Q | Scan a QR code |
+
+The Capture menu (SUPER+Alt+Space > Capture) has these and five more: repeat the last region,
+a scrolling capture, the colour picker, pin to screen and the ruler. The bar's capture drawer
+has six of them as buttons (see [The bar](#the-bar)).
 
 The **Main Menu** entry at the top of the bar's home menu (the icon at the far left) opens
 the same menu as SUPER+Alt+Space. Every menu is searchable: start typing, use the arrow
