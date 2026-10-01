@@ -50,6 +50,9 @@ bars:
       bottom: 0
       right: 0
     widgets:
+      # No separator between the window title and the capture drawer: the title hides itself on
+      # the desktop (YASB ignores the desktop window), and a `lines` on each side of it then stood
+      # side by side -- "4 | |" (the Dell's final test, 2026-10-01). Widget padding spaces them.
       left:
       - home
       - lines
@@ -58,7 +61,6 @@ bars:
       - komorebi_workspaces
       - lines
       - active_window
-      - lines
       - capture-drawer
       center:
       - clock
