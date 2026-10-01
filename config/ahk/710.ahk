@@ -1023,7 +1023,8 @@ ToggleStayAwake() {
 ; -- are already never tiled by komorebi's own compiled rules (an ignore rule
 ; each; see tools/compile-komorebi-rules.ps1), regardless of whether this flag
 ; is set. This watcher exists to (a) give the tray/main menu a live ON/OFF
-; indicator and (b) re-read the games when one is first detected (Quick add /
+; indicator (GameModeText(): on while a game is focused, or the switch is on)
+; and (b) re-read the games when one is first detected (Quick add /
 ; Remove a rule re-read them straight away too). It doesn't suspend SUPER
 ; hotkeys, whatever games.toml's header says (a Group 3 item). Ported from
 ; winarchy's winarchy.ahk @ 4574fc7 --
@@ -1562,6 +1563,15 @@ TilingItems := [
 ; their CURRENT state ("Game mode . on") -- winarchy's OnOff() wording, short
 ; enough to leave room for the key hint column.
 OnOff(flag) => Chr(0xB7) ' ' (FileExist(flag) ? 'on' : 'off')
+; Game mode's "on" = the manual switch, OR a game focused right now (GameWatch's
+; GameModeActive: games.toml + your [[game]]s, or a fullscreen window). Until
+; Group 1 the menu showed the switch alone -- nothing read the detected state
+; (winarchy fed it only to its accent watcher, which this repo dropped). The
+; item still flips the switch.
+GameModeText() {
+    global GameFlag, GameModeActive
+    return 'Game mode ' Chr(0xB7) ' ' ((GameModeActive || FileExist(GameFlag)) ? 'on' : 'off')
+}
 
 ; ============================================================================
 ; Palette profiles -- SUPER+Alt+Space > Palette profiles > Choose / Create / Edit
@@ -1745,7 +1755,7 @@ MainMenuItems() {
         {text: 'Tiling',                                             sub: TilingItems},
         {text: 'Palette profiles',                                   sub: PaletteMenuItems()},
         {text: 'Keybindings',              hint: 'SUPER+K',          action: (*) => ToggleKeyOverlay()},
-        {text: 'Game mode ' OnOff(GameFlag),                         action: (*) => ToggleGameMode()},
+        {text: GameModeText(),                                       action: (*) => ToggleGameMode()},
         {text: 'Stay awake ' OnOff(AwakeFlag), hint: 'SUPER+Ctrl+W', action: (*) => ToggleStayAwake()},
         {text: 'Reload stack',             hint: 'SUPER+Shift+R',    action: (*) => ReloadStack()},
         {text: 'Doctor',                                             action: (*) => RunDoctor()},
