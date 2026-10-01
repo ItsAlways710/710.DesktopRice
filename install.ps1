@@ -259,20 +259,44 @@ $Steps['packages'] = {
                     Step-Ok "$id already installed"
                 }
             } else {
-                Step-Info "Installing $id ..."
                 $wingetArgs = @('install', '--id', $id, '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements')
                 if ($pinVersion) { $wingetArgs += @('--version', $pinVersion) }
                 $wingetArgs += $sourceArgs
-                winget @wingetArgs
-                $code = $LASTEXITCODE
+                $how = ''
+                if ($PerUserPackages -contains $id -and (Test-IsAdmin)) {
+                    # Installed for you only (Flow, into %LOCALAPPDATA%), so installed un-elevated --
+                    # the one-shot task uninstall and the upgrade step already use for it. Run from
+                    # this admin window, its own setup first re-launches itself un-elevated through
+                    # Explorer, and on the Dell that hand-off crashed (final test T7, 2026-10-01:
+                    # Flow-Launcher-Setup.exe c0000005, 0.6 s in, after two Explorer restarts --
+                    # Squirrel's Setup uses Explorer's shell-windows object without checking it got one).
+                    Step-Info "Installing $id (installed for you only -- un-elevated; a winget window shows briefly) ..."
+                    $how = ' (un-elevated)'
+                    try { $code = Invoke-WingetAsUser -Arguments ($wingetArgs + '--disable-interactivity') -TimeoutSeconds 600 }
+                    catch {
+                        Step-Warn "$($_.Exception.Message) -- installing it from this window instead"
+                        $how = ''
+                        winget @wingetArgs
+                        $code = $LASTEXITCODE
+                    }
+                } else {
+                    Step-Info "Installing $id ..."
+                    winget @wingetArgs
+                    $code = $LASTEXITCODE
+                }
                 # Restart-required and already-there are installed too (W2, winarchy c5053b9);
                 # anything else is a package that didn't install -- the run finishes every step
                 # and then says so and exits 1.
                 switch (Get-WingetOutcome $code) {
-                    'ok'      { Step-Ok "$id installed" }
-                    'restart' { Step-Warn "$id installed -- restart Windows to finish its setup" }
+                    'ok'      { Step-Ok "$id installed$how" }
+                    'restart' { Step-Warn "$id installed$how -- restart Windows to finish its setup" }
+                    'timeout' {
+                        Write-Host "  [XX] $($id): the un-elevated install was still running after 10 minutes -- 'winget list --id $id' once it's done; 710sRice doctor -repair tries again" -ForegroundColor Red
+                        $NotInstalled.Add($row.Component)
+                    }
                     default {
-                        Write-Host "  [XX] $($id): winget install exited $(Format-WingetCode $code) -- check the output above" -ForegroundColor Red
+                        $where = if ($how) { "winget ran in its own window -- 'winget install --id $id' from a normal PowerShell window shows why" } else { 'check the output above' }
+                        Write-Host "  [XX] $($id): winget install exited $(Format-WingetCode $code)$how -- $where" -ForegroundColor Red
                         $NotInstalled.Add($row.Component)
                     }
                 }

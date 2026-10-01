@@ -91,6 +91,11 @@ function Get-WingetSourceArgs {
 # $LASTEXITCODE holds for these -- so a plain -eq compares them correctly.
 $WingetNotInstalled    = 0x8A150014   # NO_APPLICATIONS_FOUND -- nothing by that ID is installed
 $WingetAdminProhibited = 0x8A15007D   # ADMIN_CONTEXT_ACTION_PROHIBITED -- see Invoke-WingetAsUser
+# Packages installed for the current user only (into %LOCALAPPDATA%): install's packages step
+# installs them un-elevated, through Invoke-WingetAsUser, when it runs elevated (final test T7,
+# 2026-10-01 -- see install.ps1). Uninstall and the upgrade step reach the same task through
+# winget's own refusal ($WingetAdminProhibited) instead.
+$PerUserPackages = @('Flow-Launcher.Flow-Launcher')
 $WingetNoPin           = 0x8A150063   # PIN_DOES_NOT_EXIST
 # Three that mean the package IS there (winarchy c5053b9 + 093cd71, Group 1 W2):
 $WingetRebootRequired  = 0x8A150109   # INSTALL_REBOOT_REQUIRED_TO_FINISH -- installed; a restart finishes its setup

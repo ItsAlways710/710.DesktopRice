@@ -100,7 +100,9 @@ Either way, the installer:
   click a window on another monitor and it opens there. On a machine where Flow has never run, install starts it
   once first (its Welcome window shows for a few seconds), then sets it up and themes it in
   the same run. Flow's own "start on system startup" setting is switched off: 710sRice starts
-  Flow itself (below), and two starts would open its window.
+  Flow itself (below), and two starts would open its window. Flow installs for you only, so
+  install runs its installer un-elevated, not from the admin window (a winget window shows
+  briefly).
 - Turns off ShareX's and Everything's own update checks (the pins and `710sRice update` bring
   updates) and keeps their icons out of the bar: Everything's tray icon is off, and ShareX's
   is hidden from the bar's tray (ShareX keeps it on: it needs it to start hidden at sign-in).
