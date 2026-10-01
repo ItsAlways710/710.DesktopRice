@@ -546,7 +546,7 @@ $Steps['profile'] = {
 }
 
 $Steps['terminal'] = {
-    # --- 8. Windows Terminal: default shell (PowerShell 7) -----------------------------------
+    # --- 8. Windows Terminal: default shell (PowerShell 7) and font (the Nerd Font) ----------
     # One-time preference, not a per-wallpaper concern -- deliberately NOT folded into
     # tools/apply-wallust-outputs.ps1 (which re-runs on every wallpaper change and would
     # silently re-clobber a manual change back to this every time). Looked up by `source`
@@ -555,7 +555,7 @@ $Steps['terminal'] = {
     # machines in practice, matching on `source` here means this doesn't silently break if
     # that assumption is ever wrong on a machine (Godzilla, eventually) this hasn't been
     # verified against yet.
-    Write-Host "`n-- Windows Terminal default shell --" -ForegroundColor Cyan
+    Write-Host "`n-- Windows Terminal default shell and font --" -ForegroundColor Cyan
     $wtSettingsCandidates = @(
         "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
         "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
@@ -583,8 +583,39 @@ $Steps['terminal'] = {
         } else {
             Step-Warn "No PowerShell 7 profile found in Windows Terminal's settings.json yet -- open Terminal once (it generates this profile the first time it sees pwsh.exe on PATH), then run ``710sRice install -Only terminal``."
         }
+        # The font, for every profile (profiles.defaults.font.face): the Nerd Font the packages
+        # step installs -- Starship's prompt, eza's icons and the rest need its glyphs. winarchy's
+        # Merge-WinarchyTerminalScheme set it next to the colour scheme; the 09-23 port carried
+        # the colours only, so until 2026-10-01 a fresh machine got the font installed and never
+        # used (the Dell only looked right because winarchy had set it there). Set on every run,
+        # like the default shell; doctor flags a font you picked yourself since, and repair
+        # leaves it. Only the face: a size or weight you set stays.
+        $face = Get-NerdFontFace
+        if (-not $face) {
+            Step-Warn "The JetBrainsMono Nerd Font isn't installed -- Windows Terminal's font left as it is (``710sRice install -Only packages``, then ``-Only terminal``)."
+        } else {
+            $wt = Get-Content $wtSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+            # The defaults, and every profile that sets its own face (a profile's own wins).
+            $faces = @(Get-TerminalFontFaces -Settings $wt)
+            # Once, before the first change (and on a machine that already had it all -- the
+            # mark doctor reads as "the terminal step has set the font here"): every face as it is.
+            Save-OriginalState -Label 'terminal-font' -Data @{ Faces = @($faces | ForEach-Object { @{ Key = $_.Key; Name = $_.Name; Face = $_.Face } }) }
+            $wrong = @($faces | Where-Object { $_.Face -cne $face })
+            if (-not $faces.Count) {
+                Step-Warn "Windows Terminal's settings.json has an old layout (no profiles.defaults) -- its font left as it is; set $face in Terminal's settings by hand."
+            } elseif (-not $wrong.Count) {
+                Step-Ok "Windows Terminal font already $face (every profile)"
+            } else {
+                foreach ($f in $wrong) { Set-TerminalFontFace -Settings $wt -Key $f.Key -Face $face }
+                $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8
+                $own = @($wrong | Where-Object Key -ne 'defaults')
+                $was = @($wrong | Where-Object Face | ForEach-Object Face | Select-Object -Unique)
+                Step-Ok ("Windows Terminal font set to $face (every profile" + $(if ($own.Count) { "; $($own.Count) that set their own font too: $(($own | ForEach-Object Name) -join ', ')" }) + ')' + $(if ($was.Count) { " -- was $($was -join ', ')" }))
+                Step-Info "A Terminal window that's open keeps its font list -- if one says $face is missing, close every Terminal window and open one again."
+            }
+        }
     } else {
-        Step-Warn 'Windows Terminal settings.json not found -- default shell not set (install/launch Windows Terminal first).'
+        Step-Warn 'Windows Terminal settings.json not found -- default shell and font not set (install/launch Windows Terminal first).'
     }
 }
 

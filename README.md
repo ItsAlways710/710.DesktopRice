@@ -88,7 +88,9 @@ Either way, the installer:
   (`komorebic.exe`), PowerShell 7 and this repo (without them, the first capture or hotkey
   of a session lags while Defender scans).
 - Hooks `config/pwsh/profile.ps1` into your PowerShell profile.
-- Sets Windows Terminal's default shell to PowerShell 7.
+- Sets Windows Terminal's default shell to PowerShell 7, and its font to the JetBrainsMono
+  Nerd Font for every profile (the prompt's icons need it), including profiles that set a
+  font of their own.
 - Sets up Flow Launcher: `app` searches apps, `f` searches files through Everything, and it
   opens with an empty search box. On a machine where Flow has never run, install starts it
   once first (its Welcome window shows for a few seconds), then sets it up and themes it in
@@ -228,7 +230,7 @@ only runs with `-Activate`).
 | `monitors` | Gives each screen its number, for komorebi (a number once given is kept; see [Screens and workspaces](#screens-and-workspaces)) |
 | `defender` | Adds the Windows Defender exclusions |
 | `profile` | Hooks the PowerShell profile in |
-| `terminal` | Makes PowerShell 7 Windows Terminal's default |
+| `terminal` | Makes PowerShell 7 Windows Terminal's default and sets its font, for every profile, to the Nerd Font |
 | `compile` | Rebuilds `komorebi.json` from the rules |
 | `tasks` | Registers the scheduled tasks, for whichever way this machine runs |
 | `windows` | The Windows settings of a full-time install (taskbar, hardening, Startup delay) |
@@ -281,7 +283,7 @@ From a PowerShell 7 window:
 
 This is a real uninstall: it stops everything, removes the Scheduled Tasks, and puts back
 what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
-colors and default shell, Flow Launcher settings (its own startup setting included) and
+colors, font and default shell, Flow Launcher settings (its own startup setting included) and
 theme, ShareX's and Everything's settings (their update checks and tray icons), taskbar,
 Windows settings, PowerShell profile and Defender exclusions are restored, not reset to
 defaults. The installer saves each one the first time it changes it.
@@ -592,6 +594,8 @@ tested", so if something odd shows up around admin windows, that's the first thi
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.
 - **Changed a wallpaper variable?** Restart the bar: `710sRice reload bar`.
+- **Terminal says JetBrainsMono NF is missing right after an install?** Terminal reads the
+  font list when it starts: close every Terminal window and open one again.
 - **Something not right?** `710sRice doctor` (or **Doctor** in the main menu, SUPER+Alt+Space)
   checks the install and names the fix for each problem it finds; `710sRice doctor -repair`
   runs those fixes for you. SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and

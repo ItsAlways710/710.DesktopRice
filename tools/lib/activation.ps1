@@ -1755,6 +1755,59 @@ function Restore-WindowsAccent {
     return $true
 }
 
+function Get-NerdFontFace {
+    <# The face name Windows Terminal should use for the JetBrainsMono Nerd Font the packages step
+       installs (DEVCOM.JetBrainsMonoNerdFont, Nerd Fonts v3: "JetBrainsMono NF"; v2 called it
+       "JetBrainsMono Nerd Font"), from the fonts Windows has registered -- $null when it isn't
+       installed. Install's terminal step and doctor's check both ask here. #>
+    $names = @(Get-InstalledFontNames)
+    if (@($names | Where-Object { $_ -match '^JetBrainsMono NF[ (]' }).Count) { return 'JetBrainsMono NF' }
+    if (@($names | Where-Object { $_ -match '^JetBrainsMono Nerd Font[ (]' }).Count) { return 'JetBrainsMono Nerd Font' }
+    $null
+}
+
+function Get-TerminalFontFaces {
+    <# Every place Windows Terminal's settings name a font face: profiles.defaults (every profile),
+       and each profile in profiles.list that sets its own -- a profile's own face wins over the
+       defaults, so those are the faces Terminal draws with. [pscustomobject] Key ('defaults', or
+       the profile's guid -- 'name:<name>' without one), Name, Face ($null: the defaults set none). #>
+    param($Settings)
+    $p = $Settings['profiles']
+    if ($p -isnot [System.Collections.IDictionary]) { return }
+    $d = $p['defaults']
+    $face = if ($d -is [System.Collections.IDictionary] -and $d['font'] -is [System.Collections.IDictionary] -and $d['font'].Contains('face')) { "$($d['font']['face'])" } else { $null }
+    [pscustomobject]@{ Key = 'defaults'; Name = 'every profile'; Face = $face }
+    foreach ($x in @($p['list'])) {
+        if ($x -isnot [System.Collections.IDictionary] -or $x['font'] -isnot [System.Collections.IDictionary] -or -not $x['font'].Contains('face')) { continue }
+        $key = if ($x['guid']) { "$($x['guid'])" } else { "name:$($x['name'])" }
+        [pscustomobject]@{ Key = $key; Name = "$($x['name'])"; Face = "$($x['font']['face'])" }
+    }
+}
+
+function Set-TerminalFontFace {
+    <# Sets (or, $Face = $null, removes) the font face at one Get-TerminalFontFaces Key in the
+       settings hashtable; a font object left empty is removed with it. Leaves size / weight alone. #>
+    param($Settings, [string]$Key, [AllowNull()][string]$Face)
+    if ($Settings['profiles'] -isnot [System.Collections.IDictionary]) { $Settings['profiles'] = @{} }
+    $p = $Settings['profiles']
+    $target = if ($Key -eq 'defaults') {
+        if ($p['defaults'] -isnot [System.Collections.IDictionary]) { $p['defaults'] = @{} }
+        $p['defaults']
+    } else {
+        @($p['list']) | Where-Object { $_ -is [System.Collections.IDictionary] -and ($(if ($Key.StartsWith('name:')) { "name:$($_['name'])" } else { "$($_['guid'])" }) -eq $Key) } | Select-Object -First 1
+    }
+    if (-not $target) { return }
+    if ($null -eq $Face -or $Face -eq '') {
+        if ($target['font'] -is [System.Collections.IDictionary]) {
+            $target['font'].Remove('face')
+            if (-not $target['font'].Count) { $target.Remove('font') }
+        }
+    } else {
+        if ($target['font'] -isnot [System.Collections.IDictionary]) { $target['font'] = @{} }
+        $target['font']['face'] = $Face
+    }
+}
+
 function Restore-WindowsTerminalSettings {
     <# Reverts both Terminal changes back to their own independent snapshots: 'terminal-
        colorscheme' (profiles.defaults.colorScheme/theme/the "wallust" themes[] entry --
@@ -1769,9 +1822,12 @@ function Restore-WindowsTerminalSettings {
        Applies whichever of the two snapshots exist (each is independently optional) to
        the CURRENT settings.json in a single read-modify-write, so anything else the person
        changed in Terminal in between (a new profile, a font tweak) survives. #>
+    # (And 'terminal-font' -- the font faces install's terminal step set since 2026-10-01: the
+    # defaults' and each profile's own -- applied the same way.)
     $colorSnap = Get-OriginalState -Label 'terminal-colorscheme'
     $profileSnap = Get-OriginalState -Label 'terminal-defaultprofile'
-    if (-not $colorSnap -and -not $profileSnap) { return $false }
+    $fontSnap = Get-OriginalState -Label 'terminal-font'
+    if (-not $colorSnap -and -not $profileSnap -and -not $fontSnap) { return $false }
 
     $wtSettingsCandidates = @(
         "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
@@ -1782,6 +1838,7 @@ function Restore-WindowsTerminalSettings {
         Step-Info 'Windows Terminal settings.json not found -- nothing to restore (already gone, or Terminal was never launched).'
         Remove-OriginalState -Label 'terminal-colorscheme'
         Remove-OriginalState -Label 'terminal-defaultprofile'
+        Remove-OriginalState -Label 'terminal-font'
         return $true
     }
     $wt = Get-Content $wtSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
@@ -1803,6 +1860,12 @@ function Restore-WindowsTerminalSettings {
         if ($profileSnap.Existed) { $wt['defaultProfile'] = $profileSnap.Value }
         elseif ($wt.ContainsKey('defaultProfile')) { $wt.Remove('defaultProfile') }
         Remove-OriginalState -Label 'terminal-defaultprofile'
+    }
+    if ($fontSnap) {
+        # Each face install changed, back as it was (the defaults' and each profile's own; a profile
+        # that's gone since is skipped). Faces you set after install on other profiles stay.
+        foreach ($f in @($fontSnap.Faces)) { Set-TerminalFontFace -Settings $wt -Key "$($f.Key)" -Face $f.Face }
+        Remove-OriginalState -Label 'terminal-font'
     }
 
     $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8

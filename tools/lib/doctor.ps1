@@ -1117,6 +1117,22 @@ function Test-DoctorTerminal {
     } else {
         New-DoctorResult -Id 'terminal-default' -Status '!!' -Text 'Windows Terminal opens something other than PowerShell 7' -Fix '710sRice install -Only terminal' -Step 'terminal'
     }
+    # The font (every profile's, profiles.defaults.font.face): the Nerd Font, for the prompt's
+    # icons. Never set by 710sRice here yet (no 'terminal-font' snapshot) = [XX], so repair and
+    # update bring existing installs along; set, then changed by you since = [!!], left alone.
+    $face = Get-NerdFontFace
+    if ($face) {
+        # The defaults, and every profile that sets its own face (a profile's own wins).
+        $wrong = @(Get-TerminalFontFaces -Settings $wt | Where-Object { $_.Face -cne $face })
+        $which = ($wrong | ForEach-Object { "$($_.Name): $(if ($_.Face) { $_.Face } else { "Terminal's default" })" }) -join '; '
+        if (-not $wrong.Count) {
+            New-DoctorResult -Id 'terminal-font' -Status 'OK' -Text "Windows Terminal uses the Nerd Font ($face)"
+        } elseif (-not (Get-OriginalState -Label 'terminal-font')) {
+            New-DoctorResult -Id 'terminal-font' -Status 'XX' -Text "Windows Terminal doesn't use the Nerd Font -- the prompt's icons show as boxes" -Detail $which -Fix '710sRice install -Only terminal' -Step 'terminal'
+        } else {
+            New-DoctorResult -Id 'terminal-font' -Status '!!' -Text "Windows Terminal's font changed since 710sRice set $face -- your call; the prompt's icons need $face" -Detail $which -Fix '710sRice install -Only terminal'
+        }
+    }
 }
 
 function Test-DoctorProfileHook {
