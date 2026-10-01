@@ -14,9 +14,13 @@ uninstall is allowed to remove. If you add or reorder columns, update that parse
 Columns:
 - **Component** — human name.
 - **Version** — the pin: `install.ps1` installs exactly that version and (for winget rows)
-  winget-pins it. `latest` = installed unpinned, and it takes its own updates.
+  winget-pins it, and an installed copy that's older than its pin is moved up to it by a plain
+  install too (never down: a newer one is left alone, and doctor says so). `latest` = installed
+  unpinned, and it takes its own updates. A row that doesn't install fails the run: install
+  finishes every step, lists what's missing and exits 1 — the same rows doctor calls `[XX]`.
 - **Source** — `winget`, `msstore` (winget, from the Microsoft Store source), `psgallery`, or
-  `github-release`.
+  `github-release`. Every winget call names its source (`--source winget` / `--source
+  msstore`), so a broken Microsoft Store source can't fail the `winget` rows.
 - **Install ID** — the winget package ID / PSGallery module name / GitHub-or-Codeberg repo
   slug `install.ps1` actually uses. This is the identity `uninstall.ps1` matches against.
 - **Pre-existing?** — exactly one of three values (see the note below):

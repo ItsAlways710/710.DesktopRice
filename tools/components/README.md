@@ -23,12 +23,41 @@ from `tools\lib\activation.ps1` and `tools\lib\packages.ps1` are in scope, and d
 (`New-DoctorResult`, ...) for `Check`.
 
 The loader checks every file when it reads it. A broken one throws and names the file: a
-field it doesn't know, a missing `Label` or `After`, an `After` that names no step, `Id` not
-the file's name. Nothing is skipped quietly, because an install that silently lost a step
-would be worse than one that stops.
+field it doesn't know (a typo'd `Instal` would otherwise vanish), a missing `Label` or `After`,
+an `After` that names no step, `After`s that go round in a circle, `Id` not the file's name or
+not lower-case letters / digits / dashes, an `Id` that is one of install's own steps, a `Group`
+that isn't one of doctor's. Nothing is skipped quietly, because an install that silently lost a
+step would be worse than one that stops: install and uninstall stop before their first change
+(`[XX] <file and what's wrong> -- nothing was changed.`), and doctor reports it as its own `[XX]`
+and runs every other check.
 
-The worked example is `flow.ps1` (Flow Launcher): every field but `NamedOnly`, a first start through
-`Start-AsUser`, snapshots, and its own task.
+Once loaded, a component that fails is reported and the rest go on: an `Install` that throws is
+its own `[XX]` line (the run finishes), an `Uninstall` that throws is reported and the other
+components still revert, a `Check` that throws is "couldn't check".
+
+## The three today
+
+| File | Runs after | What it owns |
+|---|---|---|
+| `flow.ps1` | `wallust` (so `theme` themes a Flow set up in the same run) | Flow Launcher: its first start on a new machine, its settings, its own startup turned off, its sign-in task, doctor's Flow lines |
+| `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), doctor's "running" line |
+| `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), doctor's ShareX lines |
+
+The worked example is `flow.ps1`: every field but `NamedOnly`, a first start through
+`Start-AsUser`, snapshots, and its own task. `everything.ps1` / `sharex.ps1` are the smaller
+pattern: settings an app keeps in its own file, set once, with doctor's split between
+`[XX] not set up by 710sRice yet` (no snapshot yet: the step has never run here, so `710sRice
+update`'s repair runs it) and `[!!]` for a value you changed back yourself since (shown, never
+overridden by repair).
+
+## Adding one
+
+1. Copy the smallest of the three that's like your app; rename it `<id>.ps1` and set `Id`,
+   `Label` and `After`.
+2. `710sRice install -?` lists its step where you expect it; `710sRice install -Only <id>` runs
+   it; `710sRice doctor` shows its checks in their group; `710sRice uninstall -DryRun` lists its
+   revert.
+3. Nothing else changes: install, uninstall, doctor, repair and the sign-in tasks find it.
 
 ## The rules
 

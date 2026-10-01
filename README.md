@@ -31,37 +31,6 @@ This repo is [MIT](LICENSE). The tools it installs keep their own licenses, and 
 matters: **komorebi is free for personal use only**. Using it for work needs a commercial
 license from its author. See [komorebi's licensing page](https://komorebi.lgug2z.com/about/licensing/).
 
-## Before you start: the weather widget
-
-The bar's weather widget needs a free API key from [weatherapi.com](https://www.weatherapi.com/)
-(sign up, then copy the key from your dashboard). YASB's
-[weather widget page](https://github.com/amnweb/yasb/wiki/(Widget)-Weather) has the details.
-
-You don't have to set anything up ahead of time. The installer asks for two values:
-
-- `YASB_WEATHER_API_KEY` — your weatherapi.com key
-- `YASB_WEATHER_LOCATION` — a zip/postal code or city name
-
-It only asks for the ones that aren't set yet, never prints what's stored, and Enter skips.
-Skip them and the widget shows an error until they're set; run `710sRice install -Only weather`
-or set them yourself:
-
-```powershell
-setx YASB_WEATHER_API_KEY "your-key"
-setx YASB_WEATHER_LOCATION "your zip or city"
-```
-
-They're stored as your own Windows user variables, never in the repo, and uninstall leaves
-them alone. If you set or change them after the bar is already running, restart the bar to
-pick them up (a running program never sees a new `setx` value):
-
-```powershell
-710sRice reload bar
-```
-
-The widget shows **°F**. For °C, open `config/yasb/config.yaml`, find the `weather:` widget
-and change `units: "imperial"` to `units: "metric"`.
-
 ## Requirements
 
 - Windows 11
@@ -99,14 +68,20 @@ The first install runs from a normal PowerShell 7 window in the repo folder, as
 for it. After that, `710sRice` works in any PowerShell 7 window, the one you started from
 included, and once the stack is running SUPER+Enter opens one.
 
+One thing to do once the bar is up: click the weather widget and pick your city (see
+[The bar](#the-bar)). There's no account or key to set up.
+
 ### What install always does
 
 Either way, the installer:
 
 - Installs the packages with winget. komorebi, YASB, AutoHotkey, Flow Launcher and
   Everything are **pinned** to tested versions so a `winget upgrade --all` can't move them
-  out from under the config; the rest take whatever is current. [versions.md](versions.md)
-  lists every package, its version and where it comes from.
+  out from under the config; the rest take whatever is current. A pinned package that's
+  older than its pin is moved up to it (never down). [versions.md](versions.md) lists every
+  package, its version and where it comes from. If a package doesn't install, the run still
+  finishes every step, then lists what's missing and exits with an error;
+  `710sRice doctor -repair` tries again.
 - Installs wallust (a checksum-verified release download; there's no winget package).
 - Points komorebi and YASB at this repo's config folders.
 - Adds Windows Defender exclusions for ShareX, Everything, komorebi's command-line tool
@@ -115,7 +90,13 @@ Either way, the installer:
 - Hooks `config/pwsh/profile.ps1` into your PowerShell profile.
 - Sets Windows Terminal's default shell to PowerShell 7.
 - Sets up Flow Launcher: `app` searches apps, `f` searches files through Everything, and it
-  opens with an empty search box.
+  opens with an empty search box. On a machine where Flow has never run, install starts it
+  once first (its Welcome window shows for a few seconds), then sets it up and themes it in
+  the same run. Flow's own "start on system startup" setting is switched off: 710sRice starts
+  Flow itself (below), and two starts would open its window.
+- Turns off ShareX's and Everything's own update checks (the pins and `710sRice update` bring
+  updates) and keeps their icons out of the bar: Everything's tray icon is off, and ShareX's
+  is hidden from the bar's tray (ShareX keeps it on: it needs it to start hidden at sign-in).
 - Sets the default wallpaper and themes everything from it.
 - Removes the desktop shortcuts the installers drop (Flow Launcher and ShareX add one; ones
   you already had are left alone).
@@ -135,8 +116,9 @@ From a PowerShell 7 window in the repo folder:
 
 On top of the above, this:
 
-- Starts komorebi, YASB, AutoHotkey and ShareX at every sign-in, through Scheduled Tasks.
-  Only komorebi's runs elevated (unless you opted out); the rest run as you.
+- Starts komorebi, YASB, AutoHotkey, ShareX and Flow Launcher at every sign-in, through
+  Scheduled Tasks. Only komorebi's runs elevated (unless you opted out); the rest run as you.
+  Flow starts hidden, and the first SUPER+Space after sign-in opens it.
 - Sets the Windows taskbar to auto-hide (the bar replaces it).
 - Turns off, for your user only: Bing results and ad suggestions in Start search, the
   Copilot, Widgets and Task View taskbar buttons, Start menu recommendations and account
@@ -174,8 +156,8 @@ the way sign-in would (komorebi elevated, with no UAC prompt). See
 It pulls the newest version from GitHub, then runs `710sRice doctor -repair` from it (one UAC
 prompt). Repair keeps your wallpaper and theme: it moves pinned packages up to a new pin in
 [versions.md](versions.md) (closing each app first and starting it again afterwards), and
-picks up changed rules, launchers, the profile hook, Flow's settings, the bar's config,
-`710.ahk` and the theme templates. Update won't pull over your own edits to tracked files
+picks up changed rules, launchers, the profile hook, Flow's, ShareX's and Everything's
+settings, the bar's config, `710.ahk` and the theme templates. Update won't pull over your own edits to tracked files
 (those belong in `user.ahk`, `rules.local.toml` or `user.ps1` -- see
 [Make it yours](#make-it-yours)), and if your copy and GitHub have both moved, it tells you
 what to run instead. Nothing new? It says so and runs a health check.
@@ -190,8 +172,9 @@ Re-running the installer (`710sRice install`) is always safe too. A plain re-run
 whatever you had: a full-time (`-Activate`) machine stays full-time, and your
 elevated-tiling choice is remembered. It installs what's missing, re-registers the sign-in
 tasks, and recompiles the rules. One thing to know: **every run applies the default
-wallpaper and theme again**, so pick yours with SUPER+W afterwards. It never moves a package
-that's already installed; `710sRice install -Only upgrade` does that for a new pin.
+wallpaper and theme again**, so pick yours with SUPER+W afterwards. A pinned package that's
+older than its pin is moved up to it (closing the app first and starting it again
+afterwards); one that's newer than its pin, and every unpinned one, is left alone.
 
 `710sRice install -SkipPackages` skips the winget step and redoes everything else (config,
 theme, Flow setup), which is quicker when only the repo changed.
@@ -232,22 +215,27 @@ only runs with `-Activate`).
 
 | Step | What it does |
 | --- | --- |
-| `packages` | Installs what's missing from [versions.md](versions.md), pinned ones at their pin |
-| `upgrade` | Moves a pinned package that's older than its pin up to it |
-| `envvars` | Points komorebi and YASB at this repo's config |
-| `weather` | Asks for the weather key and location, if they aren't set |
+| `packages` | Installs what's missing from [versions.md](versions.md), pinned ones at their pin, and moves a pinned one that's older than its pin up to it |
+| `upgrade` | Moves a pinned package that's older than its pin up to it (and nothing else) |
+| `envvars` | Points komorebi and YASB at this repo's config (and removes the old weather variables, if a past install set them) |
 | `path` | Puts the `710sRice` command on your PATH |
 | `wallust` | Installs wallust at its pinned version |
+| `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran), switches its own startup off and registers its task |
+| `everything` | Turns Everything's tray icon and update check off |
+| `sharex` | Turns ShareX's update check off (and its tray icon on, which its hidden start needs) |
 | `theme` | Sets the default wallpaper and themes everything from it |
 | `palette` | Re-themes everything from the wallpaper you have now, with the palette profile in use (no wallpaper change) |
-| `monitors` | Records which monitor is which, for komorebi |
+| `monitors` | Gives each screen its number, for komorebi (a number once given is kept; see [Screens and workspaces](#screens-and-workspaces)) |
 | `defender` | Adds the Windows Defender exclusions |
 | `profile` | Hooks the PowerShell profile in |
 | `terminal` | Makes PowerShell 7 Windows Terminal's default |
-| `flow` | Sets up Flow Launcher |
 | `compile` | Rebuilds `komorebi.json` from the rules |
 | `tasks` | Registers the scheduled tasks, for whichever way this machine runs |
 | `windows` | The Windows settings of a full-time install (taskbar, hardening, Startup delay) |
+
+`flow`, `everything` and `sharex` are components: each app's install, uninstall and doctor
+code lives in one file in `tools/components/`, and a new file there becomes a step of its own
+([its README](tools/components/README.md) explains how).
 
 `-Only` runs just the steps you name, in that same order, and leaves the machine running the
 way it already does (full-time or on demand). It doesn't take any other switch. For example:
@@ -270,8 +258,9 @@ From a PowerShell 7 window:
 ```
 
 Everything starts through its own Scheduled Task, so it doesn't matter which window you run
-it from: komorebi starts elevated (unless you switched that off), and YASB, AutoHotkey and
-ShareX start as you. It checks what came up and says so.
+it from: komorebi starts elevated (unless you switched that off), and YASB, AutoHotkey,
+ShareX and Flow Launcher (if it isn't running already) start as you. It checks what came up
+and says so.
 
 To stop, use `710sRice stop` or **Quit 710sRice** in the tray icon's menu. Flow Launcher and
 Everything keep running either way; they're ordinary apps you can use on their own.
@@ -292,28 +281,37 @@ From a PowerShell 7 window:
 
 This is a real uninstall: it stops everything, removes the Scheduled Tasks, and puts back
 what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
-colors and default shell, Flow Launcher settings and theme, taskbar, Windows settings,
-PowerShell profile and Defender exclusions are restored, not reset to defaults. The installer saves
-each one the first time it changes it.
+colors and default shell, Flow Launcher settings (its own startup setting included) and
+theme, ShareX's and Everything's settings (their update checks and tray icons), taskbar,
+Windows settings, PowerShell profile and Defender exclusions are restored, not reset to
+defaults. The installer saves each one the first time it changes it.
 
-Packages: anything the installer added is removed, except rows marked **Pre-existing? yes**
-in [versions.md](versions.md) (common tools you may well have had already, like Windows
-Terminal and Everything).
+Packages: anything the installer added is removed, except two kinds of row in
+[versions.md](versions.md):
+
+- **Pre-existing? yes**: common tools you may well have had already, like Everything and
+  the Nerd Font. Kept, unless you pass `-Force`.
+- **Pre-existing? system**: PowerShell 7 (the uninstall itself runs on it) and Windows
+  Terminal (part of Windows 11). Never removed, `-Force` included; uninstall says so, and
+  you can remove them yourself in Settings > Apps > Installed apps.
+
+Two switches change what goes:
 
 - `-Keep <Install ID>` keeps a package that would otherwise be removed, e.g.
   `710sRice uninstall -Keep ShareX.ShareX`. Several at once:
   `-Keep ShareX.ShareX,Flow-Launcher.Flow-Launcher`.
-- `-Force` removes the Pre-existing rows too.
+- `-Force` removes the `yes` rows too.
 
 It forgets your elevated-tiling choice and which palette profile is in use, so a later
 install starts from the defaults again. Your palette profiles themselves stay in
 `config/palettes` (it tells you how many).
 It also takes the `710sRice` command off your PATH; `.\710sRice.ps1` in the repo folder still
 works, for a reinstall.
-It doesn't delete the repo folder, your weather variables, or your personal files
-(`user.ahk`, `user.ps1`, `rules.local.toml`, `config/windows.toml`, your palette profiles and
-scheme files). Delete the folder
-yourself if you're done with it.
+It removes the weather variables an older install set (`YASB_WEATHER_API_KEY`,
+`YASB_WEATHER_LOCATION`), if they're still there.
+It doesn't delete the repo folder or your personal files (`user.ahk`, `user.ps1`,
+`rules.local.toml` with your rules, games and pins, your palette profiles and scheme files).
+Delete the folder yourself if you're done with it.
 
 ## Hotkeys
 
@@ -323,7 +321,7 @@ yourself if you're done with it.
 | --- | --- |
 | SUPER+Enter | Windows Terminal (opens on the monitor under the mouse) |
 | SUPER+Alt+Enter | Windows Terminal **as administrator** (UAC prompt; same monitor placement) |
-| SUPER+Space | Flow Launcher |
+| SUPER+Space | Flow Launcher (one press, even when Flow isn't running yet: it's started and shown) |
 | SUPER+Ctrl+Space | Flow, apps only |
 | SUPER+S | Flow, file search |
 | SUPER+Alt+Space | Main menu: apps, capture, tiling, palette profiles, game mode, reload, quit |
@@ -338,8 +336,8 @@ yourself if you're done with it.
 | SUPER+Arrows | Move focus |
 | SUPER+Shift+Arrows | Move the window |
 | SUPER+Alt+Arrows | Stack the window with its neighbor (tabs show on the stack); SUPER+Alt+, / SUPER+Alt+. switch tabs, SUPER+Alt+U unstacks |
-| SUPER+1…9 | Go to workspace 1–9 |
-| SUPER+Shift+1…9 | Move the window to workspace 1–9 |
+| SUPER+1…9 | Go to workspace 1–9 of the screen you're on (every screen has nine) |
+| SUPER+Shift+1…9 | Move the window to workspace 1–9 of its screen |
 | SUPER+F / SUPER+T | Monocle (fill the screen) / float or tile the window |
 | SUPER+Ctrl+T / SUPER+P | Retile / pause tiling |
 | SUPER+, / SUPER+. | Focus the previous / next monitor |
@@ -360,6 +358,30 @@ The **Main Menu** entry at the top of the bar's home menu (the icon at the far l
 the same menu as SUPER+Alt+Space. Every menu is searchable: start typing, use the arrow
 keys, Esc to go back.
 
+## Screens and workspaces
+
+Up to four screens, each with workspaces 1–9. Workspace 1 of the first screen uses
+komorebi's Scrolling layout (Columns while more than one screen is connected); the others
+use BSP.
+
+Each screen gets a number the first time 710sRice sees it, and keeps it: a screen you plug
+in later takes the next free number, and one you unplug keeps its own for when it's back.
+That's what a [pin](#adding-a-rule) means by "screen 2". (Identical screens that report the
+same serial number are told apart by how they're connected.) A fifth screen gets no number
+and runs on komorebi's defaults (a single workspace); `710sRice doctor` mentions it.
+
+## The bar
+
+- **Workspaces:** each screen's bar shows the workspace it's on and the ones with windows in
+  them; empty ones appear while you're on them.
+- **Weather:** click the widget, type your city (two letters are enough to start), and pick
+  it. That's once, for every screen's bar; click the city name on the weather card to pick
+  another. It uses [Open-Meteo](https://open-meteo.com/): no account, no key. It shows
+  **°F**; for °C, open `config/yasb/config.yaml`, find the `weather:` widget and change
+  `units: "imperial"` to `units: "metric"`.
+- **Tray:** ShareX's icon is hidden here and Everything has none (see
+  [What install always does](#what-install-always-does)).
+
 ## Make it yours
 
 These files are yours alone. Git ignores them, so neither `710sRice update` nor `git pull` touches them:
@@ -368,8 +390,8 @@ These files are yours alone. Git ignores them, so neither `710sRice update` nor 
   SUPER+K lists its hotkeys too. Reload with SUPER+Shift+R.
 - `config/pwsh/user.ps1` — your own PowerShell profile additions, loaded last by
   `config/pwsh/profile.ps1`. Open a new terminal to pick up changes.
-- `config/komorebi/rules.local.toml` — your own app rules. Quick add rule writes it for you;
-  see [App rules](#app-rules).
+- `config/komorebi/rules.local.toml` — your own app rules, games and pins. Quick add rule
+  writes it for you; see [App rules](#app-rules).
 - `config/palettes/profile0.json` … `profile9.json` — your palette profiles (the editor
   writes them; see [Palette profiles](#palette-profiles)), and any scheme files you put in
   `config/palettes/schemes`.
@@ -467,16 +489,18 @@ Rules decide which windows komorebi tiles, floats or leaves alone. They come in 
 layers, lowest to highest priority, and SUPER+Shift+R compiles them into komorebi's config:
 
 1. The community rules in `vendor/asc` (a pinned copy, updated deliberately).
-2. `games.toml`: game launchers and games, so they're never tiled. Game mode (in the main
-   menu) shows when one is running.
+2. `games.toml`: the game launchers and games this repo knows, so they're never tiled. Game
+   mode (in the main menu) shows while one is focused. Add your own with Quick add's Game
+   (below); they go in your file, layer 4.
 3. `config/komorebi/rules.toml`: the rules this repo ships, tracked in git. Currently two:
    WinUI 3 apps (the new Photos app and others) stay opaque when unfocused, because
    komorebi's transparency stops them taking clicks (transparency is off by default;
    SUPER+Shift+D turns it on); and the Claude desktop app is tiled
    (see [Tips and known issues](#tips-and-known-issues)).
 4. `config/komorebi/rules.local.toml`: **your** rules, for this machine only (git ignores
-   it). They win over everything above. Want one on every machine? Move it into
-   `rules.toml` and commit it.
+   it), your games and your pins included. They win over everything above. Want a rule on
+   every machine? Move it into `rules.toml` (a game into `games.toml`) and commit it. Pins
+   stay here: they name this machine's screens.
 
 One limit: for the "extra behavior" rule types (Layered, Opaque and a few others), every
 layer's rules are added together, so your file can add them but can't cancel a shipped
@@ -494,17 +518,35 @@ one. Edit `rules.toml` for that.
 | Manage (force tile) | Tiles a window komorebi would normally skip | Right away |
 | Layered (tile an app komorebi skips) | For apps whose windows komorebi turns away because of how they're drawn, like the Claude desktop app | New windows: **relaunch the app** |
 | Opaque (never translucent) | Keeps it solid when unfocused, for apps that stop taking clicks when translucent. Only matters with transparency on (off by default; SUPER+Shift+D) | The next time you click it |
+| Game (never tile · game mode) | A game of your own: never tiled, and Game mode shows while it's focused | Right away |
+| Pin to this workspace | The app's windows open on the screen and workspace the window you picked is on now | Windows that open from now on |
 
-If the window you picked looks like a Layered case (komorebi isn't managing it and it has
-the telltale window style), Layered moves to the top, marked **suggested**. Rules for
-windows running as administrator work too.
+Game and Pin are offered when you match on the program (exe). If the window you picked
+looks like a Layered case (komorebi isn't managing it and it has the telltale window
+style), Layered moves to the top, marked **suggested**. Rules for windows running as
+administrator work too.
+
+About pins:
+
+- **One pin per app.** Pinning it again from somewhere else moves the pin there.
+- **Where it opens, not where it stays.** A pinned window opens on its workspace, and you can
+  move it anywhere after that. A window that's already open when you pin stays where it is.
+  When komorebi restarts (`710sRice restart`, SUPER+Ctrl+R, or a rule removed), an open
+  pinned window goes back to its workspace once.
+- **Not for every window.** Quick add says why it won't pin: a window komorebi doesn't
+  manage, Windows Terminal or File Explorer (one program runs every window of theirs, so all
+  of them would follow), a game, or a screen without a number yet (`710sRice doctor` says
+  how to fix that).
+- Menus show a pin as `chrome.exe → screen 2, workspace 3`. In `rules.local.toml` it's a
+  `[[pin]]` block with `exe = "chrome.exe"`, `screen = 2` and `workspace = 3`; a game is a
+  `[[game]]` block with its `exe`.
 
 ### Removing and editing rules
 
-- **Tiling → Remove a rule...** lists your rules; pick one and confirm. komorebi restarts to
-  drop it. Windows that were already open keep the state komorebi remembered for them (a
-  window you un-floated stays floating, for example) until you press **SUPER+T** on it or
-  relaunch the app.
+- **Tiling → Remove a rule...** lists your rules, games and pins; pick one and confirm.
+  komorebi restarts to drop a rule or a game. Windows that were already open keep the state
+  komorebi remembered for them (a window you un-floated stays floating, for example) until you
+  press **SUPER+T** on it or relaunch the app. A pin goes without a restart.
 - **Tiling → Edit my rules...** opens `rules.local.toml` in whatever opens `.toml` files, or
   Notepad. Save, then SUPER+Shift+R to apply.
 
@@ -549,7 +591,7 @@ tested", so if something odd shows up around admin windows, that's the first thi
   `710sRice restart` always do.
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.
-- **Changed a weather or wallpaper variable?** Restart the bar: `710sRice reload bar`.
+- **Changed a wallpaper variable?** Restart the bar: `710sRice reload bar`.
 - **Something not right?** `710sRice doctor` (or **Doctor** in the main menu, SUPER+Alt+Space)
   checks the install and names the fix for each problem it finds; `710sRice doctor -repair`
   runs those fixes for you. SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and
@@ -557,19 +599,8 @@ tested", so if something odd shows up around admin windows, that's the first thi
 
 ## Future plans
 
-Next up, being planned now:
+Ideas waiting their turn:
 
-- **Weather with no API key.** Switch the weather widget to Open-Meteo, so there's no key
-  to sign up for.
-- **Flow Launcher ready from the first install,** set up on a fresh machine without a second
-  install run, and starting with Windows.
-- **Add or remove a game for game mode** without editing the tracked `games.toml`.
-- **Pin an app to a workspace.** A Quick add action that makes an app open on the monitor
-  and workspace you pick, using komorebi's own workspace rules -- no extra background
-  process. By default you can still move it afterwards; optionally lock it there. Saved in
-  your machine-local `rules.local.toml`.
-- **Quieter ShareX and Everything:** no update checks or tray icons of their own.
-- **Sturdier install and uninstall:** package installs that don't depend on the Microsoft
-  Store working, a failed package install reported as a failure, and a few edge cases
-  (a clone folder with an apostrophe in its path, uninstalling from a window opened before
-  the install).
+- **Game mode that pauses the SUPER hotkeys** while a game is focused. Today game mode is
+  an indicator: it shows, and games are never tiled.
+- **Turn off a shipped rule or game** for this machine only, from the rules menu.
