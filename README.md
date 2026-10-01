@@ -84,6 +84,9 @@ Either way, the installer:
   `710sRice doctor -repair` tries again.
 - Installs wallust (a checksum-verified release download; there's no winget package).
 - Points komorebi and YASB at this repo's config folders.
+- Adds ten 710sRice commands to the Start menu (a 710sRice folder: Menu, Reload stack, Doctor,
+  Game mode on / off, Screenshot region / window, Screen recording, Stop recording, Text from
+  screen). Flow Launcher finds them: type `710sRice`. Each asks the running 710sRice to do it.
 - Adds Windows Defender exclusions for ShareX, Everything, komorebi's command-line tool
   (`komorebic.exe`), PowerShell 7 and this repo (without them, the first capture or hotkey
   of a session lags while Defender scans).
@@ -225,6 +228,7 @@ only runs with `-Activate`).
 | `upgrade` | Moves a pinned package that's older than its pin up to it (and nothing else) |
 | `envvars` | Points komorebi and YASB at this repo's config (and removes the old weather variables, if a past install set them) |
 | `bluetooth` | Tells the bar whether this machine has a Bluetooth adapter (no adapter: no Bluetooth icon) |
+| `commands` | Adds the 710sRice commands to the Start menu, for Flow Launcher |
 | `path` | Puts the `710sRice` command on your PATH |
 | `wallust` | Installs wallust at its pinned version |
 | `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran): keywords, fonts, fullscreen; switches its own startup off and registers its task |
@@ -240,7 +244,7 @@ only runs with `-Activate`).
 | `tasks` | Registers the scheduled tasks, for whichever way this machine runs |
 | `windows` | The Windows settings of a full-time install (taskbar, hardening, Startup delay) |
 
-`bluetooth`, `flow`, `everything` and `sharex` are components: each app's install, uninstall and doctor
+`bluetooth`, `commands`, `flow`, `everything` and `sharex` are components: each app's install, uninstall and doctor
 code lives in one file in `tools/components/`, and a new file there becomes a step of its own
 ([its README](tools/components/README.md) explains how).
 
@@ -286,8 +290,8 @@ From a PowerShell 7 window:
 710sRice uninstall
 ```
 
-This is a real uninstall: it stops everything, removes the Scheduled Tasks, and puts back
-what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
+This is a real uninstall: it stops everything, removes the Scheduled Tasks and the Start-menu
+commands, and puts back what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
 colors, font and default shell, Flow Launcher settings (its own startup setting and fonts included) and
 theme, ShareX's and Everything's settings (their update checks and tray icons), taskbar,
 Windows settings, PowerShell profile and Defender exclusions are restored, not reset to
