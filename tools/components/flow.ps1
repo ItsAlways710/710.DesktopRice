@@ -27,6 +27,13 @@
 #     off and DontPromptUpdateMsg on (Flow is version-pinned).
 #   - LastQueryMode = Empty: Flow always opens blank (its default reopened with 'f ' / 'app '
 #     still in the box after a scoped search).
+#   - Fonts (winarchy's Set-WinarchyFlowTheme, ported 2026-10-01): QueryBoxFont, ResultFont and
+#     ResultSubFont = the JetBrainsMono Nerd Font (Get-NerdFontFace -- "JetBrainsMono NF", or the v2
+#     name); not installed = left as they are, said so. Style / weight / stretch are left alone.
+#   - IgnoreHotkeysOnFullscreen = true (winarchy's too): Flow ignores its hotkey -- so SUPER+Space,
+#     SUPER+S and SUPER+Ctrl+Space, which send it -- while the FOCUSED window is fullscreen (Flow
+#     2.1.3 MainViewModel.ShouldIgnoreHotkeys: the foreground window exactly covers its monitor).
+#     Focus a window on another screen and Flow opens there.
 #   - StartFlowLauncherOnSystemStartup / UseLogonTaskForStartup off, and \Flow.Launcher Startup
 #     (or the HKCU Run value Flow.Launcher it uses instead) deleted: our task replaces them.
 #   - The legacy standalone Everything plugin (ID D2D2C23B...) this repo once installed is
@@ -48,8 +55,13 @@
 # Snapshots (uninstall puts back exactly what was there), each taken once, before the first change
 # it covers: flow-settings (Program keywords + identity), flow-explorer-settings (Explorer keywords
 # + its three file-search fields), flow-querymode (LastQueryMode), flow-startup (Flow's two
-# startup settings). The first three kept their names from tools\setup-flow-launcher.ps1, whose
-# body this is, so snapshots an existing install already has stay valid.
+# startup settings), flow-fonts (the three fonts), flow-fullscreen (IgnoreHotkeysOnFullscreen).
+# The first three kept their names from tools\setup-flow-launcher.ps1, whose body this is, so
+# snapshots an existing install already has stay valid; an existing install takes the two new ones
+# the next time the step changes something (each label is saved once, on its own).
+# Doctor: the fonts and the fullscreen setting never set by 710sRice here (no snapshot) = [XX], so
+# repair and update bring existing installs along; set, then changed by you since = [!!], left alone
+# (like Terminal's font). A later run of the step sets them again, as it does every other setting.
 @{
     Id    = 'flow'
     Label = 'Flow Launcher'
@@ -129,7 +141,7 @@
             $explorer = Read-FlowJson $Paths.Explorer
             $r = [pscustomobject]@{
                 Settings = $settings; Explorer = $explorer; SettingsChanged = $false; ExplorerChanged = $false
-                LegacyDirs = @(); OwnTask = $false; OwnRunValue = $false
+                LegacyDirs = @(); OwnTask = $false; OwnRunValue = $false; Face = $null; FontsWrong = @(); FullscreenOff = $false; Notes = [System.Collections.Generic.List[string]]::new()
                 Findings = [System.Collections.Generic.List[object]]::new(); Todo = [System.Collections.Generic.List[string]]::new()
             }
             $find = { param([string]$Item, [string]$Kind = 'functional') $r.Findings.Add([pscustomobject]@{ Item = $Item; Kind = $Kind }) }
@@ -204,6 +216,29 @@
                 $r.Todo.Add('query box opens empty')
             }
 
+            # Fonts: the query box, results and result details in the Nerd Font.
+            $r.Face = Get-NerdFontFace
+            if ($r.Face) {
+                $r.FontsWrong = @('QueryBoxFont', 'ResultFont', 'ResultSubFont' | Where-Object { "$($settings[$_])" -cne $r.Face })
+                if ($r.FontsWrong.Count) {
+                    & $find "fonts aren't the Nerd Font ($($r.FontsWrong -join ', '))" 'font'
+                    foreach ($k in $r.FontsWrong) { $settings[$k] = $r.Face }
+                    $r.SettingsChanged = $true
+                    $r.Todo.Add("fonts $($r.Face)")
+                }
+            } else {
+                $r.Notes.Add("the JetBrainsMono Nerd Font isn't installed -- Flow's fonts left as they are")
+            }
+
+            # Its hotkey is ignored while the focused window is fullscreen.
+            if ($settings['IgnoreHotkeysOnFullscreen'] -ne $true) {
+                $r.FullscreenOff = $true
+                & $find 'opens over fullscreen windows' 'fullscreen'
+                $settings['IgnoreHotkeysOnFullscreen'] = $true
+                $r.SettingsChanged = $true
+                $r.Todo.Add('its hotkey ignored over fullscreen windows')
+            }
+
             # Flow's own sign-in start: off -- our task starts it (#4).
             $startup = $false
             foreach ($k in 'StartFlowLauncherOnSystemStartup', 'UseLogonTaskForStartup') {
@@ -220,8 +255,9 @@
 
         function Save-FlowSnapshots {
             # Each once, before the first change it covers (see the file's header), from the files
-            # as they are now.
-            param($Paths)
+            # as they are now. The fonts and the fullscreen setting only when this run changes them
+            # -- doctor reads those two snapshots as "710sRice set it here".
+            param($Paths, $Setup)
             $settings = Read-FlowJson $Paths.Settings
             $explorer = Read-FlowJson $Paths.Explorer
             $plugins  = if ($settings['PluginSettings']) { $settings['PluginSettings']['Plugins'] }
@@ -256,16 +292,24 @@
                 StartFlowLauncherOnSystemStartup = Get-FlowField $settings 'StartFlowLauncherOnSystemStartup'
                 UseLogonTaskForStartup           = Get-FlowField $settings 'UseLogonTaskForStartup'
             }
+            if ($Setup.FontsWrong.Count) {
+                Save-OriginalState -Label 'flow-fonts' -Data @{
+                    QueryBoxFont  = Get-FlowField $settings 'QueryBoxFont'
+                    ResultFont    = Get-FlowField $settings 'ResultFont'
+                    ResultSubFont = Get-FlowField $settings 'ResultSubFont'
+                }
+            }
+            if ($Setup.FullscreenOff) { Save-OriginalState -Label 'flow-fullscreen' -Data @{ IgnoreHotkeysOnFullscreen = Get-FlowField $settings 'IgnoreHotkeysOnFullscreen' } }
         }
 
         function Restore-FlowLauncherSettings {
-            <# Uninstall: Flow's settings back from the four snapshots, and the legacy Everything
+            <# Uninstall: Flow's settings back from the six snapshots, and the legacy Everything
                plugin folder removed if one is still there (matched by its plugin ID). Flow is stopped
                first and NOT started again (uninstall runs elevated; the package goes next anyway).
                Read-modify-write of the current files, so anything else changed in Flow since
                survives. $false when no snapshot was ever taken (nothing to restore). #>
             $p = Get-FlowPaths
-            $labels = 'flow-settings', 'flow-explorer-settings', 'flow-querymode', 'flow-startup'
+            $labels = 'flow-settings', 'flow-explorer-settings', 'flow-querymode', 'flow-startup', 'flow-fonts', 'flow-fullscreen'
             $snap = @{}; foreach ($l in $labels) { $snap[$l] = Get-OriginalState -Label $l }
             [void](Stop-FlowLauncher)
             if (Test-Path -LiteralPath $p.Plugins) {
@@ -310,6 +354,8 @@
             # Flow's own sign-in start: its two settings as they were. Flow makes its own task (or
             # Run value) again the next time it starts, if they were on.
             if ($s = $snap['flow-startup']) { foreach ($k in $s.Keys) { & $put $settings $k $s[$k] } }
+            if ($s = $snap['flow-fonts']) { foreach ($k in $s.Keys) { & $put $settings $k $s[$k] } }
+            if ($s = $snap['flow-fullscreen']) { & $put $settings 'IgnoreHotkeysOnFullscreen' $s.IgnoreHotkeysOnFullscreen }
             $settings | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $p.Settings -Encoding UTF8
             foreach ($l in $labels) { Remove-OriginalState -Label $l }
             $true
@@ -349,14 +395,15 @@
         }
 
         $setup = Get-FlowSetup $p
+        foreach ($n in $setup.Notes) { Step-Warn "Flow Launcher: $n (the packages step installs it; then 710sRice install -Only flow)" }
         $change = $setup.SettingsChanged -or $setup.ExplorerChanged -or $setup.LegacyDirs.Count -or $setup.OwnTask -or $setup.OwnRunValue
         if ($change -or $asAdmin) {
             if (Stop-FlowLauncher) { Step-Info "Flow Launcher stopped to $(if ($change) { 'write its settings' } else { 'start it again as you (it was running as admin)' })" }
         }
         if ($change) {
-            # As the stopped Flow left them: snapshots first, then the same changes on a fresh read.
-            Save-FlowSnapshots $p
+            # As the stopped Flow left them: the same changes on a fresh read, snapshots first.
             $setup = Get-FlowSetup $p
+            Save-FlowSnapshots $p $setup
             if ($setup.SettingsChanged) {
                 Copy-Item -LiteralPath $p.Settings -Destination "$($p.Settings).bak" -Force   # a quick previous copy; the snapshots are what uninstall restores
                 $setup.Settings | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $p.Settings -Encoding UTF8
@@ -401,7 +448,7 @@
 
     Uninstall = {
         param($Ctx)
-        if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored (keywords, identity, Explorer file search, the query box, its own sign-in start) and any legacy Everything plugin removed' }
+        if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored (keywords, identity, Explorer file search, the query box, its own sign-in start, fonts, fullscreen hotkey) and any legacy Everything plugin removed' }
         else { Step-Info 'install never changed Flow Launcher''s settings on this machine -- nothing to restore.' }
     }
 
@@ -425,5 +472,16 @@
         }
         if ($preference.Count) { New-DoctorResult -Id 'flow-prefs' -Status '!!' -Text "Flow Launcher preferences: $($preference -join '; ')" @fix }
         else { New-DoctorResult -Id 'flow-prefs' -Status 'OK' -Text 'Flow Launcher preferences (opens empty, tray icon hidden, no update prompt)' }
+        # The fonts and the fullscreen setting: never set by 710sRice here (no snapshot) = [XX];
+        # set, then changed by you since = [!!] -- your call, repair leaves it.
+        if ($setup.Face) {
+            $which = $setup.FontsWrong -join ', '
+            if (-not $setup.FontsWrong.Count) { New-DoctorResult -Id 'flow-font' -Status 'OK' -Text "Flow Launcher uses the Nerd Font ($($setup.Face))" }
+            elseif (-not (Get-OriginalState -Label 'flow-fonts')) { New-DoctorResult -Id 'flow-font' -Status 'XX' -Text "Flow Launcher doesn't use the Nerd Font ($which)" @fix }
+            else { New-DoctorResult -Id 'flow-font' -Status '!!' -Text "Flow Launcher's font changed since 710sRice set $($setup.Face) ($which) -- your call" -Fix '710sRice install -Only flow' }
+        }
+        if (-not $setup.FullscreenOff) { New-DoctorResult -Id 'flow-fullscreen' -Status 'OK' -Text "Flow Launcher stays shut over fullscreen windows" }
+        elseif (-not (Get-OriginalState -Label 'flow-fullscreen')) { New-DoctorResult -Id 'flow-fullscreen' -Status 'XX' -Text 'Flow Launcher opens over fullscreen windows (its "Ignore hotkeys in fullscreen" is off)' @fix }
+        else { New-DoctorResult -Id 'flow-fullscreen' -Status '!!' -Text 'Flow Launcher''s "Ignore hotkeys in fullscreen" switched off since 710sRice set it -- your call' -Fix '710sRice install -Only flow' }
     }
 }

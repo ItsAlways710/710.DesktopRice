@@ -91,8 +91,10 @@ Either way, the installer:
 - Sets Windows Terminal's default shell to PowerShell 7, and its font to the JetBrainsMono
   Nerd Font for every profile (the prompt's icons need it), including profiles that set a
   font of their own.
-- Sets up Flow Launcher: `app` searches apps, `f` searches files through Everything, and it
-  opens with an empty search box. On a machine where Flow has never run, install starts it
+- Sets up Flow Launcher: `app` searches apps, `f` searches files through Everything, it
+  opens with an empty search box, its search box and results use the JetBrainsMono Nerd Font,
+  and its hotkey does nothing while the window you're in is fullscreen (a game, a video) --
+  click a window on another monitor and it opens there. On a machine where Flow has never run, install starts it
   once first (its Welcome window shows for a few seconds), then sets it up and themes it in
   the same run. Flow's own "start on system startup" setting is switched off: 710sRice starts
   Flow itself (below), and two starts would open its window.
@@ -222,7 +224,7 @@ only runs with `-Activate`).
 | `envvars` | Points komorebi and YASB at this repo's config (and removes the old weather variables, if a past install set them) |
 | `path` | Puts the `710sRice` command on your PATH |
 | `wallust` | Installs wallust at its pinned version |
-| `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran), switches its own startup off and registers its task |
+| `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran): keywords, fonts, fullscreen; switches its own startup off and registers its task |
 | `everything` | Turns Everything's tray icon and update check off |
 | `sharex` | Turns ShareX's update check off (and its tray icon on, which its hidden start needs) |
 | `theme` | Sets the default wallpaper and themes everything from it |
@@ -283,7 +285,7 @@ From a PowerShell 7 window:
 
 This is a real uninstall: it stops everything, removes the Scheduled Tasks, and puts back
 what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
-colors, font and default shell, Flow Launcher settings (its own startup setting included) and
+colors, font and default shell, Flow Launcher settings (its own startup setting and fonts included) and
 theme, ShareX's and Everything's settings (their update checks and tray icons), taskbar,
 Windows settings, PowerShell profile and Defender exclusions are restored, not reset to
 defaults. The installer saves each one the first time it changes it.
