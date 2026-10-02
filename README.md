@@ -394,6 +394,11 @@ That's what a [pin](#adding-a-rule) means by "screen 2". (Identical screens that
 same serial number are told apart by how they're connected.) A fifth screen gets no number
 and runs on komorebi's defaults (a single workspace); `710sRice doctor` mentions it.
 
+When you plug a screen in or unplug one, komorebi doesn't always notice on its own: it looks
+before Windows has finished rearranging the desktop. So a few seconds after every display
+change, 710.ahk asks it to look again (`display-changes.log` has a line for each time). An
+unplugged screen's workspaces and windows wait for it, and come back with it, pins included.
+
 ## The bar
 
 - **Workspaces:** each screen's bar shows the workspace it's on and the ones with windows in
