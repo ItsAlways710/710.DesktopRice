@@ -416,8 +416,8 @@ unplugged screen's workspaces and windows wait for it, and come back with it, pi
   at all. Middle-click either one for its page in Windows Settings.
 - **Battery:** next to them, on a machine that has one. Click it for the percentage.
 - **Capture drawer:** the arrow after the window title unfolds six ShareX buttons (region,
-  screen recording, stop recording, text from screen, scan a QR code, colour picker) and the
-  power plan (click it, pick a plan). Hover a button for its name.
+  screen recording, stop recording, text from screen, scan a QR code, colour picker). Hover a
+  button for its name.
 - **Tray:** ShareX's icon is hidden here and Everything has none (see
   [What install always does](#what-install-always-does)). YASB's own tray icon is off too;
   `710sRice restart` (SUPER+Ctrl+R) restarts the bar.

@@ -619,13 +619,14 @@ widgets:
         on_right: "toggle_label"
   # --- The capture drawer (winarchy port audit, 2026-10-01) --------------------------------------
   # After the window title, folded behind its arrow: six ShareX buttons, each calling ShareX
-  # directly with its own command-line action (the ones 710.ahk's Capture menu uses), and the power
-  # plan. ShareX is where winget puts it ($env:ProgramFiles -- YASB expands it, as everywhere here).
+  # directly with its own command-line action (the ones 710.ahk's Capture menu uses). ShareX is
+  # where winget puts it ($env:ProgramFiles -- YASB expands it, as everywhere here). The power-plan
+  # button that sat at its end came out on the Dell test (2026-10-01: the user didn't want it there).
   capture-drawer:
     type: "yasb.grouper.GrouperWidget"
     options:
       class_name: "capture-drawer"
-      widgets: ["capture_region", "capture_record", "capture_stop", "capture_ocr", "capture_qr", "capture_color", "power_plan"]
+      widgets: ["capture_region", "capture_record", "capture_stop", "capture_ocr", "capture_qr", "capture_color"]
       collapse_options:
         enabled: true
         label_position: "left"
@@ -697,28 +698,6 @@ widgets:
         on_left: 'exec "$env:ProgramFiles\ShareX\ShareX.exe" -ScreenColorPicker'
         on_middle: "do_nothing"
         on_right: "do_nothing"
-  # The power plan: click for the list, pick one. YASB 2.0.7's power_plan widget only uses the four
-  # power-plan functions (PowerEnumerate / PowerReadFriendlyName / PowerGetActiveScheme /
-  # PowerSetActiveScheme -- all on the Dell, state\g2-probe.json), not the power-mode call that
-  # crashed the control center's power section (that one stays off, below in control_center).
-  power_plan:
-    type: "yasb.power_plan.PowerPlanWidget"
-    options:
-      label: "<span>\udb81\udcc5</span>"
-      label_alt: "<span>\udb81\udcc5</span> {active_plan}"
-      callbacks:
-        on_left: "toggle_menu"
-        on_middle: "do_nothing"
-        on_right: "toggle_label"
-      menu:
-        blur: false
-        round_corners: true
-        round_corners_type: "normal"
-        border_color: "System"
-        alignment: "left"
-        direction: "down"
-        offset_top: 6
-        offset_left: 0
   gpu:
     type: "yasb.gpu.GpuWidget"
     options:

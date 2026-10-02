@@ -1712,7 +1712,7 @@ which is 16 pixels same as the other sections. */
 }
 
 /* ============================================================
-   Network group, battery, capture drawer, power plan (winarchy port audit, 2026-10-01).
+   Network group, battery, capture drawer (winarchy port audit, 2026-10-01).
    The theme's own variables only, like the rest of this file, so they follow the palette.
    ============================================================ */
 
@@ -1777,17 +1777,12 @@ which is 16 pixels same as the other sections. */
     padding-left: 4px;
 }
 
-/* The capture drawer's ShareX buttons and the power plan */
-.capture-widget .widget-container .icon,
-.power-plan-widget .widget-container .icon {
+/* The capture drawer's ShareX buttons */
+.capture-widget .widget-container .icon {
     color: var(--text);
 }
-.capture-widget .widget-container .icon:hover,
-.power-plan-widget .widget-container .icon:hover {
+.capture-widget .widget-container .icon:hover {
     color: var(--accent);
-}
-.power-plan-widget .widget-container .label {
-    padding-left: 4px;
 }
 
 /* --- Their popups --- */
@@ -1970,31 +1965,4 @@ which is 16 pixels same as the other sections. */
 .wifi-menu .footer .refresh-icon:hover,
 .bluetooth-menu .footer .scan-icon:hover {
     background-color: var(--hover);
-}
-.power-plan-menu {
-    background-color: var(--background);
-    border: 1px solid var(--border);
-    border-radius: var(--border-radius);
-}
-.power-plan-menu .menu-content {
-    margin: 8px;
-}
-.power-plan-menu .menu-content .button {
-    background-color: transparent;
-    color: var(--text);
-    font-family: var(--system-font);
-    font-size: 13px;
-    font-weight: 600;
-    padding: 6px 12px;
-    margin: 1px 0;
-    border: none;
-    border-radius: 4px;
-    text-align: left;
-}
-.power-plan-menu .menu-content .button:hover {
-    background-color: var(--hover);
-}
-.power-plan-menu .menu-content .button.active {
-    background-color: var(--accent);
-    color: var(--accentText);
 }
