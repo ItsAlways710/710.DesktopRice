@@ -648,6 +648,4 @@ tested", so if something odd shows up around admin windows, that's the first thi
 
 Ideas waiting their turn:
 
-- **Game mode that pauses the SUPER hotkeys** while a game is focused. Today game mode is
-  an indicator: it shows, and games are never tiled.
 - **Turn off a shipped rule or game** for this machine only, from the rules menu.

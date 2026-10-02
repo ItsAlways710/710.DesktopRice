@@ -1096,8 +1096,9 @@ ToggleStayAwake() {
 ; indicator (GameModeText(): on while a game is focused, or the switch is on)
 ; and (b) re-read the games when one is first detected (Quick add /
 ; Remove a rule re-read them straight away too). It doesn't suspend SUPER
-; hotkeys, whatever games.toml's header says (a Group 3 item). Ported from
-; winarchy's winarchy.ahk @ 4574fc7 --
+; hotkeys, on purpose: winarchy did at first and pulled it five days later
+; (its f6e96a6) -- the menu, launcher and screenshot keys went dark mid-game.
+; Ported from winarchy's winarchy.ahk @ 4574fc7 --
 ; ToggleGameMode() drops the Winarchy('game-mode on/off') CLI call per the
 ; plan doc's "gets a small rewrite" note and just flips the flag file
 ; directly, matching ToggleStayAwake()'s existing pattern in this file. The

@@ -1,7 +1,10 @@
 # Games and launchers this rice knows about.
 # Each entry produces: (a) an ignore-rule in komorebi (never tiled),
-# (b) suspension of SUPER hotkeys while the process is in the foreground
-#     (see the AHK game-mode watcher).
+# (b) game mode "on" in the menus while the process is in the foreground
+#     (see the AHK game-mode watcher). SUPER hotkeys stay live in games, just
+#     like the Windows key: winarchy suspended them at first and pulled it five
+#     days later (its f6e96a6) -- the menu, launcher and screenshot keys went
+#     dark mid-game.
 # `exe` is the process name without a path (with or without .exe).
 #
 # The entries below are winarchy's curated defaults, carried over as-is.
