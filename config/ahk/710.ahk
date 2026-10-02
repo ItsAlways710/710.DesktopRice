@@ -142,6 +142,51 @@ CloseWindow() {
     }
 }
 
+; SUPER+Ctrl+C: redraw the focused app (plan doc Open item 40). A bar restart moves the bar's screen strip, and a
+; Chromium / Electron app (Chrome, the Claude desktop app, Discord...) can come back drawing a row low -- an extra
+; title bar on top, every click a row off -- until it's relaunched. What's stuck is the app's drawing helper, its
+; --type=gpu-process child: end just that one and Chromium starts a fresh helper and redraws in place; the app itself
+; never closes (proven on the Dell 2026-10-02 with Stop-Process; this ends it the same way, TerminateProcess with
+; exit code -1). The focused app only, on purpose. Chromium puts an app on slow software drawing after three helper
+; losses close together (it forgives one every 5 minutes): a now-and-then key, not a reflex.
+RedrawApp() {
+    try exe := WinGetProcessName('A')
+    catch {
+        TrayTip("Couldn't tell which app is focused", '710sRice')
+        return
+    }
+    r := EndGpuHelpers(exe)
+    if r.ended
+        TrayTip('Redrawing ' exe, '710sRice')
+    else if r.failed
+        TrayTip("Couldn't restart " exe "'s drawing helper (is it running as admin?)", '710sRice')
+    else
+        TrayTip(exe ' has no drawing helper to restart -- not a Chromium app', '710sRice')
+}
+
+; Ends every --type=gpu-process process named `exe`; returns {ended, failed}. Kept apart from RedrawApp so it can be
+; tested without a focused window.
+EndGpuHelpers(exe) {
+    ended := 0, failed := 0
+    if (exe = '' || InStr(exe, "'"))            ; the name goes into a WQL string
+        return {ended: 0, failed: 0}
+    for p in ComObjGet('winmgmts:').ExecQuery("SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = '" exe "'") {
+        cmd := ''
+        try cmd := p.CommandLine                ; empty / null for a process we can't read (an admin one)
+        if !(cmd is String) || !InStr(cmd, '--type=gpu-process')
+            continue
+        if (h := DllCall('OpenProcess', 'UInt', 0x0001, 'Int', false, 'UInt', p.ProcessId, 'Ptr')) {   ; PROCESS_TERMINATE
+            if DllCall('TerminateProcess', 'Ptr', h, 'UInt', 0xFFFFFFFF)
+                ended++
+            else
+                failed++
+            DllCall('CloseHandle', 'Ptr', h)
+        } else
+            failed++
+    }
+    return {ended: ended, failed: failed}
+}
+
 ; --- Windows -----------------------------------------------------------
 #x::CloseWindow()                                ; close window
                                                   ; (moved off #w -- X reads better for close, frees W below)
@@ -156,6 +201,7 @@ CloseWindow() {
 #^t::Komorebic('retile')                         ; force retile (SUPER+R is left to Windows: Win+R = Run)
 #+r::ReloadStack()                               ; reload: re-apply config + rules, restart only what changed
 #^r::RestartStack()                              ; restart the whole stack (stop + start)
+#^c::RedrawApp()                                 ; redraw this app (fixes Chrome's / Claude's extra title bar)
 #+Enter::Komorebic('promote')                    ; promote to largest tile
 #+l::Komorebic('cycle-layout next')              ; cycle to next layout
 #!l::ToggleScrolling()                           ; toggle scrolling layout - 2 cols

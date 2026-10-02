@@ -329,7 +329,7 @@ function Invoke-RiceReloadBar {
             while (-not (Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
             if (Get-Process yasb -ErrorAction SilentlyContinue) { Step-Ok 'Bar restarted' }
             else { Step-Warn "Bar's task fired, but YASB isn't up after 15s -- it may still be starting (see yasb-autostart.log)." }
-            Step-Info 'Apps tiled through a layered rule (Claude Desktop) can pick up an extra title bar when the bar restarts -- relaunch the app if you see one.'
+            Step-Info 'Chrome, the Claude app and other Chromium apps can pick up an extra title bar when the bar restarts -- focus the app and press SUPER+Ctrl+C to redraw it.'
         }
         3 { Step-Warn 'komorebi is paused -- unpause it first (SUPER+P). A bar started during a pause never connects to komorebi.' }
         default {
@@ -344,7 +344,7 @@ function Invoke-RiceReloadBar {
 function Invoke-RiceRestart {
     # `restart` = stop, then start: the whole stack, every time. SUPER+Shift+R (`reload`) no
     # longer is that -- it restarts komorebi only when a rule was removed, and YASB only when
-    # it has to (Claude Desktop's extra title bar per bar restart, plan doc #40). In between, it
+    # it has to (Chromium apps' extra title bar per bar restart, plan doc #40). In between, it
     # waits until everything has really exited: each launcher leaves alone a component it still
     # sees running, and Stop-All only gives each stop a few hundred ms. Something still up after
     # 10 s (Stop-All has already said why) keeps running as it was; the rest start anyway.
@@ -366,7 +366,7 @@ function Invoke-RiceRestart {
     }
     Invoke-RiceScript 'scripts\Start-All.ps1'
     if ($script:RiceExit -eq 0) {
-        Step-Info 'Apps tiled through a layered rule (Claude Desktop) can pick up an extra title bar when the bar restarts -- relaunch the app if you see one.'
+        Step-Info 'Chrome, the Claude app and other Chromium apps can pick up an extra title bar when the bar restarts -- focus the app and press SUPER+Ctrl+C to redraw it.'
     }
 }
 

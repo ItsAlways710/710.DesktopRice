@@ -353,6 +353,7 @@ Delete the folder yourself if you're done with it.
 | SUPER+Shift+A | Claude desktop app |
 | SUPER+Shift+R | Reload: re-applies config and rules, restarting only what changed |
 | SUPER+Ctrl+R | Restart the whole stack (stop, then start everything); a toast before and after |
+| SUPER+Ctrl+C | Redraw the app you're on: fixes the extra title bar a bar restart can leave on Chrome, the Claude app and other Chromium apps (see [Tips and known issues](#tips-and-known-issues)) |
 | SUPER+Arrows | Move focus |
 | SUPER+Shift+Arrows | Move the window |
 | SUPER+Alt+Arrows | Stack the window with its neighbor (tabs show on the stack); SUPER+Alt+, / SUPER+Alt+. switch tabs, SUPER+Alt+U unstacks |
@@ -623,13 +624,15 @@ tested", so if something odd shows up around admin windows, that's the first thi
 
 ## Tips and known issues
 
-- **Extra title bars on an app after the bar restarts.** Apps tiled through a Layered rule
-  may react badly when the bar restarts (the bar gives its screen strip back and takes it
-  again, and Windows tells every window). The Claude desktop app is the real example, and
-  it's one of the included rules, so expect it: each bar restart can add another title bar
-  on top of Claude's own, and clicks land one row off. Quit it from its tray icon and
-  relaunch to fix. SUPER+Shift+R only restarts the bar when it has to (its `config.yaml`
-  changed, or komorebi restarted), so this is rare; `710sRice reload bar` and
+- **Extra title bar on an app after the bar restarts.** When the bar restarts it gives its
+  screen strip back and takes it again, and Windows tells every window. Chromium-based apps
+  (Chrome and the Claude desktop app so far; Edge never has) can come back drawing a row
+  low: an extra title bar on top, the bottom pushed off screen, clicks landing a row off.
+  Focus that app and press **SUPER+Ctrl+C**: its drawing helper restarts and the app redraws
+  in place without closing (relaunching it works too). Chromium switches an app to slower
+  software drawing after three of these close together (it forgives one every 5 minutes),
+  so keep it a now-and-then key. SUPER+Shift+R only restarts the bar when it has to (its
+  `config.yaml` changed, or komorebi restarted), so this is rare; `710sRice reload bar` and
   `710sRice restart` always do.
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.

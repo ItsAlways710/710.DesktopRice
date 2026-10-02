@@ -45,9 +45,9 @@
        komorebi was restarted in step 2 (the widgets need the new komorebi), or config.yaml
        differs from the fingerprint Start-Yasb.ps1 recorded at YASB's last start (or there
        is none). Otherwise it's left alone -- every restart makes Windows re-broadcast the
-       work area (YASB is an app bar), and Claude Desktop stacks a native title bar per
-       broadcast (plan doc Open item 40). styles.css and wallpaper colours hot-reload on
-       their own (watch_stylesheet) and never needed the restart.
+       work area (YASB is an app bar), and Chromium apps (Chrome, Claude Desktop) can pick
+       up an extra title bar from it (plan doc Open item 40). styles.css and wallpaper
+       colours hot-reload on their own (watch_stylesheet) and never needed the restart.
 
   Starting things goes through the registered autostart Scheduled Tasks
   (`schtasks /Run \710.DesktopRice\<name>`) -- the exact wscript/run-hidden.vbs path boot
