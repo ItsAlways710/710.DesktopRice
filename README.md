@@ -385,7 +385,7 @@ Delete the folder yourself if you're done with it.
 | SUPER+Alt+Space | Main menu: apps, capture, tiling, palette profiles, game mode, reload, quit |
 | SUPER+Esc | Power menu: lock, sleep, restart, shut down... |
 | SUPER+K | This hotkey list |
-| SUPER+X | Close the window |
+| SUPER+Q | Close the window (instead of Windows' search; Win+X stays Windows' own menu) |
 | SUPER+W | Wallpaper gallery |
 | SUPER+B / SUPER+E | Browser / File Explorer |
 | SUPER+Y / SUPER+M | YouTube / YouTube Music, each in its own browser window (SUPER+M instead of Windows' "minimize all") |

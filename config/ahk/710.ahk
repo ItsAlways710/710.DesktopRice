@@ -130,7 +130,7 @@ LaunchAdminTerminal() {
 ; `komorebic close` for this: no komorebic.exe spawn per press, and it doesn't
 ; depend on komorebi's idea of focus, which can lag behind for windows it
 ; ignores or floats (games, Flow, anything in the ignore rules). Refuses the
-; desktop, both taskbars and the YASB bar, so a stray SUPER+X there is a no-op.
+; desktop, both taskbars and the YASB bar, so a stray SUPER+Q there is a no-op.
 CloseWindow() {
     if !(hwnd := WinExist('A'))
         return
@@ -188,8 +188,10 @@ EndGpuHelpers(exe) {
 }
 
 ; --- Windows -----------------------------------------------------------
-#x::CloseWindow()                                ; close window
-                                                  ; (moved off #w -- X reads better for close, frees W below)
+#q::CloseWindow()                                ; close window
+                                                  ; (#w, then #x, now #q since 2026-10-03: Win+X is Windows'
+                                                  ; own power-user menu and earns its key back; Win+Q's
+                                                  ; search is redundant next to Flow and Everything)
 #w::Send('^!w')                                  ; open wallpaper gallery
                                                   ; (re-sends YASB's own native ctrl+alt+w hotkey,
                                                   ; toggle_gallery, rather than duplicating it; needs
@@ -1995,7 +1997,7 @@ NativeMenuName(item) => item.text (item.HasOwnProp('hint') ? '`t' item.hint : ''
 SetupTray() {
     ico := RepoRoot "\assets\logo\710rice.ico"
     if FileExist(ico)
-        try TraySetIcon(ico)   ; 710 in Chiefs red on dark, gold outline; AutoHotkey's own icon if the file is missing
+        try TraySetIcon(ico)   ; 710 in Chiefs red on white, in a gold border; AutoHotkey's own icon if the file is missing
     A_IconTip := '710sRice'
 
     RebuildTrayMenu()
