@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
-  Shared functions for install.ps1's unconditional steps and its -Activate block, and
-  for uninstall.ps1's matching revert steps. Dot-sourced by both -- never run directly.
+  Shared functions for install.ps1's unconditional steps and its -Activate block, for
+  uninstall.ps1's matching revert steps, and for `710sRice activate` / `deactivate` (the
+  switch between full time and on demand, 710sRice.ps1). Dot-sourced by all three -- never
+  run directly.
 
 .DESCRIPTION
   Ported from winarchy (module/Winarchy/Private/Identity.ps1, Hardening.ps1, Taskbar.ps1,
@@ -644,8 +646,9 @@ function Test-ExplorerShell {
 }
 
 function Restart-Explorer {
-    <# The ONE Explorer restart for install -Activate / uninstall (taskbar auto-hide +
-       hardening both need it; callers run this once if either changed something). Kills
+    <# The ONE Explorer restart for install -Activate / uninstall / `710sRice activate` /
+       `deactivate` (taskbar auto-hide + hardening both need it; Set-FullTimeWindowsSettings
+       and Restore-FullTimeWindowsSettings run this once if either changed something). Kills
        Explorer, then waits for Windows (Winlogon's AutoRestartShell) to bring the shell
        back. If it hasn't within the wait, starts it -- through a one-shot LeastPrivilege
        scheduled task, never straight from this shell: install/uninstall run elevated, and
@@ -824,6 +827,297 @@ function Set-StartupDelay {
 function Remove-StartupDelay {
     Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' `
         -Name 'StartupDelayInMSec' -ErrorAction SilentlyContinue
+}
+
+# --- Full time's Windows settings: saved, applied, put back ----------------------------
+# What a full-time machine changes in Windows: taskbar auto-hide, the hardening values
+# (Get-HardeningSettings) and the Startup delay. Since 2026-10-03 the switch to full time --
+# `710sRice activate`, or install -Activate on a machine that wasn't full-time -- first saves
+# how each one was, once, in original-state\full-time-settings.json, and the way back --
+# `710sRice deactivate`, uninstall -- puts each one back from that copy, so a setting you had
+# your own way (Task View hidden in Settings writes the very value the hardening does) stays
+# yours. A machine made full-time before then has no copy: the way back deletes the values
+# instead, which hands each setting to Windows' own default (what uninstall always did).
+# Never saved on a machine that's already full-time: the "before" would be full time's own.
+
+function Get-FullTimeSettingsPath {
+    # Where the saved copy lives (Save-OriginalState's label 'full-time-settings'). Built here
+    # rather than through Get-OriginalStateDir, which creates the folder: dry runs read this.
+    Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state\full-time-settings.json'
+}
+
+function Get-TaskbarAutoHideSetting {
+    <# "Automatically hide the taskbar" as stored: StuckRects3's byte 8, the bit
+       Set-TaskbarAutoHide flips (not the shell's live answer, Test-TaskbarAutoHide -- the copy
+       and the put-back compare against what Set-TaskbarAutoHide writes). $null when there's no
+       StuckRects3 to read. #>
+    $val = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' -Name Settings -ErrorAction SilentlyContinue).Settings
+    if ($null -eq $val -or @($val).Count -lt 9) { return $null }
+    [bool]($val[8] -band 0x01)
+}
+
+function Get-SavedFullTimeSettings {
+    # The saved copy (Save-FullTimeSettings) as a hashtable, or $null when there's none. Never
+    # writes anything.
+    $file = Get-FullTimeSettingsPath
+    if (-not (Test-Path -LiteralPath $file)) { return $null }
+    try { Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable } catch { $null }
+}
+
+function Get-SavedFullTimeSettingsWhen {
+    # When the copy was saved, as it gets printed ("2026-10-03 13:20").
+    param($Saved)
+    $s = if ($Saved) { $Saved['Saved'] }
+    if ($s -is [datetime]) { return $s.ToString('yyyy-MM-dd HH:mm') }
+    if ("$s" -match '^(\d{4}-\d\d-\d\d)T(\d\d:\d\d)') { return "$($Matches[1]) $($Matches[2])" }
+    'by an earlier activate'
+}
+
+function Save-FullTimeSettings {
+    <# Saves full time's Windows settings as they are right now -- each hardening value
+       (Get-RegValueSnapshot: existed, value, type), auto-hide, the Startup delay -- for the way
+       back to put back. Once: a copy that's already there is kept, since it's the real "before"
+       (left by a switch that was cut off part-way). Callers save only when a machine is about to
+       go from on demand to full time, before anything changes. $true when it saved now, $false
+       when a copy was already there. Throws when the copy can't be written: the caller decides
+       whether to go on without one. #>
+    if (Test-Path -LiteralPath (Get-FullTimeSettingsPath)) { return $false }
+    $hardening = @(foreach ($s in Get-HardeningSettings) {
+        $path, $name, $null = $s
+        $snap = Get-RegValueSnapshot -Path $path -Name $name
+        [ordered]@{ Path = $path; Name = $name; Existed = $snap.Existed; Value = $snap.Value; Type = $snap.Type }
+    })
+    $delay = Get-RegValueSnapshot -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' -Name 'StartupDelayInMSec'
+    Save-OriginalState -Label 'full-time-settings' -Data ([ordered]@{
+        Saved           = (Get-Date -Format 's')
+        TaskbarAutoHide = Get-TaskbarAutoHideSetting
+        Hardening       = $hardening
+        StartupDelay    = $delay
+    })
+    if (-not (Test-Path -LiteralPath (Get-FullTimeSettingsPath))) { throw "the copy wasn't written ($(ConvertTo-SafePath (Get-FullTimeSettingsPath)))" }
+    $true
+}
+
+function Get-HardeningToChange {
+    # The names of the hardening values Set-WindowsHardening would change right now. Read-only.
+    foreach ($s in Get-HardeningSettings) {
+        $path, $name, $value = $s
+        $item = Get-ItemProperty -Path $path -Name $name -ErrorAction Ignore
+        $current = if ($item) { $item.$name }
+        if ($current -ne $value) { $name }
+    }
+}
+
+function Get-FullTimeSettingsRestorePlan {
+    <# What the way back would do (Restore-FullTimeWindowsSettings), read-only:
+         FromCopy / When     -- a saved copy, and when it was saved
+         Values              -- each hardening value that would change: Path, Name, and the saved
+                                Existed / Value / Type (Existed $false: remove it). Without a
+                                copy, every hardening value that's there (all removed). A value
+                                added to Get-HardeningSettings after the copy was saved is
+                                removed too.
+         AutoHideNow / AutoHideTo / AutoHideChange
+         Delay / DelayChange -- the saved StartupDelayInMSec (Existed $false: remove it) #>
+    param($Saved)
+    $values = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    if ($Saved) {
+        foreach ($h in @($Saved['Hardening'])) {
+            if (-not $h -or -not $h['Path'] -or -not $h['Name']) { continue }
+            [void]$seen.Add("$($h['Path'])|$($h['Name'])")
+            $item = Get-ItemProperty -Path $h['Path'] -Name $h['Name'] -ErrorAction Ignore
+            $current = if ($item) { $item.($h['Name']) }
+            $change = if ($h['Existed']) { ($null -eq $current) -or ("$current" -ne "$($h['Value'])") } else { $null -ne $current }
+            if ($change) {
+                $values.Add([pscustomobject]@{ Path = $h['Path']; Name = $h['Name']; Existed = [bool]$h['Existed']; Value = $h['Value']; Type = $h['Type'] })
+            }
+        }
+    }
+    foreach ($s in Get-HardeningSettings) {
+        $path, $name, $null = $s
+        if ($seen.Contains("$path|$name")) { continue }
+        $item = Get-ItemProperty -Path $path -Name $name -ErrorAction Ignore
+        if ($item -and $null -ne $item.$name) {
+            $values.Add([pscustomobject]@{ Path = $path; Name = $name; Existed = $false; Value = $null; Type = $null })
+        }
+    }
+    $autoNow = Get-TaskbarAutoHideSetting
+    $autoTo = if ($Saved -and $null -ne $Saved['TaskbarAutoHide']) { [bool]$Saved['TaskbarAutoHide'] } else { $false }
+    $delayNow = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' -Name 'StartupDelayInMSec' -ErrorAction Ignore
+    $delay = if ($Saved -and $Saved['StartupDelay']) { $Saved['StartupDelay'] } else { @{ Existed = $false; Value = $null; Type = $null } }
+    $delayChange = if ($delay['Existed']) { (-not $delayNow) -or ("$($delayNow.StartupDelayInMSec)" -ne "$($delay['Value'])") } else { [bool]$delayNow }
+    [pscustomobject]@{
+        FromCopy       = [bool]$Saved
+        When           = if ($Saved) { Get-SavedFullTimeSettingsWhen $Saved } else { $null }
+        Values         = @($values)
+        AutoHideNow    = $autoNow
+        AutoHideTo     = $autoTo
+        AutoHideChange = ($null -ne $autoNow -and $autoNow -ne $autoTo)
+        Delay          = $delay
+        DelayChange    = [bool]$delayChange
+    }
+}
+
+function Set-FullTimeWindowsSettings {
+    <# Full time's Windows settings, applied: taskbar auto-hide on, the hardening, no Startup
+       delay -- ONE Explorer restart if either of the first two changed something (see
+       Restart-Explorer: two back-to-back restarts left the desktop blank, 2026-09-24), with the
+       tray icons' "always show" choices put back around it (Backup-TrayIconPromotions). Moved
+       here from install.ps1's windows step (2026-10-03) so `710sRice activate` applies exactly
+       the same. Save-FullTimeSettings comes first, when the machine is going full-time.
+       -DryRun: what it would change; nothing is changed. Prints its own lines. #>
+    param([switch]$DryRun)
+    if ($DryRun) {
+        $auto  = Get-TaskbarAutoHideSetting
+        $hard  = @(Get-HardeningToChange)
+        $total = @(Get-HardeningSettings).Count
+        $delay = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' -Name 'StartupDelayInMSec' -ErrorAction Ignore
+        if ($auto -eq $true) { Step-Info 'Native taskbar: already set to auto-hide' }
+        else { Write-Host '  [ ] Set the native taskbar to auto-hide' }
+        # The Widgets button (TaskbarDa) counts, but Windows refuses scripts that write it on
+        # current builds (see Set-WindowsHardening): the run's own count leaves it out.
+        $widgets = if ($hard -contains 'TaskbarDa') { " -- one is the Widgets button, which Windows may refuse to let a script change" } else { '' }
+        if ($hard.Count) { Write-Host "  [ ] Windows hardening: $($hard.Count) of $total value(s) to change (no Bing search, ad suggestions, Copilot/Widgets/Task View buttons, Start recommendations, tips and suggested content)$widgets" }
+        else { Step-Info 'Windows hardening: already applied' }
+        if ($auto -ne $true -or $hard.Count) { Write-Host '  [ ] Restart Explorer once (the taskbar and these settings only take effect that way)' }
+        if (-not $delay -or $delay.StartupDelayInMSec -ne 0) { Write-Host '  [ ] Remove the Startup app-launch delay (StartupDelayInMSec=0)' }
+        else { Step-Info 'Startup app-launch delay: already removed' }
+        return
+    }
+
+    # Snapshot tray-icon promotions before the kill below -- Explorer's own forced restart can
+    # reset every app's "always show this icon" preference, not just this repo's own (see
+    # Backup-TrayIconPromotions). Restored once Explorer's confirmed back up.
+    $trayIconBackup = Backup-TrayIconPromotions
+
+    # Both only change settings; Explorer is restarted ONCE below if either did.
+    $needExplorerRestart = $false
+    try {
+        if (Set-TaskbarAutoHide -Enabled $true) { Step-Ok 'Native taskbar set to auto-hide'; $needExplorerRestart = $true }
+        else { Step-Ok 'Native taskbar already set to auto-hide' }
+    } catch { Step-Warn "Could not set the taskbar to auto-hide: $($_.Exception.Message)" }
+
+    try {
+        $n = Set-WindowsHardening
+        Step-Ok "Windows hardening applied ($n setting(s) changed: no Bing search, ad suggestions, Copilot/Widgets/Task View buttons, Start recommendations)"
+        if ($n -gt 0) { $needExplorerRestart = $true }
+    } catch { Step-Warn "Could not apply Windows hardening: $($_.Exception.Message)" }
+
+    if ($needExplorerRestart) {
+        if (Restart-Explorer) { Step-Ok 'Explorer restarted once to apply the taskbar/hardening changes' }
+        else { Step-Warn "Explorer didn't come back after its restart -- sign out and back in (Ctrl+Alt+Del) to get the desktop back." }
+    }
+    Restore-TrayIconPromotions -BackupFile $trayIconBackup
+
+    try {
+        Set-StartupDelay
+        Step-Ok 'Startup app-launch delay removed (StartupDelayInMSec=0)'
+    } catch { Step-Warn "Could not remove the Startup app-launch delay: $($_.Exception.Message)" }
+}
+
+function Restore-FullTimeWindowsSettings {
+    <# The way back from full time (`710sRice deactivate`, uninstall): taskbar auto-hide, the
+       hardening values and the Startup delay as they were before the machine went full-time,
+       from the saved copy (Save-FullTimeSettings). With no copy -- made full-time before
+       710sRice saved one, or never full-time -- what uninstall always did: auto-hide off, every
+       hardening value deleted (Set-WindowsHardening -Revert), the delay value deleted, which
+       hands each setting to Windows' own default. ONE Explorer restart if auto-hide or a
+       hardening value changed, with the tray icons' choices put back around it. Leaves the
+       saved copy where it is: the caller deletes it once the whole switch is done, so a switch
+       cut off part-way puts back the same values when it's run again. Your lock-screen
+       picture's own restore runs after this in uninstall: the hardening holds two lock-screen
+       values. -DryRun: what it would do; nothing is changed. Prints its own lines. #>
+    param([switch]$DryRun)
+    $plan  = Get-FullTimeSettingsRestorePlan -Saved (Get-SavedFullTimeSettings)
+    $total = @(Get-HardeningSettings).Count
+    $onOff = { param($b) if ($b) { 'on' } else { 'off' } }
+
+    if ($DryRun) {
+        if ($plan.AutoHideChange) { Write-Host "  [ ] Native taskbar: auto-hide $(& $onOff $plan.AutoHideTo)$(if ($plan.FromCopy) { ', as it was before' })" }
+        elseif ($null -ne $plan.AutoHideNow) { Step-Info "Native taskbar: auto-hide already $(& $onOff $plan.AutoHideNow)" }
+        if (-not $plan.Values.Count) { Step-Info 'Windows hardening: nothing to put back' }
+        elseif ($plan.FromCopy) { Write-Host "  [ ] Windows hardening: $($plan.Values.Count) of $total value(s) put back as they were before this machine went full-time (saved $($plan.When))" }
+        else { Write-Host "  [ ] Windows hardening: $($plan.Values.Count) of $total value(s) deleted, handed back to Windows' own defaults (no saved copy of how they were before)" }
+        if ($plan.AutoHideChange -or $plan.Values.Count) { Write-Host '  [ ] Restart Explorer once (the taskbar and these settings only take effect that way)' }
+        if ($plan.DelayChange) { Write-Host "  [ ] Startup app-launch delay: $(if ($plan.Delay['Existed']) { "put back as it was ($($plan.Delay['Value']) ms)" } else { "removed (Explorer's own ~10 s)" })" }
+        else { Step-Info 'Startup app-launch delay: nothing to put back' }
+        return
+    }
+
+    # Snapshot tray-icon promotions before the kill below (see Backup-TrayIconPromotions).
+    $trayIconBackup = Backup-TrayIconPromotions
+    $needExplorerRestart = $false
+
+    if ($plan.AutoHideChange) {
+        try {
+            if (Set-TaskbarAutoHide -Enabled $plan.AutoHideTo) {
+                Step-Ok "Native taskbar auto-hide turned $(& $onOff $plan.AutoHideTo)$(if ($plan.FromCopy) { ', as it was before' })"
+                $needExplorerRestart = $true
+            }
+        } catch { Step-Warn "Could not change the taskbar's auto-hide: $($_.Exception.Message)" }
+    } elseif ($null -ne $plan.AutoHideNow) {
+        Step-Ok "Native taskbar auto-hide already $(& $onOff $plan.AutoHideNow)"
+    }
+
+    try {
+        if (-not $plan.FromCopy) {
+            # No copy: exactly what uninstall always did.
+            $n = Set-WindowsHardening -Revert
+            Step-Ok "Windows hardening reverted ($n setting(s) removed, handed back to Windows' own defaults -- no saved copy of how they were before)"
+            if ($n -gt 0) { $needExplorerRestart = $true }
+        } elseif (-not $plan.Values.Count) {
+            Step-Ok 'Windows hardening: nothing to put back -- already as it was before'
+        } else {
+            $put = 0
+            foreach ($v in $plan.Values) {
+                try {
+                    if ($v.Existed) {
+                        if (-not (Test-Path -Path $v.Path)) { $null = New-Item -Path $v.Path -Force }
+                        $type = if ($v.Type) { "$($v.Type)" } else { 'DWord' }
+                        $value = switch ($type) {
+                            'DWord'       { [int]$v.Value }
+                            'QWord'       { [long]$v.Value }
+                            'Binary'      { [byte[]]@($v.Value) }
+                            'MultiString' { [string[]]@($v.Value) }
+                            default       { "$($v.Value)" }
+                        }
+                        Set-ItemProperty -Path $v.Path -Name $v.Name -Value $value -Type $type -ErrorAction Stop
+                    } else {
+                        Remove-ItemProperty -Path $v.Path -Name $v.Name -ErrorAction Stop
+                    }
+                    $put++
+                } catch {
+                    # The Widgets button: Windows refuses script writes to TaskbarDa on current
+                    # builds (see Set-WindowsHardening), so say where to set it instead.
+                    if ($v.Name -eq 'TaskbarDa' -and ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception.Message -match 'unauthorized operation')) {
+                        Step-Info "Windows won't let a script change the Widgets button -- set it in Settings > Personalization > Taskbar."
+                    } else {
+                        Step-Warn "$($v.Name): $($_.Exception.Message)"
+                    }
+                }
+            }
+            Step-Ok "Windows hardening: $put setting(s) put back as they were before this machine went full-time (saved $($plan.When))"
+            if ($put -gt 0) { $needExplorerRestart = $true }
+        }
+    } catch { Step-Warn "Could not put back the Windows hardening: $($_.Exception.Message)" }
+
+    if ($needExplorerRestart) {
+        if (Restart-Explorer) { Step-Ok 'Explorer restarted once to apply the taskbar/hardening changes' }
+        else { Step-Warn "Explorer didn't come back after its restart -- sign out and back in (Ctrl+Alt+Del) to get the desktop back." }
+    }
+    Restore-TrayIconPromotions -BackupFile $trayIconBackup
+
+    try {
+        if (-not $plan.DelayChange) {
+            Step-Ok 'Startup app-launch delay: nothing to put back'
+        } elseif ($plan.Delay['Existed']) {
+            Set-RegValueFromSnapshot -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' -Name 'StartupDelayInMSec' -Snapshot $plan.Delay
+            Step-Ok "Startup app-launch delay put back as it was ($($plan.Delay['Value']) ms)"
+        } else {
+            Remove-StartupDelay
+            Step-Ok 'Startup app-launch delay setting removed (Explorer falls back to its own ~10s default)'
+        }
+    } catch { Step-Warn "Could not put back the Startup app-launch delay: $($_.Exception.Message)" }
 }
 
 # --- Autostart: Scheduled Tasks At-LogOn (-Activate-gated) ---------------------------
@@ -1313,6 +1607,21 @@ function Test-FullTimeMachine {
     @($autostart.Values | Where-Object { $_ }).Count -gt 0
 }
 
+function Write-RiceModeLines {
+    <# The machine's mode and the command that switches it: the end of a full install run and of
+       `710sRice activate` / `deactivate`, one wording for all three. Test-FullTimeMachine is the
+       rule, as for doctor's mode line. #>
+    $fullTime = try { [bool](Test-FullTimeMachine) } catch { $false }
+    Write-Host ''
+    if ($fullTime) {
+        Write-Host 'Mode: full-time -- it starts at every sign-in.'
+        Write-Host 'To switch to on demand: 710sRice deactivate'
+    } else {
+        Write-Host 'Mode: on demand -- 710sRice start starts it.'
+        Write-Host 'To switch to full-time: 710sRice activate'
+    }
+}
+
 function Register-OnDemandTasks {
     <# For an install WITHOUT -Activate: every component's task, with no trigger at all.
        Nothing starts at sign-in; Start-All.ps1 (`710sRice start`), reload-stack.ps1
@@ -1517,9 +1826,9 @@ function Restore-LockScreenPicture {
        own default picture when that file is gone -- THEN the Spotlight / Slideshow settings, so it
        doesn't matter whether setting a picture switched them off. If -Activate had already
        switched Spotlight off when the snapshot was taken (Hardened), those two values were its,
-       not the original: its own revert (Set-WindowsHardening -Revert) puts them back, so they're
-       left alone here. Run after that revert. -> 'restored', 'default' (the original was gone),
-       'failed', or $null (nothing ever set here -- nothing to do). #>
+       not the original: full time's own way back (Restore-FullTimeWindowsSettings) puts them
+       back, so they're left alone here. Run after that. -> 'restored', 'default' (the original
+       was gone), 'failed', or $null (nothing ever set here -- nothing to do). #>
     $snap = Get-OriginalState -Label 'lockscreen-picture'
     if (-not $snap) { return $null }
     $img = "$($snap.Image)"
@@ -1608,6 +1917,56 @@ function Stop-RunningComponents {
     if ((Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero) {
         Step-Warn '710.ahk is still running (it runs with UI Access, which a normal shell cannot force-stop). Quit it from its tray icon, or run this from an admin PowerShell.'
     }
+}
+
+function Get-RunningStackNames {
+    # The stack components running right now, named as Stop-RunningComponents stops them:
+    # komorebi, YASB, 710.ahk (by its window, so another AHK script doesn't count), ShareX. Flow
+    # Launcher and Everything aren't the stack's to stop. Read-only.
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    @(
+        if (Get-Process komorebi -ErrorAction SilentlyContinue) { 'komorebi' }
+        if (Get-Process yasb -ErrorAction SilentlyContinue) { 'YASB' }
+        if ((Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero) { '710.ahk' }
+        if (Get-Process ShareX -ErrorAction SilentlyContinue) { 'ShareX' }
+    )
+}
+
+function Start-StackFromTasks {
+    <# Starts every component now, through its own autostart task (schtasks /Run), never
+       launched directly from this shell: install -Activate's "start now" and `710sRice activate`
+       (moved here from install.ps1, 2026-10-03). Both need an elevated shell, and anything
+       started from one runs elevated: an elevated AHK makes every Terminal it opens elevated,
+       and non-elevated komorebi can't tile elevated windows (the 2026-09-23 admin-AHK incident).
+       The tasks run at their own registered level whatever shell fires them -- LeastPrivilege,
+       except komorebi's in elevated tiling mode -- the same path logon and SUPER+Shift+R use, so
+       "start now" and "start at next sign-in" stay one code path. A component whose task couldn't
+       be registered (Register-Autostart fell back to a Startup shortcut) is started from that
+       shortcut only when this shell is NOT elevated; elevated, it says so and waits for the next
+       sign-in. A component that declares its process (Flow) is left alone when it's already
+       running: a second start of Flow shows its window. #>
+    Step-Info 'Starting services...'
+    $elevated = Test-IsAdmin
+    $startupDir = [Environment]::GetFolderPath('Startup')
+    foreach ($c in @(Get-AutostartComponents)) {
+        if ($c.Process -and (Get-Process -Name $c.Process -ErrorAction SilentlyContinue)) { Step-Ok "$($c.Key): already running"; continue }
+        if (Test-Task -TaskName $c.TaskName) {
+            $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $c.TaskName) 2>&1
+            if ($LASTEXITCODE -eq 0) { Step-Ok "$($c.Key): started via its autostart task" }
+            else { Step-Warn "$($c.Key): schtasks /Run failed (exit $LASTEXITCODE) -- it will start at the next sign-in." }
+            continue
+        }
+        $lnk = Join-Path $startupDir $c.LnkName
+        if ((Test-Path $lnk) -and -not $elevated) {
+            Start-Process $lnk
+            Step-Ok "$($c.Key): started via its Startup shortcut (no task)"
+        } elseif (Test-Path $lnk) {
+            Step-Warn "$($c.Key): only a Startup shortcut, no task -- not starting it from this elevated shell (it would run elevated); it starts at the next sign-in."
+        } else {
+            Step-Warn "$($c.Key): no autostart task or Startup shortcut -- not started."
+        }
+    }
+    Step-Ok 'Services starting in the background (see %LOCALAPPDATA%\710.DesktopRice\*-autostart.log if one seems to not have come up).'
 }
 
 function Find-AhkWindow {

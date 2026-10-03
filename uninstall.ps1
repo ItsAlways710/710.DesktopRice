@@ -28,7 +28,11 @@
   the wallpaper, lock screen, accent color and Windows Terminal settings are restored to
   their exact real prior values (snapshotted once, the first time each was ever about to
   change -- see tools\lib\activation.ps1's "Original-state snapshots" section), not reset
-  to some assumed default and not left as whatever this repo last set them to.
+  to some assumed default and not left as whatever this repo last set them to. So are
+  full time's taskbar auto-hide, hardening values and Startup delay, from the copy
+  `710sRice activate` (or install -Activate) saves when a machine goes full-time
+  (Restore-FullTimeWindowsSettings, shared with `710sRice deactivate`); a machine made
+  full-time before 710sRice saved one has them deleted instead, back to Windows' defaults.
 
   Never touches the repo itself (config/, tools/, this script) or anything outside what
   install.ps1 itself touches -- delete the folder yourself if you want it gone too. Does
@@ -163,37 +167,15 @@ Invoke-ActivationRevert 'Remove the retired lock-screen sync task and its policy
     # back in section 3, after the hardening revert below.
     if (-not (Remove-RetiredLockScreenSync)) { Step-Info 'No old lock-screen sync task or policy key on this machine.' }
 }
-# Snapshot tray-icon promotions before either kill below -- see Backup-TrayIconPromotions
-# in tools\lib\activation.ps1 for why. Skipped under -DryRun (neither kill happens, so
-# there's nothing to protect and nothing to restore).
-$trayIconBackup = $null
-if (-not $DryRun) { $trayIconBackup = Backup-TrayIconPromotions }
-
-# Both only change settings; Explorer is restarted ONCE below if either did (see
-# Restart-Explorer in tools\lib\activation.ps1 -- two back-to-back restarts left the
-# desktop blank). $script: because Invoke-ActivationRevert runs these in a child scope.
-$script:needExplorerRestart = $false
-Invoke-ActivationRevert 'Un-hide the native taskbar' {
-    if (Set-TaskbarAutoHide -Enabled $false) { Step-Ok 'Native taskbar auto-hide turned off'; $script:needExplorerRestart = $true }
-    else { Step-Ok 'Native taskbar was already not set to auto-hide' }
-}
-Invoke-ActivationRevert 'Revert Windows hardening (HKCU)' {
-    $n = Set-WindowsHardening -Revert
-    Step-Ok "Windows hardening reverted ($n setting(s) removed, handed back to Windows' own defaults)"
-    if ($n -gt 0) { $script:needExplorerRestart = $true }
-}
-
-if (-not $DryRun) {
-    if ($script:needExplorerRestart) {
-        if (Restart-Explorer) { Step-Ok 'Explorer restarted once to apply the taskbar/hardening changes' }
-        else { Step-Warn "Explorer didn't come back after its restart -- sign out and back in (Ctrl+Alt+Del) to get the desktop back." }
-    }
-    Restore-TrayIconPromotions -BackupFile $trayIconBackup
-}
-Invoke-ActivationRevert "Restore Explorer's Startup app-launch delay" {
-    Remove-StartupDelay
-    Step-Ok 'Startup app-launch delay setting removed (Explorer falls back to its own ~10s default)'
-}
+# Taskbar auto-hide, the hardening values and the Startup delay: put back as they were before
+# this machine went full-time, from the copy `710sRice activate` (or install -Activate) saved --
+# or, with no copy (made full-time before 710sRice saved one, or never full-time), deleted:
+# auto-hide off, each value removed, which hands it to Windows' own default (what this section
+# always did). One Explorer restart if anything changed, the tray icons' choices kept around it
+# (Restore-FullTimeWindowsSettings in tools\lib\activation.ps1, shared with `710sRice
+# deactivate`). It prints its own lines, its -DryRun ones included; section 10 deletes the copy.
+try { Restore-FullTimeWindowsSettings -DryRun:$DryRun }
+catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_.Exception.Message)" }
 
 # --- 3. Revert unconditional install.ps1 steps: shell profile, Defender exclusions,
 #        wallpaper/accent/Terminal/Flow theming ----------------------------------------
@@ -441,12 +423,13 @@ if ($yourProfiles.Count -or $yourSchemes.Count) {
 
 # --- 10. Original-state snapshot folder --------------------------------------------------
 # Each Restore-* function above already deletes its own snapshot file once it's actually
-# used one; this just cleans up the (should now be empty) folder itself, and any snapshot
-# that was never consumed (e.g. Restore-LockScreenPolicy skipped because this shell wasn't
-# elevated) so a future re-install snapshots fresh state again rather than restoring an
-# increasingly stale one. -Force -ErrorAction SilentlyContinue rather than checking
-# "empty first": a leftover unconsumed snapshot is still safe to just delete here, since
-# its only purpose was this uninstall run.
+# used one -- except full time's Windows settings (full-time-settings.json), which
+# Restore-FullTimeWindowsSettings leaves for its caller on purpose; this cleans up the folder
+# itself, that copy, and any snapshot that was never consumed (e.g. Restore-LockScreenPolicy
+# skipped because this shell wasn't elevated) so a future re-install snapshots fresh state
+# again rather than restoring an increasingly stale one. -Force -ErrorAction
+# SilentlyContinue rather than checking "empty first": a leftover unconsumed snapshot is
+# still safe to just delete here, since its only purpose was this uninstall run.
 Invoke-Step "Remove original-state snapshot folder" {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state')
 } 'Original-state snapshot folder removed'

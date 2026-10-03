@@ -695,9 +695,10 @@ function Test-DoctorTasks {
                 else { "Mode: mixed -- a Startup shortcut says full-time, but no task starts at sign-in" }
         New-DoctorResult -Id 'mode' -Status 'XX' -Text $text @tasksFix
     } elseif ($fullTime) {
-        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: full-time (starts at sign-in)'
+        # The switch named on the line itself: an [OK] line prints no fix.
+        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: full-time (starts at sign-in) -- 710sRice deactivate switches to on demand'
     } else {
-        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: on demand (710sRice start)'
+        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: on demand (710sRice start) -- 710sRice activate switches to full-time'
     }
 
     $startup = [Environment]::GetFolderPath('Startup')

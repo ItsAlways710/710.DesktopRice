@@ -1,8 +1,14 @@
 # Windows settings changed by -Activate
 
-[`710sRice install -Activate`](../README.md#full-time--activate) turns these off. All of them
+[`710sRice activate`](../README.md#switching-activate--deactivate) and
+[`710sRice install -Activate`](../README.md#full-time--activate) turn these off. All of them
 are under `HKEY_CURRENT_USER`, so they affect only your account and need no admin rights.
-Uninstall deletes each value again, which hands the setting back to Windows' own default.
+
+Before changing them, going full-time saves each one as it was (whether it existed, and its
+value), along with taskbar auto-hide and Explorer's Startup delay. `710sRice deactivate` and
+uninstall put each one back from that copy. An install made full-time before 710sRice saved
+them has no copy: there, deactivate and uninstall delete each value instead, which hands the
+setting back to Windows' own default.
 
 | Key (under `HKCU\`) | Value | Set to | Turns off |
 | --- | --- | --- | --- |

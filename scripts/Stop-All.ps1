@@ -16,8 +16,9 @@
 
   Taskbar: on an on-demand setup (no sign-in tasks), if the taskbar is still set to
   auto-hide, the last line reminds you to turn it back off if you only wanted it while the
-  stack ran (Start-All.ps1 suggests turning it on; neither script changes it). Not on an
-  -Activate install -- there -Activate set it, and uninstall.ps1 reverts it.
+  stack ran (Start-All.ps1 suggests turning it on; neither script changes it). Not on a
+  full-time machine -- there activating set it, and `710sRice deactivate` / uninstall.ps1
+  put it back as it was.
 
 .NOTES
   AHK is stopped last, and only THIS repo's config\ahk\710.ahk -- never a blanket

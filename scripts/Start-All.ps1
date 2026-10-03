@@ -2,17 +2,18 @@
 <#
 .SYNOPSIS
   Starts 710.DesktopRice's whole stack now (komorebi, YASB, ShareX, AHK, Flow Launcher) --
-  the "on demand" way to run it, for a machine installed WITHOUT -Activate.
+  the "on demand" way to run it, for a machine that's on demand (installed without -Activate,
+  or switched back with `710sRice deactivate`).
 
 .DESCRIPTION
-  Two ways to use this repo:
-    - install.ps1 -Activate: the stack starts at every sign-in (Scheduled Tasks), plus the
-      Windows changes that go with a full-time shell (taskbar auto-hide, hardening,
-      Startup delay).
-    - install.ps1 alone, then this script when you want the stack, and Stop-All.ps1 (or
-      the tray's "Quit 710sRice") when you're done. Nothing starts at sign-in and Windows
-      itself isn't changed -- hardening and the Startup delay only make sense for a
-      full-time shell.
+  Two ways to use this repo (`710sRice activate` / `deactivate` switch between them):
+    - Full-time (install.ps1 -Activate, or `710sRice activate`): the stack starts at every
+      sign-in (Scheduled Tasks), plus the Windows changes that go with a full-time shell
+      (taskbar auto-hide, hardening, Startup delay).
+    - On demand (install.ps1 alone, or `710sRice deactivate`): this script when you want the
+      stack, and Stop-All.ps1 (or the tray's "Quit 710sRice") when you're done. Nothing
+      starts at sign-in and Windows itself isn't changed -- hardening and the Startup delay
+      only make sense for a full-time shell.
 
   Uses the exact launch commands the sign-in tasks use (tools\lib\activation.ps1's
   Get-AutostartComponents), so on-demand and -Activate start things the same way.

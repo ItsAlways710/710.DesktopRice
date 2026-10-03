@@ -72,6 +72,13 @@
   gets its Scheduled Task, just with no sign-in trigger, so `710sRice start` (the closing
   lines of a run say so) starts the stack on demand the same way sign-in would.
 
+  Switching an installed machine, without this whole run (its theme step puts the default
+  wallpaper back every time): `710sRice activate` / `710sRice deactivate`. A -Activate run
+  on a machine that isn't full-time yet is that same switch, by the same rules: it saves your
+  Windows settings before changing them (deactivate and uninstall put them back), and stops a
+  running stack before its windows step, starting it again at the end. A plain re-run never
+  changes the mode; the closing lines say which it is and the command that switches it.
+
   KOMOREBI_CONFIG_HOME is a single shared User-scope environment variable that winarchy's
   own startup path also reads and never resets -- if winarchy is still installed on this
   machine, whichever installer set it last wins for every *new* terminal/process opened
@@ -101,7 +108,7 @@
 
 .EXAMPLE
   .\install.ps1                # install/update everything this repo owns
-  .\install.ps1 -Activate      # ...and autostart + hide taskbar + harden + start now
+  .\install.ps1 -Activate      # ...and full-time: autostart + hide taskbar + harden + start now
   .\install.ps1 -SkipPackages  # skip the winget loop; still does env vars / wallust /
                                 # display-index / Flow setup / recompile
   .\install.ps1 -NoElevatedTiling   # komorebi non-elevated from now on (remembered)
@@ -150,8 +157,8 @@ if ($OnlyRun) {
     $wanted = @($Only | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
     $unknown = @($wanted | Where-Object { $StepOrder -notcontains $_ } | Select-Object -Unique)
     if ($Activate -or $SkipPackages -or $ElevatedTiling -or $NoElevatedTiling) {
-        # -Only fixes steps in the mode the machine is already in; changing modes is a plain
-        # `install -Activate` or `710sRice tiling elevated|normal`.
+        # -Only fixes steps in the mode the machine is already in; changing modes is
+        # `710sRice activate` / `deactivate` (or `710sRice tiling elevated|normal`).
         Write-Host "  [XX] -Only runs single steps and takes no other switches -- nothing was changed." -ForegroundColor Red
         exit 1
     }
@@ -185,6 +192,14 @@ if ($OnlyRun) { Step-Info "Running only: $($RunSteps -join ', ')" }
 # The wallust binary: installed by the wallust step, used by the theme step -- which can
 # run without it (-Only theme), so it's found here rather than in either.
 $wallustExe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
+
+# The machine's mode before this run changes anything -- read here, before the steps, since
+# the flow step registers Flow's own sign-in task early in a -Activate run. A -Activate run on a
+# machine that isn't full-time yet switches it, by the same rules as `710sRice activate`: the
+# tasks step saves the Windows settings first (Save-FullTimeSettings), and the windows step
+# stops a running stack before it changes them; the start-now block below starts it again.
+$WasFullTime = try { [bool](Test-FullTimeMachine) } catch { $false }
+$StackRestarted = $false
 
 $Steps = [ordered]@{}
 
@@ -668,6 +683,17 @@ $Steps['tasks'] = {
     # --- 11a. Tasks: every component's, in the machine's mode ------------------------------
     if ($Activate) {
         Write-Host "`n-- Activate --" -ForegroundColor Cyan
+        # Going full-time now: your Windows settings as they are, saved before anything changes
+        # them -- `710sRice deactivate` and uninstall put them back. Never on a machine that's
+        # already full-time (the "before" would be full time's own values).
+        if (-not $WasFullTime) {
+            try {
+                if (Save-FullTimeSettings) { Step-Ok 'Saved your Windows settings as they are now (taskbar auto-hide, the hardening values, the Startup delay) -- 710sRice deactivate and uninstall put them back' }
+                else { Step-Info "Kept the copy of your Windows settings saved $(Get-SavedFullTimeSettingsWhen (Get-SavedFullTimeSettings)) -- it's how they were before" }
+            } catch {
+                Step-Warn "Couldn't save your Windows settings ($($_.Exception.Message)) -- 710sRice deactivate and uninstall will hand them to Windows' own defaults instead."
+            }
+        }
         Register-Autostart
     } elseif (Test-FullTimeMachine) {
         # Already full-time from an earlier -Activate: re-register so the tasks pick up any
@@ -680,13 +706,11 @@ $Steps['tasks'] = {
         # On-demand: every component still gets its task (no trigger), so Start-All.ps1,
         # SUPER+Shift+R and the bar watchdog start each one at its task's own level -- the
         # same as -Activate, from any window (Register-OnDemandTasks).
+        # The closing lines say how to switch to full-time (`710sRice activate`).
         if (-not $OnlyRun) {
-            Step-Info 'Not -Activate: packages/config/theming/Defender/profile/Flow are applied, but autostart, the taskbar, hardening and the Startup delay are untouched.'
+            Step-Info 'On demand: packages, config, theming, Defender, the profile hook and Flow are applied; nothing starts at sign-in, and the taskbar, hardening and Startup delay are left as they are.'
         }
         Register-OnDemandTasks
-        if (-not $OnlyRun) {
-            Step-Info 'Run `710sRice install -Activate` when ready to make this repo the active shell experience.'
-        }
     }
 
     # --- 11c. The lock screen: the old sync retired ------------------------------------------
@@ -708,42 +732,24 @@ $Steps['windows'] = {
     # --- 11b. Windows settings: taskbar, hardening, Startup delay (full-time machines) ---
     # A plain run only gets here with -Activate. -Only windows gets here on any machine, and
     # these settings only belong to a full-time one.
+    Write-Host "`n-- Windows settings --" -ForegroundColor Cyan
     if ($OnlyRun -and -not (Test-FullTimeMachine)) {
-        Write-Host "`n-- Windows settings --" -ForegroundColor Cyan
-        Step-Info 'Nothing to do (on-demand machine) -- these settings are only for a full-time install (710sRice install -Activate).'
+        Step-Info 'Nothing to do (on-demand machine) -- these settings are only for a full-time install (710sRice activate).'
     } else {
-        if ($OnlyRun) { Write-Host "`n-- Windows settings --" -ForegroundColor Cyan }
-
-        # Snapshot tray-icon promotions before either kill below -- Explorer's own forced
-        # restart(s) can reset every app's "always show this icon" preference, not just this
-        # repo's own (see Backup-TrayIconPromotions in tools\lib\activation.ps1). Restored
-        # once both kills are done and Explorer's confirmed back up from the second one.
-        $trayIconBackup = Backup-TrayIconPromotions
-
-        # Both only change settings; Explorer is restarted ONCE below if either did (see
-        # Restart-Explorer -- two back-to-back restarts left the desktop blank, 2026-09-24).
-        $needExplorerRestart = $false
-        try {
-            if (Set-TaskbarAutoHide -Enabled $true) { Step-Ok 'Native taskbar set to auto-hide'; $needExplorerRestart = $true }
-            else { Step-Ok 'Native taskbar already set to auto-hide' }
-        } catch { Step-Warn "Could not set the taskbar to auto-hide: $($_.Exception.Message)" }
-
-        try {
-            $n = Set-WindowsHardening
-            Step-Ok "Windows hardening applied ($n setting(s) changed: no Bing search, ad suggestions, Copilot/Widgets/Task View buttons, Start recommendations)"
-            if ($n -gt 0) { $needExplorerRestart = $true }
-        } catch { Step-Warn "Could not apply Windows hardening: $($_.Exception.Message)" }
-
-        if ($needExplorerRestart) {
-            if (Restart-Explorer) { Step-Ok 'Explorer restarted once to apply the taskbar/hardening changes' }
-            else { Step-Warn "Explorer didn't come back after its restart -- sign out and back in (Ctrl+Alt+Del) to get the desktop back." }
+        # -Activate switching this machine to full-time: the stack goes down before its Windows
+        # settings change -- the switch never changes them under a running stack -- and the
+        # start-now block below starts it again (the same rule as `710sRice activate`).
+        if ($Activate -and -not $WasFullTime) {
+            $running = @(Get-RunningStackNames)
+            if ($running.Count) {
+                Step-Info "Stopping the stack first ($($running -join ', ')) -- it starts again at the end of this run."
+                Stop-RunningComponents
+                $StackRestarted = $true
+            }
         }
-        Restore-TrayIconPromotions -BackupFile $trayIconBackup
-
-        try {
-            Set-StartupDelay
-            Step-Ok 'Startup app-launch delay removed (StartupDelayInMSec=0)'
-        } catch { Step-Warn "Could not remove the Startup app-launch delay: $($_.Exception.Message)" }
+        # Auto-hide, the hardening, the Startup delay: one Explorer restart, the tray icons kept
+        # (tools\lib\activation.ps1).
+        Set-FullTimeWindowsSettings
     }
 }
 
@@ -774,42 +780,13 @@ foreach ($step in $RunSteps) {
 }
 
 # --- Start now (a full install -Activate only) -------------------------------------------
+# Through each component's own task, never from this elevated shell (Start-StackFromTasks in
+# tools\lib\activation.ps1 -- `710sRice activate` starts the stack the same way).
 if ($Activate -and -not $OnlyRun) {
-    Step-Info 'Starting services...'
-    # Started through each component's own autostart task (schtasks /Run), never launched
-    # directly from this shell. -Activate needs an elevated shell, and anything started
-    # from one runs elevated: an elevated AHK makes every Terminal it opens elevated, and
-    # non-elevated komorebi can't tile elevated windows (the 2026-09-23 admin-AHK incident;
-    # this block used to Start-Process the launchers itself, found 2026-09-24 before the
-    # full reinstall test). The tasks run at their own registered level whatever shell fires
-    # them -- LeastPrivilege, except komorebi's in elevated tiling mode -- the
-    # same path logon and SUPER+Shift+R use, so "start now" and "start at next sign-in"
-    # stay one code path. A component whose task couldn't be registered (Register-
-    # Autostart fell back to a Startup shortcut) is started from that shortcut only when
-    # this shell is NOT elevated; elevated, it says so and waits for the next sign-in.
-    # A component that declares its process (Flow) is left alone when it's already running:
-    # a second start of Flow shows its window.
-    $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    $startupDir = [Environment]::GetFolderPath('Startup')
-    foreach ($c in @(Get-AutostartComponents)) {
-        if ($c.Process -and (Get-Process -Name $c.Process -ErrorAction SilentlyContinue)) { Step-Ok "$($c.Key): already running"; continue }
-        if (Test-Task -TaskName $c.TaskName) {
-            $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $c.TaskName) 2>&1
-            if ($LASTEXITCODE -eq 0) { Step-Ok "$($c.Key): started via its autostart task" }
-            else { Step-Warn "$($c.Key): schtasks /Run failed (exit $LASTEXITCODE) -- it will start at the next sign-in." }
-            continue
-        }
-        $lnk = Join-Path $startupDir $c.LnkName
-        if ((Test-Path $lnk) -and -not $elevated) {
-            Start-Process $lnk
-            Step-Ok "$($c.Key): started via its Startup shortcut (no task)"
-        } elseif (Test-Path $lnk) {
-            Step-Warn "$($c.Key): only a Startup shortcut, no task -- not starting it from this elevated shell (it would run elevated); it starts at the next sign-in."
-        } else {
-            Step-Warn "$($c.Key): no autostart task or Startup shortcut -- not started."
-        }
+    Start-StackFromTasks
+    if ($StackRestarted) {
+        Step-Info 'Chrome, the Claude app and other Chromium apps can pick up an extra title bar when the bar restarts -- focus the app and press SUPER+Ctrl+C to redraw it.'
     }
-    Step-Ok 'Services starting in the background (see %LOCALAPPDATA%\710.DesktopRice\*-autostart.log if one seems to not have come up).'
 }
 
 # --- Done -----------------------------------------------------------------------------
@@ -817,13 +794,9 @@ if ($OnlyRun) {
     Write-Host "`n== Done: $($RunSteps -join ', ') ==" -ForegroundColor Cyan
 } else {
     Write-Host "`n== Install complete ==" -ForegroundColor Cyan
-    if (-not $Activate) {
-        Write-Host "This run didn't start the stack or touch autostart/taskbar/hardening. To run it now (on demand):"
-        Write-Host ""
-        Write-Host "    710sRice start" -ForegroundColor DarkGray
-        Write-Host ""
-        Write-Host "Or run ``710sRice install -Activate`` to start it at every sign-in."
-    }
+    # Which way this machine runs now, and the command that switches it -- the same lines
+    # `710sRice activate` / `deactivate` end with.
+    Write-RiceModeLines
 }
 # Something didn't install (W2): every step still ran; say what, and fail the run.
 if ($NotInstalled.Count) {

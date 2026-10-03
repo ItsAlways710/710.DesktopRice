@@ -61,7 +61,9 @@ cd 710.DesktopRice
 ## Install
 
 There are two ways to run it: **full-time**, where it's your desktop from the moment you sign
-in, or **on demand**, where you start it when you want it and stop it when you don't.
+in, or **on demand**, where you start it when you want it and stop it when you don't. You can
+switch between them at any time with `710sRice activate` and `710sRice deactivate` (see
+[Switching](#switching-activate--deactivate)).
 
 The first install runs from a normal PowerShell 7 window in the repo folder, as
 `.\710sRice.ps1`. It opens an admin window for the install itself (one UAC prompt) and waits
@@ -127,6 +129,8 @@ From a PowerShell 7 window in the repo folder:
 
 On top of the above, this:
 
+- Saves your taskbar and Windows settings as they are, so `710sRice deactivate` and uninstall
+  can put them back.
 - Starts komorebi, YASB, AutoHotkey, ShareX and Flow Launcher at every sign-in, through
   Scheduled Tasks. Only komorebi's runs elevated (unless you opted out); the rest run as you.
   Flow starts hidden, and the first SUPER+Space after sign-in opens it.
@@ -139,11 +143,16 @@ On top of the above, this:
   (`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize\StartupDelayInMSec = 0`).
 - Starts everything right away.
 
+Already installed on demand? `710sRice activate` does the same without re-running the
+installer (see [Switching](#switching-activate--deactivate)).
+
 #### Windows settings changed by -Activate
 
-All under `HKEY_CURRENT_USER`: your account only, no admin rights, and uninstall deletes
-each value again, which hands the setting back to Windows' own default. The full list,
-value by value: [docs/activate-windows-settings.md](docs/activate-windows-settings.md).
+All under `HKEY_CURRENT_USER`: your account only, no admin rights. Each one is saved as it
+was before it changes, and `710sRice deactivate` and uninstall put each back from that copy.
+An install made full-time before 710sRice saved them has no copy: there, those values are
+deleted instead, which hands each setting back to Windows' own default. The full list, value
+by value: [docs/activate-windows-settings.md](docs/activate-windows-settings.md).
 
 ### On demand
 
@@ -156,7 +165,35 @@ Run the installer without `-Activate`, from a PowerShell 7 window in the repo fo
 Nothing starts at sign-in and none of the Windows changes above are made. Each part still
 gets a Scheduled Task, just with no sign-in trigger, so `710sRice start` starts everything
 the way sign-in would (komorebi elevated, with no UAC prompt). See
-[Run on demand](#run-on-demand).
+[Run on demand](#run-on-demand). Already full-time? `710sRice deactivate` switches back.
+
+### Switching: `activate` / `deactivate`
+
+An installed machine can move between the two at any time, without re-running the installer
+(which puts the default wallpaper back every time):
+
+```powershell
+710sRice activate      # on demand -> full-time
+710sRice deactivate    # full-time -> on demand
+```
+
+- `activate` saves your taskbar and Windows settings as they are, then does what
+  [Full-time](#full-time--activate) lists: the sign-in tasks, auto-hide, the Windows settings,
+  the Startup delay, and it starts the stack.
+- `deactivate` puts those settings back as they were before you activated, takes the sign-in
+  start off every task, and leaves the stack stopped: `710sRice start` starts it when you want
+  it.
+- Neither changes a setting while the stack is running: each stops it first, and `activate`
+  starts it again at the end. Explorer restarts once, as it does during the install.
+- `-DryRun` shows what either would do, and changes nothing.
+- In the mode it's already in, each says so and changes nothing else (it re-registers that
+  mode's tasks, which mends one that lost its sign-in start).
+- An install made full-time before these commands existed has no saved copy, so the first
+  `deactivate` hands those settings back to Windows' own defaults instead, as uninstall always
+  did.
+
+The end of an install run, `710sRice doctor` and both commands say which mode the machine is
+in, and the command that switches it.
 
 ### Updating
 
@@ -182,9 +219,9 @@ From a copy older than the `update` command, or if you'd rather run git yourself
 `git pull` and then `710sRice doctor -repair` does the same thing by hand.
 
 Re-running the installer (`710sRice install`) is always safe too. A plain re-run keeps
-whatever you had: a full-time (`-Activate`) machine stays full-time, and your
-elevated-tiling choice is remembered. It installs what's missing, re-registers the sign-in
-tasks, and recompiles the rules. One thing to know: **every run applies the default
+whatever you had: a full-time (`-Activate`) machine stays full-time (switching is
+`710sRice activate` / `deactivate`), and your elevated-tiling choice is remembered. It
+installs what's missing, re-registers the sign-in tasks, and recompiles the rules. One thing to know: **every run applies the default
 wallpaper and theme again**, so pick yours with SUPER+W afterwards. A pinned package that's
 older than its pin is moved up to it (closing the app first and starting it again
 afterwards); one that's newer than its pin, and every unpinned one, is left alone.
@@ -202,6 +239,7 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | `710sRice` | The command list. `710sRice <command> -?` shows one command's options |
 | `710sRice install` | Install (safe to run again); `-Activate` makes it full-time, `-SkipPackages` skips winget, `-Only <step>` runs just those [steps](#install-steps) *(admin)* |
 | `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
+| `710sRice activate` / `deactivate` | [Switch](#switching-activate--deactivate) to full-time / back to on demand; `-DryRun` shows what it would do *(admin)* |
 | `710sRice doctor` | Health check: what's wrong, and the command that fixes each thing. Changes nothing; also says when GitHub has a newer version |
 | `710sRice doctor -repair` | Fix what doctor finds, then check again. Never touches your wallpaper, theme or choices *(admin)* |
 | `710sRice update` | Get the newest version from GitHub, then repair from it. Keeps your wallpaper, theme and choices *(admin)* |
@@ -299,7 +337,10 @@ commands, and puts back what was there before. Your original wallpaper, lock scr
 colors, font and default shell, Flow Launcher settings (its own startup setting and fonts included) and
 theme, ShareX's and Everything's settings (their update checks and tray icons), taskbar,
 Windows settings, PowerShell profile and Defender exclusions are restored, not reset to
-defaults. The installer saves each one the first time it changes it.
+defaults. The installer saves each one the first time it changes it (the taskbar and Windows
+settings when a machine goes full-time). The one exception: an install made full-time before
+`710sRice activate` existed has no saved taskbar and Windows settings, so uninstall deletes
+those values instead, which hands each back to Windows' own default.
 
 Packages: anything the installer added is removed, except two kinds of row in
 [versions.md](versions.md):
