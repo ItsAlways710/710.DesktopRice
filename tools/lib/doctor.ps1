@@ -565,13 +565,18 @@ function Test-DoctorStack {
         [pscustomobject]@{ Key = $comp.Key; Name = (Get-DoctorComponentName $comp.Key); Log = $null; Installed = $true; Own = $true }
     })
     # (None of the four installed but Flow: just Flow's line below.)
-    if (-not @($parts | Where-Object { $procs[$_.Key].Count }).Count -and ($parts.Count -or -not $own.Count)) {
+    # "Running" means komorebi, YASB or 710.ahk. ShareX on its own isn't the stack, the way Flow on
+    # its own never was: you can open it yourself, and an on-demand machine's sign-in once started
+    # it alone (its own startup shortcut, sharex.ps1) -- read as a half-started stack, that made
+    # repair, and so update, start everything around it (the Dell, 2026-10-03).
+    $core = @($parts | Where-Object { $_.Key -ne 'sharex' })
+    if (-not @($core | Where-Object { $procs[$_.Key].Count }).Count -and ($parts.Count -or -not $own.Count)) {
         # Nothing running: normal on an on-demand machine between sessions. A full-time
         # (-Activate'd) machine is meant to run from sign-in, so there it's a problem, and
         # repair starts the lot (user, 2026-09-27: "repair just make it all on if possible") --
-        # with Flow, unless it's still up.
+        # with Flow and ShareX, unless they're still up.
         if (Test-FullTimeMachine) {
-            $keys = @($parts | ForEach-Object Key) + @($own | Where-Object { -not $procs[$_.Key].Count } | ForEach-Object Key)
+            $keys = @($parts | Where-Object { -not $procs[$_.Key].Count } | ForEach-Object Key) + @($own | Where-Object { -not $procs[$_.Key].Count } | ForEach-Object Key)
             return New-DoctorResult -Id 'stack' -Status 'XX' -Text "Stack not running -- this is a full-time machine (it starts at sign-in)" `
                 -Fix '710sRice start' -Repair "start:$($keys -join ',')"
         }

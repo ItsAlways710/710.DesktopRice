@@ -43,7 +43,7 @@ components still revert, a `Check` that throws is "couldn't check".
 | `commands.ps1` | `envvars` (after `bluetooth`; before Flow's first start, so it indexes them) | The Start-menu commands: ten shortcuts in Start Menu\Programs\710sRice, each `config\ahk\send-command.ahk <name>` (710.ahk's `RiceCommands`); Flow's program cache cleared when it isn't running to see a change; doctor's line |
 | `flow.ps1` | `wallust` (so `theme` themes a Flow set up in the same run) | Flow Launcher: its first start on a new machine, its settings, its own startup turned off, its sign-in task, doctor's Flow lines |
 | `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), started (as you) when it isn't running, doctor's "running" line |
-| `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), doctor's ShareX lines |
+| `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), its own sign-in start off (the Startup-folder shortcut its installer makes), doctor's ShareX lines |
 
 The worked example is `flow.ps1`: every field but `NamedOnly`, a first start through
 `Start-AsUser`, snapshots, and its own task. `everything.ps1` / `sharex.ps1` are the smaller

@@ -108,6 +108,8 @@ Either way, the installer:
 - Turns off ShareX's and Everything's own update checks (the pins and `710sRice update` bring
   updates) and keeps their icons out of the bar: Everything's tray icon is off, and ShareX's
   is hidden from the bar's tray (ShareX keeps it on: it needs it to start hidden at sign-in).
+  ShareX's own "Run ShareX when Windows starts" is switched off: 710sRice starts ShareX
+  itself on a full-time machine, and an on-demand one starts nothing at sign-in.
   If Everything isn't running, install starts it in the background (SUPER+S's file search
   needs it; Everything freshly installed by winget only starts at your next sign-in).
 - Sets the default wallpaper and themes everything from it.
@@ -275,7 +277,7 @@ only runs with `-Activate`).
 | `wallust` | Installs wallust at its pinned version |
 | `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran): keywords, fonts, fullscreen; switches its own startup off and registers its task |
 | `everything` | Turns Everything's tray icon and update check off, and starts it if it isn't running |
-| `sharex` | Turns ShareX's update check off (and its tray icon on, which its hidden start needs) |
+| `sharex` | Turns ShareX's update check and its own startup off (and its tray icon on, which its hidden start needs) |
 | `theme` | Sets the default wallpaper and themes everything from it |
 | `palette` | Re-themes everything from the wallpaper you have now, with the palette profile in use (no wallpaper change) |
 | `monitors` | Gives each screen its number, for komorebi (a number once given is kept; see [Screens and workspaces](#screens-and-workspaces)) |
@@ -335,7 +337,7 @@ From a PowerShell 7 window:
 This is a real uninstall: it stops everything, removes the Scheduled Tasks and the Start-menu
 commands, and puts back what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
 colors, font and default shell, Flow Launcher settings (its own startup setting and fonts included) and
-theme, ShareX's and Everything's settings (their update checks and tray icons), taskbar,
+theme, ShareX's and Everything's settings (their update checks and tray icons, ShareX's own startup), taskbar,
 Windows settings, PowerShell profile and Defender exclusions are restored, not reset to
 defaults. The installer saves each one the first time it changes it (the taskbar and Windows
 settings when a machine goes full-time). The one exception: an install made full-time before
