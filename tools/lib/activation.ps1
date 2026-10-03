@@ -1835,7 +1835,9 @@ function Restore-LockScreenPicture {
     $result = 'restored'
     if (-not $img -or -not (Test-Path -LiteralPath $img -PathType Leaf)) { $img = Get-WindowsLockScreenDefault; $result = 'default' }
     if ($img) {
-        $r = Invoke-LockScreenSetter -Root $Root -Image $img
+        # -KeepMode: Windows' Picture / Spotlight / Slideshow choice comes back from the snapshot
+        # just below, not from the setter (which otherwise chooses Picture).
+        $r = Invoke-LockScreenSetter -Root $Root -Image $img -KeepMode
         if ($r.ExitCode -notin 0, 2) { Step-Warn "Lock-screen picture not put back: $(ConvertTo-SafeText $r.Message)"; $result = 'failed' }
     } else { $result = 'failed' }
     $cdm = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'

@@ -33,10 +33,13 @@ function Invoke-LockScreenSetter {
        pipeline holds its lock meanwhile). The timeout is only for a WinRT call that never
        answers. As the caller -- the user on a wallpaper change; install / uninstall run
        elevated, as the same user.
+       -KeepMode: leave Windows' Picture / Spotlight / Slideshow choice alone (uninstall's put-back
+       of your original picture); otherwise the script also chooses Picture, or the picture never
+       shows while Spotlight is on.
        -> ExitCode (the script's: 0 set, 1 no picture file, 2 set but a policy overrides it,
        3 Windows refused; ours: 4 timed out, 5 couldn't start powershell.exe) and Message (what
        happened, in words -- the script's last line). #>
-    param([Parameter(Mandatory)][string]$Root, [string]$Image, [int]$TimeoutSec = 30)
+    param([Parameter(Mandatory)][string]$Root, [string]$Image, [int]$TimeoutSec = 30, [switch]$KeepMode)
     $ps = if ($env:WINDIR) { Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe' } else { '' }
     if (-not $ps -or -not (Test-Path -LiteralPath $ps)) {
         $why = "Windows PowerShell (powershell.exe) wasn't found"
@@ -54,6 +57,7 @@ function Invoke-LockScreenSetter {
         $psi.ArgumentList.Add($a)
     }
     if ($Image) { $psi.ArgumentList.Add('-Image'); $psi.ArgumentList.Add($Image) }
+    if ($KeepMode) { $psi.ArgumentList.Add('-KeepMode') }
     try { $p = [System.Diagnostics.Process]::Start($psi) }
     catch {
         $why = "couldn't start Windows PowerShell ($($_.Exception.Message))"

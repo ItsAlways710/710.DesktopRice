@@ -488,7 +488,10 @@ which color goes where.
 
 The lock screen takes the wallpaper itself, as your own lock-screen picture (the one
 Settings > Personalization > Lock screen sets), so it's there before sign-in straight away,
-even after a restart. A picture you pick in Settings stays until your next wallpaper change.
+even after a restart. Windows only shows that picture while its lock-screen choice is
+**Picture** (Windows Spotlight or a slideshow hide it), so every wallpaper change sets that
+too; uninstall puts your own choice back. A picture you pick in Settings stays until your
+next wallpaper change.
 
 The gallery shows:
 

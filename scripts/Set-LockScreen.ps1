@@ -19,7 +19,17 @@
   Started with no window by tools\lib\lockscreen.ps1's Invoke-LockScreenSetter, from:
     - the wallpaper pipeline (tools\apply-wallust-outputs.ps1), on every wallpaper change;
     - install's tasks step, once, after it retires the old sync (Remove-RetiredLockScreenSync);
-    - uninstall, to put your original picture back (Restore-LockScreenPicture).
+    - `710sRice deactivate`, after it puts full time's settings back (Set-LockScreenToWallpaper);
+    - uninstall, to put your original picture back (Restore-LockScreenPicture, with -KeepMode).
+
+  Setting the picture alone isn't enough: Windows only shows it while its own lock-screen choice
+  is Picture. With Windows Spotlight chosen, a picture set through the API never shows (proven on
+  the Dell, 2026-10-03: with RotatingLockScreenEnabled gone, Settings said Windows spotlight and
+  the lock screen showed Windows' default image; RotatingLockScreenEnabled = 0 alone brought the
+  picture back, on Win+L and at boot). So every set also chooses Picture, the way Settings does:
+  RotatingLockScreenEnabled = 0, and SlideshowEnabled = 0 if a slideshow was on. A full-time
+  machine's hardening held that choice; on demand nothing did. -KeepMode leaves the choice alone
+  (uninstall's put-back of your original picture restores the choice itself, from the snapshot).
 
   Before the FIRST set ever, the original is saved once: the picture Windows reports and the
   Spotlight / Slideshow settings, in original-state\lockscreen-picture.json (activation.ps1's
@@ -32,7 +42,9 @@
 [CmdletBinding()]
 param(
     # The picture. Left out: the wallpaper that's up now (HKCU\Control Panel\Desktop\WallPaper).
-    [string]$Image
+    [string]$Image,
+    # Leave Windows' Picture / Spotlight / Slideshow choice as it is.
+    [switch]$KeepMode
 )
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
@@ -123,6 +135,28 @@ function Save-OriginalOnce {
     Write-Utf8File $file ($o | ConvertTo-Json -Depth 5)
 }
 
+function Set-PictureMode {
+    # Windows' lock-screen choice = Picture, as Settings > Personalization > Lock screen > Picture
+    # sets it: Spotlight off (RotatingLockScreenEnabled = 0; absent means Spotlight, Windows' own
+    # default) and a slideshow off (SlideshowEnabled = 0, only when it's on). Without it the
+    # picture just set never shows while Spotlight is chosen. Save-OriginalOnce has already saved
+    # both as they were, for uninstall. -> 'Spotlight' / 'Slideshow' (the choice it replaced), or
+    # '' (Picture already).
+    $was = ''
+    $slide = Get-ItemProperty -LiteralPath $lockKey -Name 'SlideshowEnabled' -ErrorAction SilentlyContinue
+    if ($slide -and $slide.SlideshowEnabled -ne 0) {
+        Set-ItemProperty -LiteralPath $lockKey -Name 'SlideshowEnabled' -Value 0 -Type DWord
+        $was = 'Slideshow'
+    }
+    $rot = Get-ItemProperty -LiteralPath $cdm -Name 'RotatingLockScreenEnabled' -ErrorAction SilentlyContinue
+    if (-not $rot -or $rot.RotatingLockScreenEnabled -ne 0) {
+        if (-not (Test-Path -LiteralPath $cdm)) { $null = New-Item -Path $cdm -Force }
+        Set-ItemProperty -LiteralPath $cdm -Name 'RotatingLockScreenEnabled' -Value 0 -Type DWord
+        if (-not $was) { $was = 'Spotlight' }
+    }
+    $was
+}
+
 function Write-Record([bool]$Ok, [string]$Name, [string]$Reason, [bool]$Policy) {
     # What doctor reads (tools\lib\lockscreen.ps1's Read-LockScreenRecord). Best-effort.
     try {
@@ -155,11 +189,24 @@ try {
     exit 3
 }
 
+# Windows' Picture choice, so the picture shows (Set-PictureMode). Not when told to keep the choice.
+$modeNote = ''
+if (-not $KeepMode) {
+    try {
+        $was = Set-PictureMode
+        if ($was) { $modeNote = ", and Windows' lock screen switched from $was to Picture" }
+    } catch {
+        $e = $_.Exception
+        while ($e.InnerException) { $e = $e.InnerException }
+        $modeNote = ", but Windows' lock-screen choice couldn't be set to Picture ($(ConvertTo-Safe ("$($e.Message)".Trim())))"
+    }
+}
+
 $policy = Test-LockScreenPolicy
 Write-Record $true $name '' $policy
 if ($policy) {
-    Write-Output "set to $name, but a lock-screen policy on this machine shows its own picture instead"
+    Write-Output "set to $name$modeNote, but a lock-screen policy on this machine shows its own picture instead"
     exit 2
 }
-Write-Output "set to $name"
+Write-Output "set to $name$modeNote"
 exit 0

@@ -1017,8 +1017,20 @@ function Test-DoctorPaletteLastRun {
         -Detail $detail -Fix 'pick another wallpaper (SUPER+W), or another palette source (SUPER+Alt+Space > Palette profiles)'
 }
 
+function Get-DoctorLockScreenChoice {
+    # Windows' lock-screen choice when it isn't Picture: 'Slideshow' (SlideshowEnabled 1) or
+    # 'Windows spotlight' (RotatingLockScreenEnabled not 0, absent included: Spotlight is Windows'
+    # default). $null = Picture. The hardening's Spotlight-off policy (DisableWindowsSpotlightFeatures)
+    # doesn't count: Windows only honours it on Enterprise / Education, not Pro or Home.
+    $slide = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lock Screen' -Name 'SlideshowEnabled' -ErrorAction SilentlyContinue
+    if ($slide -and $slide.SlideshowEnabled -eq 1) { return 'Slideshow' }
+    $rot = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name 'RotatingLockScreenEnabled' -ErrorAction SilentlyContinue
+    if (-not $rot -or $rot.RotatingLockScreenEnabled -ne 0) { return 'Windows spotlight' }
+    $null
+}
+
 function Test-DoctorLockScreen {
-    # Your lock-screen picture (plan doc item 48; tools\lib\lockscreen.ps1), three kinds of line:
+    # Your lock-screen picture (plan doc item 48; tools\lib\lockscreen.ps1), four kinds of line:
     #   - The old sync still here, on a machine from before 2026-09-28: its elevated task, or the
     #     policy key it wrote (install's snapshot of that key says it's ours). [XX]: `-Only tasks`
     #     retires both, so repair -- and update -- does.
@@ -1027,9 +1039,17 @@ function Test-DoctorLockScreen {
     #   - The last set, from the record scripts\Set-LockScreen.ps1 writes: [OK]; [!!] with
     #     Windows' reason (never [XX]: a managed PC may refuse every time, and repair couldn't
     #     change that); [..] nothing has set it yet.
+    #   - Windows' own lock-screen choice, when 710sRice has set your picture: it only shows with
+    #     Picture chosen. Spotlight (RotatingLockScreenEnabled not 0 -- absent is Spotlight, Windows'
+    #     default) or a slideshow hides it: Win+L and the boot screen showed Windows' default image
+    #     on the Dell (2026-10-03). Every set since then chooses Picture; an on-demand machine set
+    #     before then can still be on Spotlight, and so can one where Spotlight was picked in
+    #     Settings since. [XX]: the palette step sets the picture again, choosing Picture, so
+    #     repair -- and update -- does. Not under a lock-screen policy (that shows its own picture
+    #     either way, the line above).
     # Doctor never asks Windows what the lock screen shows: that would be a Windows PowerShell
-    # start in every report, and a picture you pick in Settings is yours until the next wallpaper
-    # change.
+    # start in every report (the choice above is two registry values), and a picture you pick in
+    # Settings is yours until the next wallpaper change.
     $ours   = [bool](Get-OriginalState -Label 'lockscreen-personalizationcsp')
     $csp    = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP' -ErrorAction SilentlyContinue
     $gpo    = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -ErrorAction SilentlyContinue
@@ -1050,6 +1070,12 @@ function Test-DoctorLockScreen {
     $when = try { $t = [datetime]::Parse("$($rec.time)"); if ($t.Date -eq (Get-Date).Date) { $t.ToString('HH:mm') } else { $t.ToString('yyyy-MM-dd HH:mm') } } catch { "$($rec.time)" }
     $name = "$($rec.image)"
     if ($rec.ok) {
+        $choice = if (-not $cspSet -and -not $gpoSet) { Get-DoctorLockScreenChoice } else { $null }
+        if ($choice) {
+            return New-DoctorResult -Id 'lock-screen' -Status 'XX' -Text "Lock screen: Windows is set to $choice, so your picture doesn't show there" `
+                -Detail @("Settings > Personalization > Lock screen says $choice; your picture needs Picture", "last set with the wallpaper: $(if ($name) { "$name, " })$when") `
+                -Fix '710sRice install -Only palette' -Step 'palette'
+        }
         return New-DoctorResult -Id 'lock-screen' -Status 'OK' -Text "Lock screen: set with the wallpaper ($(if ($name) { "$name, " })$when)"
     }
     New-DoctorResult -Id 'lock-screen' -Status '!!' -Text "Lock screen: the last set ($when) didn't take -- it shows an older picture" `

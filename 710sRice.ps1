@@ -624,6 +624,16 @@ function Test-RiceSwitchInstalled {
     $false
 }
 
+function Set-RiceSwitchLockScreen {
+    # deactivate's last Windows setting: your lock-screen picture (the wallpaper) set again. The
+    # put-back can hand Windows' lock screen back to Spotlight -- the hardening held its Picture
+    # choice -- and Spotlight hides the picture (Win+L and the boot screen showed Windows' default
+    # image on the Dell, 2026-10-03). The setter chooses Picture again (scripts\Set-LockScreen.ps1).
+    param([switch]$DryRun)
+    if ($DryRun) { Write-Host "  [ ] Set your lock-screen picture again (the wallpaper, with Windows' lock screen on Picture)"; return }
+    Set-LockScreenToWallpaper
+}
+
 function Invoke-RiceActivate {
     # `activate`: on demand -> full-time. Save your Windows settings (once), stop the stack, apply
     # full time's settings, every task with its sign-in trigger, then start everything.
@@ -714,6 +724,7 @@ function Invoke-RiceDeactivate {
             Write-Host "`n-- Windows settings --" -ForegroundColor Cyan
             Step-Info "A copy of your Windows settings saved $(Get-SavedFullTimeSettingsWhen $saved) is still here (by a 710sRice activate that didn't finish) -- putting them back."
             Restore-FullTimeWindowsSettings -DryRun:$DryRun
+            Set-RiceSwitchLockScreen -DryRun:$DryRun
             if (-not $DryRun) { Remove-OriginalState -Label 'full-time-settings' }
         }
         Write-Host "`n-- Tasks --" -ForegroundColor Cyan
@@ -732,9 +743,10 @@ function Invoke-RiceDeactivate {
     Write-Host "`n-- Stack --" -ForegroundColor Cyan
     $null = Stop-RiceStackForSwitch -DryRun:$DryRun -Then ' -- 710sRice start brings it back'
 
-    # 2. Your Windows settings back.
+    # 2. Your Windows settings back, and your lock-screen picture with them.
     Write-Host "`n-- Windows settings --" -ForegroundColor Cyan
     Restore-FullTimeWindowsSettings -DryRun:$DryRun
+    Set-RiceSwitchLockScreen -DryRun:$DryRun
 
     # 3. The tasks, last: without their sign-in trigger the machine is on demand.
     Write-Host "`n-- Tasks --" -ForegroundColor Cyan
