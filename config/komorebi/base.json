@@ -8,6 +8,7 @@
   "border_width": 5,
   "border_offset": -1,
   "border_style": "Rounded",
+  "border_implementation": "Windows",
   "transparency": false,
   "transparency_alpha": 220,
   "mouse_follows_focus": false,
