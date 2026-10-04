@@ -526,7 +526,7 @@ PalOpen(mode, items, title) {
     Pal := {gui: g, mode: mode, colors: c, items: items, title: title, stack: [], list: [],
         sel: 0, top: 1, rows: rows, rowH: rowH, y0: y0, x0: pad - 8, x1: pad + labelW + hintW + 8,
         edit: ed, crumb: crumb, count: count, mouse: '', pressed: 0}
-    ed.OnEvent('Change', (*) => PalRefresh())
+    ed.OnEvent('Change', PalSearchChanged)
     g.OnEvent('Close', (*) => PalClose())
     PalRefresh()
 
@@ -547,6 +547,15 @@ PalSetFont(g, opts) {
     g.SetFont(opts, 'JetBrainsMono NF')
 }
 
+; Every way into an open palette -- its mouse messages, its keys, the search box --
+; starts Critical, so nothing closes it halfway through: PalWatch (below) and Esc both
+; end here, and AHK lets another thread cut in once one has run ~15 ms. Over an
+; exclusive-fullscreen game that window always gets used: the palette taking focus
+; drops the game out of exclusive mode, the screen switches modes, a hover redraw
+; crawls, the palette gets closed mid-redraw and PalDraw writes into destroyed
+; controls -- an AHK error every single time on Godzilla (2026-10-04; the stack trace
+; fits exactly that). Critical makes the close wait its turn. PalEnter switches it
+; back off before running the picked action, so actions run as they always did.
 PalClose() {
     global Pal
     SetTimer(PalWatch, 0)
@@ -588,6 +597,12 @@ PalFlatten(items, path, q, list) {
         else if PalMatch(q, name ' ' PalHint(it))
             list.Push({text: name, hint: PalHint(it), item: it})
     }
+}
+
+; The search box's Change event: a way in like the others (Critical -- see PalClose).
+PalSearchChanged(*) {
+    Critical('On')
+    PalRefresh()
 }
 
 PalRefresh(sel := 0) {
@@ -660,6 +675,7 @@ PalDraw() {
 }
 
 PalMove(d) {
+    Critical('On')                       ; a way in -- see PalClose
     if !Pal.sel
         return
     len := Pal.list.Length, i := Pal.sel, step := (d > 0) ? 1 : -1
@@ -682,6 +698,7 @@ PalMove(d) {
 }
 
 PalEnter() {
+    Critical('On')                       ; a way in -- see PalClose
     if !Pal.sel || !Pal.list[Pal.sel].HasOwnProp('item')
         return                           ; SUPER+K rows are information, not actions
     it := Pal.list[Pal.sel].item
@@ -693,10 +710,12 @@ PalEnter() {
         return
     }
     PalClose()
+    Critical('Off')                      ; the action runs like any other thread
     it.action.Call()
 }
 
 PalBack() {
+    Critical('On')                       ; a way in -- see PalClose
     if !Pal.stack.Length
         return
     prev := Pal.stack.Pop()
@@ -705,6 +724,7 @@ PalBack() {
 }
 
 PalEscape() {
+    Critical('On')                       ; a way in -- see PalClose
     if (Pal.edit.Value != '') {
         Pal.edit.Value := ''
         PalRefresh()
@@ -730,6 +750,7 @@ PalIndexAtCursor(hwnd) {
 }
 
 PalMouseMove(wParam, lParam, msg, hwnd) {
+    Critical('On')                       ; a way in -- see PalClose
     if !IsObject(Pal) || (lParam = Pal.mouse)    ; ignore synthetic moves after a redraw
         return
     Pal.mouse := lParam
@@ -744,11 +765,13 @@ PalMouseMove(wParam, lParam, msg, hwnd) {
 ; that click's button-up could otherwise land on whatever row appeared under the
 ; cursor and pick it.
 PalPress(wParam, lParam, msg, hwnd) {
+    Critical('On')                       ; a way in -- see PalClose
     if IsObject(Pal)
         Pal.pressed := PalIndexAtCursor(hwnd)
 }
 
 PalClick(wParam, lParam, msg, hwnd) {
+    Critical('On')                       ; a way in -- see PalClose
     if !IsObject(Pal)
         return
     pressed := Pal.pressed, Pal.pressed := 0
@@ -760,6 +783,7 @@ PalClick(wParam, lParam, msg, hwnd) {
 }
 
 PalWheel(wParam, lParam, msg, hwnd) {
+    Critical('On')                       ; a way in -- see PalClose
     if !IsObject(Pal) || DllCall('GetAncestor', 'ptr', hwnd, 'uint', 2, 'ptr') != Pal.gui.Hwnd
         return
     delta := (wParam >> 16) & 0xFFFF
