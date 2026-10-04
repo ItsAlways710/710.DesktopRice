@@ -1018,17 +1018,26 @@ function Set-FullTimeWindowsSettings {
 function Restore-FullTimeWindowsSettings {
     <# The way back from full time (`710sRice deactivate`, uninstall): taskbar auto-hide, the
        hardening values and the Startup delay as they were before the machine went full-time,
-       from the saved copy (Save-FullTimeSettings). With no copy -- made full-time before
-       710sRice saved one, or never full-time -- what uninstall always did: auto-hide off, every
+       from the saved copy (Save-FullTimeSettings). With no copy on a full-time machine (made
+       full-time before 710sRice saved one) -- what uninstall always did: auto-hide off, every
        hardening value deleted (Set-WindowsHardening -Revert), the delay value deleted, which
-       hands each setting to Windows' own default. ONE Explorer restart if auto-hide or a
+       hands each setting to Windows' own default. With no copy on an on-demand machine
+       (-FullTime:$false, the mode read before anything changed): nothing at all -- 710sRice
+       never changed them there (they only change on the way to full time, after the copy is
+       saved), so whatever is there is yours or Windows', and a delete would wipe it (your Task
+       View hidden, an auto-hide you chose; the Dell, 2026-10-03). ONE Explorer restart if auto-hide or a
        hardening value changed, with the tray icons' choices put back around it. Leaves the
        saved copy where it is: the caller deletes it once the whole switch is done, so a switch
        cut off part-way puts back the same values when it's run again. Your lock-screen
        picture's own restore runs after this in uninstall: the hardening holds two lock-screen
        values. -DryRun: what it would do; nothing is changed. Prints its own lines. #>
-    param([switch]$DryRun)
-    $plan  = Get-FullTimeSettingsRestorePlan -Saved (Get-SavedFullTimeSettings)
+    param([switch]$DryRun, [bool]$FullTime = $true)
+    $saved = Get-SavedFullTimeSettings
+    if (-not $saved -and -not $FullTime) {
+        Step-Info "Taskbar, Windows hardening and Startup delay: nothing to put back -- 710sRice only changes them on a full-time machine, and this one is on demand"
+        return
+    }
+    $plan  = Get-FullTimeSettingsRestorePlan -Saved $saved
     $total = @(Get-HardeningSettings).Count
     $onOff = { param($b) if ($b) { 'on' } else { 'off' } }
 

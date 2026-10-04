@@ -342,7 +342,8 @@ Windows settings, PowerShell profile and Defender exclusions are restored, not r
 defaults. The installer saves each one the first time it changes it (the taskbar and Windows
 settings when a machine goes full-time). The one exception: an install made full-time before
 `710sRice activate` existed has no saved taskbar and Windows settings, so uninstall deletes
-those values instead, which hands each back to Windows' own default.
+those values instead, which hands each back to Windows' own default. On an on-demand machine
+uninstall leaves them alone: 710sRice never changed them there.
 
 Packages: anything the installer added is removed, except two kinds of row in
 [versions.md](versions.md):

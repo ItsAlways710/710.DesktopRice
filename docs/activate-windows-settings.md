@@ -8,7 +8,8 @@ Before changing them, going full-time saves each one as it was (whether it exist
 value), along with taskbar auto-hide and Explorer's Startup delay. `710sRice deactivate` and
 uninstall put each one back from that copy. An install made full-time before 710sRice saved
 them has no copy: there, deactivate and uninstall delete each value instead, which hands the
-setting back to Windows' own default.
+setting back to Windows' own default. On an on-demand machine 710sRice never changed them, so
+uninstall leaves them alone.
 
 | Key (under `HKCU\`) | Value | Set to | Turns off |
 | --- | --- | --- | --- |

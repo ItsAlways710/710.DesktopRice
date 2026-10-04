@@ -32,7 +32,8 @@
   full time's taskbar auto-hide, hardening values and Startup delay, from the copy
   `710sRice activate` (or install -Activate) saves when a machine goes full-time
   (Restore-FullTimeWindowsSettings, shared with `710sRice deactivate`); a machine made
-  full-time before 710sRice saved one has them deleted instead, back to Windows' defaults.
+  full-time before 710sRice saved one has them deleted instead, back to Windows' defaults,
+  and an on-demand machine's are left alone -- 710sRice never changed them there.
 
   Never touches the repo itself (config/, tools/, this script) or anything outside what
   install.ps1 itself touches -- delete the folder yourself if you want it gone too. Does
@@ -45,13 +46,11 @@
   Flow settings either -- a machine it "uninstalled" from could still have komorebi/YASB/
   AHK running and autostarting at next logon, with every cosmetic change left behind
   permanently. This script closes both gaps: stopping is unconditional (first thing, every
-  run, regardless of whether this machine ever used -Activate), every -Activate-gated
-  setting install.ps1 can apply is reverted here to match whether or not -Activate was
-  ever actually used, and every real Windows setting install.ps1/tools\apply-wallust-
-  outputs.ps1 change gets its exact prior value put back rather than just being abandoned
-  (each revert is itself idempotent/self-detecting -- reverting a setting that was never
-  applied, or restoring a snapshot that was never taken, is a safe no-op, same as
-  install.ps1's own steps being safe to re-run).
+  run, regardless of whether this machine ever used -Activate), and every real Windows
+  setting install.ps1 / tools\apply-wallust-outputs.ps1 / full time change gets its exact
+  prior value put back rather than just being abandoned -- and only those: a setting
+  710sRice never changed here is left as it is (restoring a snapshot that was never taken is
+  a no-op, same as install.ps1's own steps being safe to re-run).
 
   -DryRun exists because this script can only really be validated by actually destroying
   a real install -- same reasoning winarchy's own uninstall.ps1 documents for its own
@@ -154,9 +153,9 @@ Invoke-ActivationRevert "Stop any running 710.DesktopRice processes (komorebi, Y
 }
 
 # --- 2. Revert -Activate: autostart, taskbar, hardening, Startup delay ----------------
-# Reverted unconditionally too, whether or not -Activate was ever actually used here --
-# each of these is self-detecting/idempotent (see NOTES), so reverting a setting that was
-# never applied is a safe no-op. winarchy's own uninstall.ps1 does none of this at all.
+# Autostart is removed unconditionally (removing a task that isn't there is a no-op). The
+# Windows settings are only put back where 710sRice changed them -- see below. winarchy's own
+# uninstall.ps1 does none of this at all.
 Write-Host "`n-- Revert autostart / taskbar / hardening / Startup delay --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Unregister autostart (Scheduled Tasks + Startup fallback shortcuts)' {
     Unregister-Autostart
@@ -168,13 +167,15 @@ Invoke-ActivationRevert 'Remove the retired lock-screen sync task and its policy
     if (-not (Remove-RetiredLockScreenSync)) { Step-Info 'No old lock-screen sync task or policy key on this machine.' }
 }
 # Taskbar auto-hide, the hardening values and the Startup delay: put back as they were before
-# this machine went full-time, from the copy `710sRice activate` (or install -Activate) saved --
-# or, with no copy (made full-time before 710sRice saved one, or never full-time), deleted:
-# auto-hide off, each value removed, which hands it to Windows' own default (what this section
-# always did). One Explorer restart if anything changed, the tray icons' choices kept around it
+# this machine went full-time, from the copy `710sRice activate` (or install -Activate) saved.
+# No copy on a full-time machine (made full-time before 710sRice saved one): deleted -- auto-hide
+# off, each value removed, which hands it to Windows' own default (what this section always
+# did). No copy on an on-demand machine: left alone -- 710sRice never changed them there, so
+# they're yours or Windows' (the mode is the one read at the top, before the tasks went). One
+# Explorer restart if anything changed, the tray icons' choices kept around it
 # (Restore-FullTimeWindowsSettings in tools\lib\activation.ps1, shared with `710sRice
 # deactivate`). It prints its own lines, its -DryRun ones included; section 10 deletes the copy.
-try { Restore-FullTimeWindowsSettings -DryRun:$DryRun }
+try { Restore-FullTimeWindowsSettings -DryRun:$DryRun -FullTime $ComponentCtx.FullTime }
 catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_.Exception.Message)" }
 
 # --- 3. Revert unconditional install.ps1 steps: shell profile, Defender exclusions,
