@@ -31,6 +31,19 @@
   machine's hardening held that choice; on demand nothing did. -KeepMode leaves the choice alone
   (uninstall's put-back of your original picture restores the choice itself, from the snapshot).
 
+  The screens before sign-in -- the clock screen at boot and the password screen -- don't read
+  your choice at all: they read Windows' own copy of it, kept per account under
+  HKLM\...\Authentication\LogonUI\Creative\<your SID>. Settings > Lock screen > Picture writes
+  that copy too; setting only yours left it on Spotlight. On Godzilla (2026-10-04, on demand)
+  Win+L showed the picture while both boot screens stayed on Windows Spotlight -- that copy said
+  RotatingLockScreenEnabled 1, LockImageFlags 3, and Windows kept filling it with Spotlight
+  pictures overnight. Picking Picture in Settings changed exactly those two values, to 0 and 1,
+  and both boot screens followed after a restart. So every set that chooses Picture writes them
+  too (Set-SignInScreenPicture). It sits under HKLM, but Windows lets each account change its own
+  copy: a set running as you writes it (Godzilla, 2026-10-04). If Windows ever refuses, the line
+  says so and doctor names the fix. Saved once before its first change
+  (original-state\lockscreen-signin.json); uninstall puts it back.
+
   Before the FIRST set ever, the original is saved once: the picture Windows reports and the
   Spotlight / Slideshow settings, in original-state\lockscreen-picture.json (activation.ps1's
   Save-OriginalState path and shape). Every run then writes lockscreen.json -- when, which file
@@ -52,6 +65,9 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $stateDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
 $cdm      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
 $lockKey  = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lock Screen'
+# Windows' own copy of the choice, read by the screens before sign-in (header). Per account.
+$signInKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Creative\' +
+    [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
 function ConvertTo-Safe([string]$Text) {
     # Nothing printed or recorded names the user's folders (the repo is public; output gets pasted).
@@ -157,6 +173,38 @@ function Set-PictureMode {
     $was
 }
 
+function Save-SignInOriginalOnce {
+    # Windows' sign-in copy of the choice as it was, before this script first changes it -- both
+    # values, in Get-RegSnapshot's shape, once ever (like Save-OriginalOnce). Uninstall puts it
+    # back: activation.ps1's Restore-LockScreenPicture.
+    $file = Join-Path $stateDir 'original-state\lockscreen-signin.json'
+    if (Test-Path -LiteralPath $file) { return }
+    $o = [ordered]@{
+        RotatingLockScreenEnabled = Get-RegSnapshot $signInKey 'RotatingLockScreenEnabled'
+        LockImageFlags            = Get-RegSnapshot $signInKey 'LockImageFlags'
+    }
+    Write-Utf8File $file ($o | ConvertTo-Json -Depth 5)
+}
+
+function Set-SignInScreenPicture {
+    # The screens before sign-in (header): Windows' own copy of the choice, set to Picture the way
+    # Settings sets it -- RotatingLockScreenEnabled 0, LockImageFlags 1 -- only when that copy says
+    # otherwise. No copy at all (an account Spotlight never touched) has nothing to disagree with:
+    # left alone. -> 'set', '' (Picture already, or no copy), or 'denied' (Windows refused the
+    # write; the original is saved by then, which is fine: it's still the original).
+    $rot = Get-ItemProperty -LiteralPath $signInKey -Name 'RotatingLockScreenEnabled' -ErrorAction SilentlyContinue
+    if (-not $rot -or $rot.RotatingLockScreenEnabled -eq 0) { return '' }
+    Save-SignInOriginalOnce
+    try {
+        Set-ItemProperty -LiteralPath $signInKey -Name 'RotatingLockScreenEnabled' -Value 0 -Type DWord -ErrorAction Stop
+        Set-ItemProperty -LiteralPath $signInKey -Name 'LockImageFlags' -Value 1 -Type DWord -ErrorAction Stop
+    } catch {
+        if ($_.Exception -is [System.Security.SecurityException] -or $_.Exception -is [System.UnauthorizedAccessException]) { return 'denied' }
+        throw
+    }
+    'set'
+}
+
 function Write-Record([bool]$Ok, [string]$Name, [string]$Reason, [bool]$Policy) {
     # What doctor reads (tools\lib\lockscreen.ps1's Read-LockScreenRecord). Best-effort.
     try {
@@ -189,7 +237,8 @@ try {
     exit 3
 }
 
-# Windows' Picture choice, so the picture shows (Set-PictureMode). Not when told to keep the choice.
+# Windows' Picture choice, so the picture shows (Set-PictureMode), and the same in Windows' own
+# copy for the screens before sign-in (Set-SignInScreenPicture). Not when told to keep the choice.
 $modeNote = ''
 if (-not $KeepMode) {
     try {
@@ -199,6 +248,16 @@ if (-not $KeepMode) {
         $e = $_.Exception
         while ($e.InnerException) { $e = $e.InnerException }
         $modeNote = ", but Windows' lock-screen choice couldn't be set to Picture ($(ConvertTo-Safe ("$($e.Message)".Trim())))"
+    }
+    try {
+        switch (Set-SignInScreenPicture) {
+            'set'    { $modeNote += '; the screens before sign-in switched to Picture too' }
+            'denied' { $modeNote += '; the screens before sign-in still show Windows spotlight (Windows refused the change; try 710sRice install -Only palette)' }
+        }
+    } catch {
+        $e = $_.Exception
+        while ($e.InnerException) { $e = $e.InnerException }
+        $modeNote += "; the screens before sign-in couldn't be switched to Picture ($(ConvertTo-Safe ("$($e.Message)".Trim())))"
     }
 }
 

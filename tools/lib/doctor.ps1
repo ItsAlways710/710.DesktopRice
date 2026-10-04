@@ -1034,6 +1034,18 @@ function Get-DoctorLockScreenChoice {
     $null
 }
 
+function Get-DoctorSignInScreenChoice {
+    # The screens before sign-in read Windows' own copy of the choice, per account
+    # (scripts\Set-LockScreen.ps1's header): 'Windows spotlight' when that copy says so
+    # (RotatingLockScreenEnabled not 0). No copy at all has nothing to disagree with: $null,
+    # same as Picture. Readable without admin.
+    $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Creative\' +
+        [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $rot = Get-ItemProperty -LiteralPath $key -Name 'RotatingLockScreenEnabled' -ErrorAction SilentlyContinue
+    if ($rot -and $rot.RotatingLockScreenEnabled -ne 0) { return 'Windows spotlight' }
+    $null
+}
+
 function Test-DoctorLockScreen {
     # Your lock-screen picture (plan doc item 48; tools\lib\lockscreen.ps1), four kinds of line:
     #   - The old sync still here, on a machine from before 2026-09-28: its elevated task, or the
@@ -1052,6 +1064,10 @@ function Test-DoctorLockScreen {
     #     Settings since. [XX]: the palette step sets the picture again, choosing Picture, so
     #     repair -- and update -- does. Not under a lock-screen policy (that shows its own picture
     #     either way, the line above).
+    #   - With Picture chosen, Windows' own copy of the choice for the screens before sign-in
+    #     (the clock and password screens at boot): still on Spotlight, those two showed Windows'
+    #     picture while Win+L showed yours (Godzilla, 2026-10-04). [XX]: the palette step's set
+    #     writes that copy (your account may write its own), so repair -- and update -- does.
     # Doctor never asks Windows what the lock screen shows: that would be a Windows PowerShell
     # start in every report (the choice above is two registry values), and a picture you pick in
     # Settings is yours until the next wallpaper change.
@@ -1079,6 +1095,12 @@ function Test-DoctorLockScreen {
         if ($choice) {
             return New-DoctorResult -Id 'lock-screen' -Status 'XX' -Text "Lock screen: Windows is set to $choice, so your picture doesn't show there" `
                 -Detail @("Settings > Personalization > Lock screen says $choice; your picture needs Picture", "last set with the wallpaper: $(if ($name) { "$name, " })$when") `
+                -Fix '710sRice install -Only palette' -Step 'palette'
+        }
+        $signIn = if (-not $cspSet -and -not $gpoSet) { Get-DoctorSignInScreenChoice } else { $null }
+        if ($signIn) {
+            return New-DoctorResult -Id 'lock-screen' -Status 'XX' -Text "Lock screen: the screens before sign-in still show $signIn, not your picture" `
+                -Detail @("Win+L shows your picture; the clock and password screens at boot read Windows' own copy of the choice", "last set with the wallpaper: $(if ($name) { "$name, " })$when") `
                 -Fix '710sRice install -Only palette' -Step 'palette'
         }
         return New-DoctorResult -Id 'lock-screen' -Status 'OK' -Text "Lock screen: set with the wallpaper ($(if ($name) { "$name, " })$when)"

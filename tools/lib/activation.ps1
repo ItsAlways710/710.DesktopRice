@@ -1836,8 +1836,11 @@ function Restore-LockScreenPicture {
        doesn't matter whether setting a picture switched them off. If -Activate had already
        switched Spotlight off when the snapshot was taken (Hardened), those two values were its,
        not the original: full time's own way back (Restore-FullTimeWindowsSettings) puts them
-       back, so they're left alone here. Run after that. -> 'restored', 'default' (the original
-       was gone), 'failed', or $null (nothing ever set here -- nothing to do). #>
+       back, so they're left alone here. Run after that. Last, Windows' own copy of the choice
+       for the screens before sign-in, from the 'lockscreen-signin' snapshot the setter takes
+       before it first changes that copy (no snapshot = it never did: left alone). -> 'restored',
+       'default' (the original was gone), 'failed', or $null (nothing ever set here -- nothing to
+       do). #>
     $snap = Get-OriginalState -Label 'lockscreen-picture'
     if (-not $snap) { return $null }
     $img = "$($snap.Image)"
@@ -1857,6 +1860,15 @@ function Restore-LockScreenPicture {
     }
     if ($snap.SlideshowEnabled) {
         Set-RegValueFromSnapshot -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lock Screen' -Name 'SlideshowEnabled' -Snapshot $snap.SlideshowEnabled
+    }
+    $signIn = Get-OriginalState -Label 'lockscreen-signin'
+    if ($signIn) {
+        $signInKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Creative\' +
+            [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        foreach ($name in 'RotatingLockScreenEnabled', 'LockImageFlags') {
+            if ($signIn[$name]) { Set-RegValueFromSnapshot -Path $signInKey -Name $name -Snapshot $signIn[$name] }
+        }
+        Remove-OriginalState -Label 'lockscreen-signin'
     }
     Remove-OriginalState -Label 'lockscreen-picture'
     Remove-Item -LiteralPath (Get-LockScreenRecordPath) -Force -ErrorAction SilentlyContinue

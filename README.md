@@ -493,8 +493,10 @@ The lock screen takes the wallpaper itself, as your own lock-screen picture (the
 Settings > Personalization > Lock screen sets), so it's there before sign-in straight away,
 even after a restart. Windows only shows that picture while its lock-screen choice is
 **Picture** (Windows Spotlight or a slideshow hide it), so every wallpaper change sets that
-too; uninstall puts your own choice back. A picture you pick in Settings stays until your
-next wallpaper change.
+too; uninstall puts your own choice back. The screens before sign-in (the clock and password
+screens at boot) read Windows' own copy of that choice, so every wallpaper change sets that
+copy too; doctor says when it's out of step, and uninstall puts it back as well. A picture you
+pick in Settings stays until your next wallpaper change.
 
 The gallery shows:
 
