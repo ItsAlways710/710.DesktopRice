@@ -480,6 +480,8 @@ widgets:
         round_corners: true
         border_color: None
         blur: false
+  # The metrics group: closed, the chip icon its four widgets use (2026-10-05: it was the same
+  # gear as the control center at the far right); open, the arrow that folds it.
   systeminfo-grouper:
     type: "yasb.grouper.GrouperWidget"
     options:
@@ -493,7 +495,7 @@ widgets:
       collapse_options:
         enabled: true
         expanded_label: "\uf054"
-        collapsed_label: "\ueaf8"
+        collapsed_label: "\uf4bc"
         label_position: "right"
   control_center:
     type: "yasb.control_center.ControlCenterWidget"
@@ -667,7 +669,8 @@ widgets:
         on_left: "toggle_label"
         on_right: "toggle_label"
   # --- The capture drawer (winarchy port audit, 2026-10-01) --------------------------------------
-  # After the window title, folded behind its arrow: six ShareX buttons, each calling ShareX
+  # After the window title, folded behind a monitor-screenshot icon (an arrow while it's open, to
+  # fold it again; until 2026-10-05 an arrow both ways): six ShareX buttons, each calling ShareX
   # directly with its own command-line action (the ones 710.ahk's Capture menu uses). ShareX is
   # where winget puts it ($env:ProgramFiles -- YASB expands it, as everywhere here). The power-plan
   # button that sat at its end came out on the Dell test (2026-10-01: the user didn't want it there).
@@ -679,7 +682,7 @@ widgets:
       collapse_options:
         enabled: true
         label_position: "left"
-        collapsed_label: "\uf054"
+        collapsed_label: "\udb83\ude51"
         expanded_label: "\uf053"
   capture_region:
     type: "yasb.custom.CustomWidget"
