@@ -413,8 +413,9 @@ Invoke-Step "Remove machine-local generated files (display-index.local.json, kom
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\theme-inputs.sha256')
     # How the last lock-screen set went (tools\lib\lockscreen.ps1's record, doctor's).
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\lockscreen.json')
-    # The Screens menu's snapshot (tools\screens.ps1).
+    # The Screens menu's snapshot and its last switch's result (tools\screens.ps1).
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\screens.tsv')
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\screens-result.txt')
     # The palette editor's own wallust config and its last preview palette.
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-editor')
 } 'Machine-local generated files removed'

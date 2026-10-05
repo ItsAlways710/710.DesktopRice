@@ -530,6 +530,8 @@ PalOpen(mode, items, title, dropDown := false) {
         edit: ed, crumb: crumb, count: count, mouse: '', pressed: 0}
     ed.OnEvent('Change', PalSearchChanged)
     g.OnEvent('Close', (*) => PalClose())
+    MouseGetPos(&ox, &oy)                   ; Screen coordinates (WorkAreaUnderMouse, above)
+    Pal.openPos := ox ',' oy                ; see PalMouseMove
     PalRefresh()
 
     if dropDown {
@@ -597,7 +599,9 @@ PalMatch(q, hay) {
     return true
 }
 
-PalHint(it) => it.HasOwnProp('sub') ? Chr(0x203A) : (it.HasOwnProp('hint') ? it.hint : '')
+; A submenu row shows its hint before the chevron (a screen's "on · 150%", System's key).
+PalHint(it) => it.HasOwnProp('sub') ? (it.HasOwnProp('hint') ? it.hint ' ' Chr(0x203A) : Chr(0x203A))
+    : (it.HasOwnProp('hint') ? it.hint : '')
 
 ; Leaves of the tree whose path matches, e.g. "Capture > Region".
 PalFlatten(items, path, q, list) {
@@ -764,6 +768,16 @@ PalMouseMove(wParam, lParam, msg, hwnd) {
     Critical('On')                       ; a way in -- see PalClose
     if !IsObject(Pal) || (lParam = Pal.mouse)    ; ignore synthetic moves after a redraw
         return
+    ; Nor the move Windows sends when the menu appears under a mouse that hasn't moved: the row
+    ; under it would take the selection from the first row, and Enter would pick it -- the
+    ; Screens warning puts Cancel first so Enter backs out (2026-10-05).
+    if (Pal.openPos != '') {
+        CoordMode('Mouse', 'Screen')
+        MouseGetPos(&mx, &my)
+        if (mx ',' my = Pal.openPos)
+            return
+        Pal.openPos := ''
+    }
     Pal.mouse := lParam
     if (i := PalIndexAtCursor(hwnd)) && (i != Pal.sel) {
         Pal.sel := i
@@ -1372,13 +1386,13 @@ DisplayLogLine(m) {
 ; connected screen, from the bar's monitor button (a dropdown under the mouse) and
 ; SUPER+Alt+Space > Screens
 ; ============================================================================
-; Stage (a), read-only: each screen by its Windows name, the main one marked, and whether it's on
-; and at what scale. The menu reads a snapshot, %LOCALAPPDATA%\710.DesktopRice\screens.tsv,
-; written by tools\screens.ps1 -Snapshot (the DisplayConfig module), instead of asking
-; PowerShell on every open: a cold pwsh plus the module costs about a second. It's taken when this
-; script starts and again 3 s after the last display or device change (ScheduleKomorebiNudge,
-; above) -- a scale change arrives as a WM_DISPLAYCHANGE too (display-changes.log, Godzilla,
-; 2026-10-04) -- so it's current by the time a menu opens.
+; Each screen by its Windows name, the main one marked, whether it's on and at what scale; its
+; submenu turns it off or back on (ScreenOff / ScreenOn, below). The menu reads a snapshot,
+; %LOCALAPPDATA%\710.DesktopRice\screens.tsv, written by tools\screens.ps1 -Snapshot (the
+; DisplayConfig module), instead of asking PowerShell on every open: a cold pwsh plus the module
+; costs about a second. It's taken when this script starts and again 3 s after the last display
+; or device change (ScheduleKomorebiNudge, above) -- a scale change arrives as a WM_DISPLAYCHANGE
+; too (display-changes.log, Godzilla, 2026-10-04) -- so it's current by the time a menu opens.
 ScreensFile := EnvGet('LOCALAPPDATA') '\710.DesktopRice\screens.tsv'
 
 RefreshScreens(*) {
@@ -1387,7 +1401,7 @@ RefreshScreens(*) {
 }
 RefreshScreens()
 
-; The snapshot as {screens: [{id, name, on, main, scale, steps}], error, waiting}; the file's
+; The snapshot as {screens: [{id, name, path, on, main, scale, steps}], error, waiting}; the file's
 ; format is in tools\screens.ps1's header. waiting: there's no snapshot yet (this script started
 ; a moment ago and the first one is still being taken).
 ReadScreens() {
@@ -1413,21 +1427,25 @@ ReadScreens() {
         f := StrSplit(line, '`t')
         if (f.Length < 6)
             continue
+        ; v2 adds the screen's device path after its name; a v1 file (until the first snapshot
+        ; after an update) has none, and its screens can't be switched yet.
+        path := (f.Length >= 7) ? f[7] : ''
+        name := f[6]
         steps := []
         for s in StrSplit(f[5], ',')
             if IsInteger(s)
                 steps.Push(Integer(s))
-        r.screens.Push({id: f[1], on: (f[2] = '1'), main: (f[3] = '1'), scale: f[4], steps: steps, name: f[6]})
+        r.screens.Push({id: f[1], on: (f[2] = '1'), main: (f[3] = '1'), scale: f[4], steps: steps, path: path, name: name})
     }
     return r
 }
 
-; One row per screen, its state on the right ("on · 150%" / "off"). Stage (a): the rows are
-; information only -- choosing one just closes the menu; turning screens off and on and scaling
-; them come next. A name two screens share gets the screen's number after it, so both menus can
-; tell them apart (the tray's native menu would merge two items with the same name). Something
-; wrong (DisplayConfig missing, or it threw) is one short row -- the whole message wouldn't fit --
-; and choosing it shows the message.
+; One row per screen, its state on the right ("on · 150%" / "off"), its submenu Turn off or
+; Turn on. The main display's row has no submenu: it always stays on (his rule, 2026-10-05;
+; Settings > Display chooses which screen is main). A name two screens share gets the screen's
+; number after it, so both menus can tell them apart (the tray's native menu would merge two
+; items with the same name). Something wrong (DisplayConfig missing, or it threw) is one short
+; row -- the whole message wouldn't fit -- and choosing it shows the message.
 ScreensMenuItems() {
     r := ReadScreens()
     items := []
@@ -1443,7 +1461,12 @@ ScreensMenuItems() {
     for s in r.screens {
         name := s.name (seen[s.name] > 1 ? ' #' s.id : '') (s.main ? ' (main)' : '')
         state := s.on ? 'on' (s.scale != '' ? ' ' Chr(0xB7) ' ' s.scale '%' : '') : 'off'
-        items.Push({text: name, hint: state, action: (*) => 0})
+        if (s.main || s.path = '')
+            items.Push({text: name, hint: state, action: (*) => 0})
+        else if s.on
+            items.Push({text: name, hint: state, sub: [{text: 'Turn off', action: ScreenOff.Bind(s, name, false)}]})
+        else
+            items.Push({text: name, hint: state, sub: [{text: 'Turn on', action: ScreenOn.Bind(s, name)}]})
     }
     if !items.Length
         items.Push({text: 'No screens found', action: (*) => 0})
@@ -1455,6 +1478,130 @@ ScreensMenuItems() {
 OpenScreensMenu(*) {
     if !PalClosed('screens')
         PalOpen('screens', ScreensMenuItems(), 'Screens', true)
+}
+
+; Turning a screen off or on runs tools\screens.ps1 -Off / -On (DisplayConfig: Windows' own
+; "Disconnect this display" / "Extend desktop to this display"). The screen goes by its device
+; path, in the environment -- never on a command line, like Quick add's values -- since
+; DisplayConfig's numbers can change as screens come and go. Each action costs a cold pwsh (a
+; second or two), so a tooltip says what's happening meanwhile; one at a time. The display-change
+; hook (above) takes a new snapshot once Windows has settled, so the next menu shows the change.
+ScreensBusy := false
+
+; Runs cmd hidden and calls done(its exit code) once it has finished, without waiting for it: a
+; RunWait holds up its own thread and, on a timer's thread, whichever thread the timer
+; interrupted too -- startup included. done gets -1 when cmd couldn't start, and -2 when it was
+; still running after timeoutMs (it's stopped then).
+RunThen(cmd, done, timeoutMs := 60000) {
+    try Run(cmd, , 'Hide', &pid)
+    catch {
+        done(-1)
+        return
+    }
+    ; A handle keeps its exit code, and keeps the process id from going to another process.
+    h := DllCall('OpenProcess', 'UInt', 0x1000, 'Int', false, 'UInt', pid, 'Ptr')   ; PROCESS_QUERY_LIMITED_INFORMATION
+    started := A_TickCount
+    Check() {
+        code := 259                         ; STILL_ACTIVE
+        if h
+            DllCall('GetExitCodeProcess', 'Ptr', h, 'UInt*', &code)
+        else if !ProcessExist(pid)
+            code := 0                       ; gone before it could be opened: no code to read
+        if (code = 259) {
+            if (A_TickCount - started < timeoutMs)
+                return
+            try ProcessClose(pid)
+            code := -2
+        }
+        SetTimer(Check, 0)
+        if h
+            DllCall('CloseHandle', 'Ptr', h)
+        done(code)
+    }
+    SetTimer(Check, 250)
+}
+
+; Runs the helper for screen s (args: -Off, -Off -Anyway, -On), then done(its exit code).
+ScreensRun(s, args, done) {
+    global RepoRoot
+    EnvSet('SCREENS_PATH', s.path)          ; the helper takes it as it starts
+    RunThen('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' RepoRoot '\tools\screens.ps1" ' args, done)
+    EnvSet('SCREENS_PATH')
+}
+
+; What the helper said (screens-result.txt), as lines -- the first one says what happened.
+ScreensResult() {
+    try return StrSplit(RTrim(FileRead(EnvGet('LOCALAPPDATA') '\710.DesktopRice\screens-result.txt', 'UTF-8'), '`r`n'), '`n', '`r')
+    return ["The screens helper didn't say what happened"]
+}
+
+; How a helper run ended, when that needs saying: what it reported, or why it didn't.
+ScreensToast(code) {
+    if (code = -1)
+        TrayTip("Couldn't start the screens helper (pwsh)", '710sRice')
+    else if (code = -2)
+        TrayTip("The screens helper didn't finish within a minute, so it was stopped", '710sRice')
+    else if (code > 0)                      ; 1 failed, 4 refused (main / the only one on), 5 gone
+        TrayTip(ScreensResult()[1], '710sRice')
+}
+
+; Turn off: at once when komorebi has no windows on that screen; otherwise ScreenOffWarn lists
+; them first. anyway (its "Turn it off anyway") skips that check.
+ScreenOff(s, name, anyway, *) {
+    global ScreensBusy
+    if ScreensBusy
+        return
+    ScreensBusy := true
+    ToolTip('Turning off ' name '...')
+    ScreensRun(s, '-Off' (anyway ? ' -Anyway' : ''), ScreenOffDone.Bind(s, name))
+}
+ScreenOffDone(s, name, code) {
+    global ScreensBusy
+    ToolTip()
+    ScreensBusy := false
+    if (code = 3)
+        ScreenOffWarn(s, name)
+    else
+        ScreensToast(code)
+}
+
+ScreenOn(s, name, *) {
+    global ScreensBusy
+    if ScreensBusy
+        return
+    ScreensBusy := true
+    ToolTip('Turning on ' name '...')
+    ScreensRun(s, '-On', ScreenOnDone)
+}
+ScreenOnDone(code) {
+    global ScreensBusy
+    ToolTip()
+    ScreensBusy := false
+    ScreensToast(code)
+}
+
+; komorebi still has windows on the screen being turned off, on some workspace of it: off, they'd
+; be left on a screen that's gone -- reachable only from the taskbar or Alt+Tab. So it asks (his
+; design, 2026-10-05): Cancel first, so Enter and Esc both back out to move them; "Turn it off
+; anyway" second; then the windows, each with its workspace (choosing one is Cancel too).
+ScreenOffWarn(s, name) {
+    lines := ScreensResult()
+    wins := []
+    loop lines.Length - 1 {
+        f := StrSplit(lines[A_Index + 1], '`t')
+        if (f.Length < 3)
+            continue
+        app := RegExReplace(f[2], 'i)\.exe$')
+        wins.Push({text: app (f[3] != '' ? ' ' Chr(0xB7) ' ' f[3] : ''), hint: 'workspace ' f[1], action: (*) => 0})
+    }
+    n := wins.Length
+    items := [{text: 'Cancel', hint: (n ? 'move them first' : ''), action: (*) => 0},
+        {text: 'Turn it off anyway', action: ScreenOff.Bind(s, name, true)}]
+    if n
+        items.Push(wins*)
+    else                                    ; komorebi didn't answer: say so instead of a list
+        items.Push({text: lines[1], action: (*) => 0})
+    PalOpen('screens', items, 'Turn off ' name '?' (n ? ' ' n (n = 1 ? ' window is' : ' windows are') ' still on it' : ''))
 }
 
 ; ============================================================================
