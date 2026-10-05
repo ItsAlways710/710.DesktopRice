@@ -1387,21 +1387,89 @@ DisplayLogLine(m) {
 ; SUPER+Alt+Space > Screens
 ; ============================================================================
 ; Each screen by its Windows name, the main one marked, whether it's on and at what scale; its
-; submenu turns it off or back on (ScreenOff / ScreenOn, below). The menu reads a snapshot,
+; submenu turns it off or back on and sets its scale (ScreenOff / ScreenOn / ScreenScale, below),
+; and any scale change restarts the bar (CheckScreenScales). The menu reads a snapshot,
 ; %LOCALAPPDATA%\710.DesktopRice\screens.tsv, written by tools\screens.ps1 -Snapshot (the
 ; DisplayConfig module), instead of asking PowerShell on every open: a cold pwsh plus the module
 ; costs about a second. It's taken when this script starts and again 3 s after the last display
 ; or device change (ScheduleKomorebiNudge, above) -- a scale change arrives as a WM_DISPLAYCHANGE
 ; too (display-changes.log, Godzilla, 2026-10-04) -- so it's current by the time a menu opens.
 ScreensFile := EnvGet('LOCALAPPDATA') '\710.DesktopRice\screens.tsv'
+ScreensScales := Map()                       ; screen -> {scale, res} in the last snapshot (screens that are on)
+ScreensRefreshing := false, ScreensRefreshAgain := false
 
+; A new snapshot, then the scale check -- through RunThen (below), so nothing waits for it,
+; startup included. One at a time: a change that lands meanwhile takes another one straight after.
 RefreshScreens(*) {
-    global RepoRoot
-    try Run('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' RepoRoot '\tools\screens.ps1" -Snapshot', , 'Hide')
+    global RepoRoot, ScreensRefreshing, ScreensRefreshAgain
+    if ScreensRefreshing {
+        ScreensRefreshAgain := true
+        return
+    }
+    ScreensRefreshing := true
+    RunThen('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' RepoRoot '\tools\screens.ps1" -Snapshot', ScreensRefreshed, 30000)
+}
+ScreensRefreshed(code) {
+    global ScreensRefreshing, ScreensRefreshAgain
+    ScreensRefreshing := false
+    if (code >= 0)                          ; it ran (1: written with an error line, which the check skips)
+        CheckScreenScales()
+    if ScreensRefreshAgain {
+        ScreensRefreshAgain := false
+        RefreshScreens()
+    }
 }
 RefreshScreens()
 
-; The snapshot as {screens: [{id, name, path, on, main, scale, steps}], error, waiting}; the file's
+; The bar restart on every display-scale change (decided with him 2026-10-04, after the scaling
+; test: YASB redraws at the new scale, but the strip it reserves at the top keeps its old height,
+; so windows ran under a bigger bar or stopped short of a smaller one; `710sRice reload bar` fixed
+; it, SUPER+Shift+R didn't). Whether the change came from this menu or from Settings > Display, it
+; arrives as a display change, so it's caught here: a screen that's on in this snapshot and the
+; last one with a different scale -> tools\reload-stack.ps1 -BarOnly (what `reload bar` runs: it
+; leaves the bar alone while komorebi is paused). YASB 2.0.7 does re-register its strip when a
+; screen's geometry changes (bar.py, on_geometry_changed), but evidently before the new scale has
+; reached it, and nothing outside YASB can ask it to do that again -- so, the restart. The first
+; snapshot after this script starts has nothing to compare with. Only a change at the same
+; resolution counts: Windows keeps a screen's scale relative to what it recommends for the
+; resolution, so a game taking a screen to another resolution (exclusive fullscreen) moves the
+; reading on its own -- and a bar restart mid-game is the last thing wanted.
+CheckScreenScales() {
+    global ScreensScales, RepoRoot
+    r := ReadScreens()
+    if (r.error != '' || r.waiting)
+        return
+    now := Map(), changed := ''
+    for s in r.screens {
+        if !s.on || s.scale = ''
+            continue
+        key := (s.path != '') ? s.path : s.name
+        now[key] := {scale: s.scale, res: s.res}
+        if !ScreensScales.Has(key)
+            continue
+        was := ScreensScales[key]
+        if (was.scale != s.scale && was.res = s.res)
+            changed .= (changed = '' ? '' : ', ') s.name ' ' was.scale '% -> ' s.scale '%'
+    }
+    ScreensScales := now
+    if (changed = '')
+        return
+    DisplayLogLine('scale changed (' changed '): restarting the bar')
+    TrayTip('Display scale changed -- restarting the bar', '710sRice')
+    RunThen('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' RepoRoot '\tools\reload-stack.ps1" -BarOnly', BarRestarted, 120000)
+}
+
+; reload-stack.ps1 -BarOnly's answer: 3 = komorebi is paused, so it left the bar alone (a bar
+; started then never connects to komorebi).
+BarRestarted(code) {
+    if (code = 3) {
+        DisplayLogLine('bar left alone: komorebi is paused')
+        TrayTip('komorebi is paused, so the bar was left alone -- unpause (SUPER+P), then: 710sRice reload bar', '710sRice')
+    } else if (code != 0)
+        TrayTip("The bar didn't restart cleanly -- reload-stack.log says why; 710sRice reload bar tries again", '710sRice')
+}
+
+; The snapshot as {screens: [{id, name, path, res, on, main, scale, steps}], error, waiting}; the file's
 ; format is in tools\screens.ps1's header. waiting: there's no snapshot yet (this script started
 ; a moment ago and the first one is still being taken).
 ReadScreens() {
@@ -1430,22 +1498,24 @@ ReadScreens() {
         ; v2 adds the screen's device path after its name; a v1 file (until the first snapshot
         ; after an update) has none, and its screens can't be switched yet.
         path := (f.Length >= 7) ? f[7] : ''
+        res := (f.Length >= 8) ? f[8] : ''
         name := f[6]
         steps := []
         for s in StrSplit(f[5], ',')
             if IsInteger(s)
                 steps.Push(Integer(s))
-        r.screens.Push({id: f[1], on: (f[2] = '1'), main: (f[3] = '1'), scale: f[4], steps: steps, path: path, name: name})
+        r.screens.Push({id: f[1], on: (f[2] = '1'), main: (f[3] = '1'), scale: f[4], steps: steps, path: path, res: res, name: name})
     }
     return r
 }
 
-; One row per screen, its state on the right ("on · 150%" / "off"), its submenu Turn off or
-; Turn on. The main display's row has no submenu: it always stays on (his rule, 2026-10-05;
-; Settings > Display chooses which screen is main). A name two screens share gets the screen's
-; number after it, so both menus can tell them apart (the tray's native menu would merge two
-; items with the same name). Something wrong (DisplayConfig missing, or it threw) is one short
-; row -- the whole message wouldn't fit -- and choosing it shows the message.
+; One row per screen, its state on the right ("on · 150%" / "off"). Its submenu: Turn off and
+; the scales Windows allows it, the current one marked; for a screen that's off, Turn on (Windows
+; only scales a screen that's on). The main display has no Turn off: it always stays on (his
+; rule, 2026-10-05; Settings > Display chooses which screen is main). A name two screens share
+; gets the screen's number after it, so both menus can tell them apart (the tray's native menu
+; would merge two items with the same name). Something wrong (DisplayConfig missing, or it
+; threw) is one short row -- the whole message wouldn't fit -- and choosing it shows the message.
 ScreensMenuItems() {
     r := ReadScreens()
     items := []
@@ -1461,12 +1531,21 @@ ScreensMenuItems() {
     for s in r.screens {
         name := s.name (seen[s.name] > 1 ? ' #' s.id : '') (s.main ? ' (main)' : '')
         state := s.on ? 'on' (s.scale != '' ? ' ' Chr(0xB7) ' ' s.scale '%' : '') : 'off'
-        if (s.main || s.path = '')
-            items.Push({text: name, hint: state, action: (*) => 0})
-        else if s.on
-            items.Push({text: name, hint: state, sub: [{text: 'Turn off', action: ScreenOff.Bind(s, name, false)}]})
+        sub := []
+        if (s.path != '') {
+            if !s.on
+                sub.Push({text: 'Turn on', action: ScreenOn.Bind(s, name)})
+            else {
+                if !s.main
+                    sub.Push({text: 'Turn off', action: ScreenOff.Bind(s, name, false)})
+                for pct in s.steps
+                    sub.Push({text: 'Scale ' pct '%', hint: (pct = s.scale ? 'current' : ''), action: ScreenScale.Bind(s, name, pct)})
+            }
+        }
+        if sub.Length
+            items.Push({text: name, hint: state, sub: sub})
         else
-            items.Push({text: name, hint: state, sub: [{text: 'Turn on', action: ScreenOn.Bind(s, name)}]})
+            items.Push({text: name, hint: state, action: (*) => 0})
     }
     if !items.Length
         items.Push({text: 'No screens found', action: (*) => 0})
@@ -1521,7 +1600,8 @@ RunThen(cmd, done, timeoutMs := 60000) {
     SetTimer(Check, 250)
 }
 
-; Runs the helper for screen s (args: -Off, -Off -Anyway, -On), then done(its exit code).
+; Runs the helper for screen s (args: -Off, -Off -Anyway, -On, -Scale <pct>), then done(its exit
+; code).
 ScreensRun(s, args, done) {
     global RepoRoot
     EnvSet('SCREENS_PATH', s.path)          ; the helper takes it as it starts
@@ -1571,13 +1651,24 @@ ScreenOn(s, name, *) {
         return
     ScreensBusy := true
     ToolTip('Turning on ' name '...')
-    ScreensRun(s, '-On', ScreenOnDone)
+    ScreensRun(s, '-On', ScreensActionDone)
 }
-ScreenOnDone(code) {
+; How Turn on and a new scale end.
+ScreensActionDone(code) {
     global ScreensBusy
     ToolTip()
     ScreensBusy := false
     ScreensToast(code)
+}
+
+; A new scale; CheckScreenScales restarts the bar once Windows reports the change.
+ScreenScale(s, name, pct, *) {
+    global ScreensBusy
+    if ScreensBusy || (pct = s.scale)
+        return
+    ScreensBusy := true
+    ToolTip('Scaling ' name ' to ' pct '%...')
+    ScreensRun(s, '-Scale ' pct, ScreensActionDone)
 }
 
 ; komorebi still has windows on the screen being turned off, on some workspace of it: off, they'd

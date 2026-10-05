@@ -4,7 +4,7 @@
   The screens menu's helper (710.ahk: the bar's monitor button, SUPER+Alt+Space > Screens).
   -Snapshot writes what Windows says about every connected screen to
   %LOCALAPPDATA%\710.DesktopRice\screens.tsv, which the menu reads. -Off and -On turn one screen
-  off or back on.
+  off or back on; -Scale sets its scale.
 
 .DESCRIPTION
   Why a snapshot: the menu opens at once from a small file instead of waiting about a second for
@@ -18,7 +18,7 @@
 
   The file: a header line, then one tab-separated line per screen.
     # 710sRice screens v2 <time>
-    id <TAB> on <TAB> main <TAB> scale <TAB> steps <TAB> name <TAB> path
+    id <TAB> on <TAB> main <TAB> scale <TAB> steps <TAB> name <TAB> path <TAB> res
   id     DisplayConfig's DisplayId (Settings' numbering, as far as it can tell)
   on     1 or 0 (Active)
   main   1 or 0 (Primary)
@@ -30,11 +30,13 @@
   path   the screen's device path -- that monitor on that connection -- which is how -Off and
          -On find it: DisplayConfig's ids can change as screens come and go. A hardware
          identifier, so it stays in this file and is never printed.
+  res    its desktop resolution, WIDTHxHEIGHT, while it's on (710.ahk counts a scale change only at
+         the same resolution: a game switching resolution moves the scale reading too)
   Something failed (DisplayConfig missing, or it threw): the header line ends in
   " error: <why>" and no screen lines follow, so the menu says why instead of listing stale
   screens. Written to a temp file first and moved over the old one, so the menu never reads half
-  a file. (v1, the menu's first, read-only version, had no path column; v2 added it last, so
-  either reader reads either file.)
+  a file. (v1, the menu's first, read-only version, had no path or res column; v2 adds them
+  last, so either reader reads either file.)
 
   -Off turns the screen named by $env:SCREENS_PATH off -- Windows' "Disconnect this display" --
   unless komorebi still has windows on it, on any of that screen's workspaces: then nothing
@@ -44,19 +46,24 @@
   to this display" -- and Windows puts it back where it was for this set of screens. The path
   rides in the environment, never on a command line (710.ahk's rule for values like this).
 
-  The result file, %LOCALAPPDATA%\710.DesktopRice\screens-result.txt, written by every -Off and
-  -On: line 1 says what happened; after a 3, one line per window komorebi has there:
+  -Scale <percent> sets that screen's scale -- Settings > Display's "Scale" -- to one of the steps
+  Windows allows it (the snapshot's steps column). 710.ahk restarts the bar after any scale change,
+  this one or one made in Settings (its display-change hook compares the snapshots).
+
+  The result file, %LOCALAPPDATA%\710.DesktopRice\screens-result.txt, written by every -Off,
+  -On -Scale: line 1 says what happened; after a 3, one line per window komorebi has there:
   workspace <TAB> exe <TAB> title (none when komorebi didn't answer, so they couldn't be listed).
 
   Exit codes: 0 = done, or nothing to do; 1 = failed (the result file says why); 2 = usage;
   3 = komorebi has windows on that screen (-Off without -Anyway; nothing changed); 4 = refused:
-  the main display, or the only screen on; 5 = that screen isn't connected any more.
+  the main display, the only screen on, or scaling a screen that's off; 5 = that screen isn't
+  connected any more.
 #>
-param([switch]$Snapshot, [switch]$Off, [switch]$On, [switch]$Anyway)
+param([switch]$Snapshot, [switch]$Off, [switch]$On, [switch]$Anyway, [int]$Scale)
 
 $ErrorActionPreference = 'Stop'
-if (@($Snapshot, $Off, $On | Where-Object { $_ }).Count -ne 1 -or ($Anyway -and -not $Off)) {
-    Write-Host 'Usage: screens.ps1 -Snapshot | -Off [-Anyway] | -On   (-Off / -On: the screen in $env:SCREENS_PATH)'
+if (@($Snapshot, $Off, $On, ($Scale -gt 0) | Where-Object { $_ }).Count -ne 1 -or ($Anyway -and -not $Off) -or $Scale -lt 0) {
+    Write-Host 'Usage: screens.ps1 -Snapshot | -Off [-Anyway] | -On | -Scale <percent>   (all but -Snapshot: the screen in $env:SCREENS_PATH)'
     exit 2
 }
 
@@ -93,23 +100,27 @@ if ($Snapshot) {
         $lines = [System.Collections.Generic.List[string]]::new()
         $lines.Add("# 710sRice screens v2 $stamp")
         foreach ($d in @(Get-DisplayInfo)) {
-            $scale = ''
-            $steps = ''
+            # Not $scale: PowerShell's names ignore case, so that would be the -Scale parameter,
+            # an [int] -- '' would turn into 0.
+            $current = ''
+            $allowed = ''
+            $res = ''
             if ($d.Active) {
+                if ($d.Mode) { $res = "$($d.Mode.Width)x$($d.Mode.Height)" }
                 # One screen whose scale can't be read is listed without one, rather than losing
                 # the whole list.
                 try {
                     $s = Get-DisplayScale -DisplayId $d.DisplayId
-                    $scale = "$($s.CurrentScale)"
-                    $steps = @($scaleSteps | Where-Object { $_ -le $s.MaxScale }) -join ','
+                    $current = "$($s.CurrentScale)"
+                    $allowed = @($scaleSteps | Where-Object { $_ -le $s.MaxScale }) -join ','
                 } catch {
-                    $scale = ''
-                    $steps = ''
+                    $current = ''
+                    $allowed = ''
                 }
             }
             $name = Get-Flat $d.DisplayName
             if (-not $name) { $name = "Display $($d.DisplayId)" }
-            $lines.Add((@($d.DisplayId, [int][bool]$d.Active, [int][bool]$d.Primary, $scale, $steps, $name, (Get-Flat $d.DevicePath)) -join "`t"))
+            $lines.Add((@($d.DisplayId, [int][bool]$d.Active, [int][bool]$d.Primary, $current, $allowed, $name, (Get-Flat $d.DevicePath), $res) -join "`t"))
         }
         Write-StateFile $out $lines
         exit 0
@@ -119,7 +130,7 @@ if ($Snapshot) {
     }
 }
 
-# --- -Off / -On ------------------------------------------------------------------------------
+# --- -Off / -On / -Scale ---------------------------------------------------------------------
 
 # The windows komorebi has on screen $Display, every workspace: {Workspace (1-based), Exe,
 # Title}. None when komorebi isn't running (then it has nothing there), or when it has no record
@@ -220,6 +231,22 @@ try {
         if ($d.Active) { Write-StateFile $resultFile @("$label is already on"); exit 0 }
         Enable-Display -DisplayId $d.DisplayId
         Write-StateFile $resultFile @("$label turned on")
+        exit 0
+    }
+
+    if ($Scale) {
+        $d = Get-Screen $path
+        $label = Get-Label $d
+        if (-not $d.Active) { Write-StateFile $resultFile @("$label is off -- turn it on to scale it"); exit 4 }
+        $now = Get-DisplayScale -DisplayId $d.DisplayId
+        $allowed = @($scaleSteps | Where-Object { $_ -le $now.MaxScale })
+        if ($allowed -notcontains $Scale) {
+            Write-StateFile $resultFile @("$label can't be set to $Scale% (Windows allows $($allowed -join ', '))")
+            exit 2
+        }
+        if ($now.CurrentScale -eq $Scale) { Write-StateFile $resultFile @("$label is already at $Scale%"); exit 0 }
+        Set-DisplayScale -DisplayId $d.DisplayId -Scale $Scale
+        Write-StateFile $resultFile @("$label set to $Scale%")
         exit 0
     }
 
