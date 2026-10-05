@@ -65,6 +65,7 @@ bars:
       center:
       - clock
       - weather
+      - taskbar-drawer
       right:
       - systray
       - lines
@@ -195,6 +196,36 @@ widgets:
       max_length: 32
       max_length_ellipsis: '...'
       monitor_exclusive: false
+  # The taskbar drawer (2026-10-05): YASB's own Taskbar widget, folded into the center
+  # island after the weather. It starts closed, so the bar is no wider until you open it. Each
+  # bar lists only its own screen's windows on the workspace showing now; pins show on every
+  # bar. Pins are per machine (right-click an app's icon > Pin to taskbar): YASB keeps them in
+  # %LOCALAPPDATA%\YASB\taskbar_pinned.json, so none ship with the repo. Icons only -- the
+  # active_window title on the left already says which window has focus.
+  taskbar-drawer:
+    type: "yasb.grouper.GrouperWidget"
+    options:
+      class_name: "taskbar-drawer"
+      widgets: ["taskbar"]
+      collapse_options:
+        enabled: true
+        label_position: "left"
+        collapsed_label: ""
+        expanded_label: ""
+  taskbar:
+    type: "yasb.taskbar.TaskbarWidget"
+    options:
+      icon_size: 16
+      tooltip: true
+      monitor_exclusive: true
+      show_only_visible: true
+      title_label:
+        enabled: false
+      grouping:
+        enabled: true
+        show_count: true
+      preview:
+        enabled: false
   lines:
     type: "yasb.custom.CustomWidget"
     options:

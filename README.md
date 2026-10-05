@@ -453,6 +453,13 @@ unplugged screen's workspaces and windows wait for it, and come back with it, pi
   another. It uses [Open-Meteo](https://open-meteo.com/): no account, no key. It shows
   **°F**; for °C, open `config/yasb/config.yaml`, find the `weather:` widget and change
   `units: "imperial"` to `units: "metric"`.
+- **Taskbar drawer:** the grid icon after the weather unfolds your apps: pins first, then
+  what's running on that screen's current workspace, one button per app (with a count when it
+  has more than one window) and a line under each one that's running. Hover a button for its
+  name; click to switch to it, click the focused one to minimize it. Right-click an app for its
+  menu: **Pin to taskbar** keeps it there for launching. Pins are per machine and show on every
+  screen's bar; YASB keeps them in `%LOCALAPPDATA%\YASB`, outside this repo, so nothing ships
+  pinned. The arrow folds the drawer again.
 - **Network:** Wi-Fi and Bluetooth sit together on the right, folded behind their button (the
   network icon; click it to unfold, the arrow folds them again). Wi-Fi: click for the networks
   around you, right-click for the one you're on (on a cable it shows the Ethernet icon, and

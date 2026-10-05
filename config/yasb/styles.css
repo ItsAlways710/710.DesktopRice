@@ -1785,6 +1785,54 @@ which is 16 pixels same as the other sections. */
     color: var(--accent);
 }
 
+/* The taskbar drawer (2026-10-05): its button like the capture drawer's, the focused app
+   on the accent like the active workspace -- the theme's own variables only. */
+.taskbar-drawer .container {
+    background-color: transparent;
+}
+.taskbar-drawer .grouper-button {
+    font-size: var(--iconSize);
+    color: var(--text);
+    border: none;
+    font-family: var(--icons-font);
+}
+.taskbar-drawer .grouper-button:hover {
+    color: var(--accent);
+}
+.taskbar-widget .app-container {
+    margin: 0px 1px;
+    padding: 0px 5px;
+    border-radius: var(--border-radius2);
+    background-color: transparent;
+    /* Room for the running line on every button, so an icon doesn't jump when its app starts */
+    border-top: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+}
+.taskbar-widget .app-container:hover {
+    background-color: var(--hover);
+}
+/* A line under every running app, minimized ones too, like Windows' own taskbar; a pin that
+   isn't running has none. On the button itself: YASB re-styles the button when its state
+   changes, not the icon inside it. */
+.taskbar-widget .app-container.running {
+    border-bottom: 2px solid var(--subtext);
+}
+.taskbar-widget .app-container.foreground {
+    background-color: var(--accent);
+}
+.taskbar-widget .app-container .app-count {
+    color: var(--text);
+    font-size: 10px;
+    padding-left: 3px;
+}
+.taskbar-widget .app-container.foreground .app-count {
+    color: var(--accentText);
+}
+/* Flashing last, so nothing above overrides it (YASB's own note). */
+.taskbar-widget .app-container.flashing {
+    background-color: var(--redFlash);
+}
+
 /* --- Their popups --- */
 .wifi-menu,
 .bluetooth-menu {
