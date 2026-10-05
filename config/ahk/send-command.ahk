@@ -4,7 +4,8 @@
 ; commands ("710sRice Doctor", ... in Start Menu\Programs\710sRice, made by
 ; tools\components\commands.ps1) run it, so Flow Launcher finds them by name. The names are
 ; 710.ahk's RiceCommands list (menu, reload-stack, doctor, game-mode-on, game-mode-off,
-; screenshot-region, screenshot-window, screen-recording, stop-recording, text-from-screen).
+; screenshot-region, screenshot-window, screen-recording, stop-recording, text-from-screen), plus
+; screens: the bar's monitor button runs it too (config\yasb\config.yaml), with no Start-menu command.
 ;
 ; The same door as open-main-menu.ahk (see there): a registered window message,
 ; '710sRice.Command.<name>', posted to 710.ahk's hidden window -- no synthetic keypress, nothing

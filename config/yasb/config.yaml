@@ -56,6 +56,8 @@ bars:
       left:
       - home
       - lines
+      - screens
+      - lines
       - komorebi_active_layout
       - lines
       - komorebi_workspaces
@@ -202,6 +204,22 @@ widgets:
   # bar. Pins are per machine (right-click an app's icon > Pin to taskbar): YASB keeps them in
   # %LOCALAPPDATA%\YASB\taskbar_pinned.json, so none ship with the repo. Icons only -- the
   # active_window title on the left already says which window has focus.
+  # The Screens button (2026-10-05): the monitor icon right after the home menu. It asks 710.ahk
+  # for its Screens menu (send-command.ahk screens), which drops down under the mouse. No shell:
+  # AutoHotkey is a GUI program, so nothing flashes.
+  screens:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "<span>\udb80\udf7a</span>"
+      class_name: "screens-widget"
+      tooltip: true
+      tooltip_label: "Screens"
+      exec_options:
+        use_shell: false
+      callbacks:
+        on_left: 'exec "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe" "$env:DESKTOPRICE_HOME\config\ahk\send-command.ahk" screens'
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
   taskbar-drawer:
     type: "yasb.grouper.GrouperWidget"
     options:

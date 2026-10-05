@@ -374,20 +374,23 @@ if ($wallustRow -and $wallustRow.System) {
     Step-Info "No wallust binary to remove"
 }
 
-# --- 8. PSFzf module ----------------------------------------------------------------------
-$psfzfRow = $allRows | Where-Object { $_.InstallId -eq 'PSFzf' } | Select-Object -First 1
-if ($psfzfRow -and $psfzfRow.System) {
-    Step-Info "PSFzf -- kept (versions.md marks it system: never removed by uninstall)"
-} elseif ($Keep -contains 'PSFzf') {
-    Step-Info "PSFzf -- kept (-Keep)"
-} elseif ($psfzfRow -and $psfzfRow.PreExisting -and -not $Force) {
-    Step-Info "PSFzf -- kept (versions.md marks this Pre-existing?; pass -Force to remove it anyway)"
-} elseif (Get-Module -ListAvailable PSFzf) {
-    Invoke-Step "Uninstall PSFzf module" {
-        Uninstall-Module PSFzf -AllVersions -Force -ErrorAction Stop
-    } 'PSFzf module uninstalled'
-} else {
-    Step-Info "PSFzf not installed, nothing to remove"
+# --- 8. PowerShell modules (versions.md's psgallery rows: PSFzf, DisplayConfig) -----------
+# Until 2026-10-05 this named PSFzf; every psgallery row now goes through the same questions.
+foreach ($moduleRow in @($allRows | Where-Object { $_.Source -eq 'psgallery' })) {
+    $module = $moduleRow.InstallId
+    if ($moduleRow.System) {
+        Step-Info "$module -- kept (versions.md marks it system: never removed by uninstall)"
+    } elseif ($Keep -contains $module) {
+        Step-Info "$module -- kept (-Keep)"
+    } elseif ($moduleRow.PreExisting -and -not $Force) {
+        Step-Info "$module -- kept (versions.md marks this Pre-existing?; pass -Force to remove it anyway)"
+    } elseif (Get-Module -ListAvailable $module) {
+        Invoke-Step "Uninstall $module module" {
+            Uninstall-Module $module -AllVersions -Force -ErrorAction Stop
+        } "$module module uninstalled"
+    } else {
+        Step-Info "$module not installed, nothing to remove"
+    }
 }
 
 # --- 9. Machine-local generated files --------------------------------------------------
@@ -410,6 +413,8 @@ Invoke-Step "Remove machine-local generated files (display-index.local.json, kom
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\theme-inputs.sha256')
     # How the last lock-screen set went (tools\lib\lockscreen.ps1's record, doctor's).
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\lockscreen.json')
+    # The Screens menu's snapshot (tools\screens.ps1).
+    Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\screens.tsv')
     # The palette editor's own wallust config and its last preview palette.
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\palette-editor')
 } 'Machine-local generated files removed'

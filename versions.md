@@ -45,7 +45,7 @@ whether 710.DesktopRice is installed, or is it a dedicated piece of this specifi
 tiling-WM stack that's useless without it?**
 
 Marked `no` (dedicated to this stack, safe for a plain `.\uninstall.ps1` to remove):
-komorebi, YASB, AutoHotkey, Flow Launcher, wallust, ShareX.
+komorebi, YASB, AutoHotkey, Flow Launcher, wallust, ShareX, DisplayConfig.
 
 Marked `yes` (general-purpose, protected by default — `uninstall.ps1` requires `-Force` to
 touch these): the Nerd Font, Starship, fzf, zoxide, eza, bat, Everything, PSFzf.
@@ -84,8 +84,14 @@ PowerShell 7 note below.
 | bat | latest | winget | sharkdp.bat | yes | 2026-09-21 |
 | Everything | 1.4.1.1032 | winget | voidtools.Everything | yes | 2026-09-23 |
 | PSFzf | latest | psgallery | PSFzf | yes | 2026-09-21 |
+| DisplayConfig | latest | psgallery | DisplayConfig | no | 2026-10-05 |
 
 ## Notes on specific rows
+
+**DisplayConfig** -- added 2026-10-05 for the Screens menu (the bar's monitor button and
+SUPER+Alt+Space > Screens): it reads every connected screen, on or off, through Windows' own
+display APIs (MartinGC94/DisplayConfig, MIT). `no`: nothing outside this stack uses it. Unpinned,
+like every psgallery row (the packages step installs them with `Install-Module`, always latest).
 
 **Everything** — **pinned 2026-09-23 at `1.4.1.1032`** (confirmed installed on Dell via a
 real `winget list`, and the same version winarchy pins): it's the engine behind Flow's file

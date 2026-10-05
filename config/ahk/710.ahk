@@ -477,7 +477,9 @@ PalClosed(mode) {
     return same
 }
 
-PalOpen(mode, items, title) {
+; dropDown: open just under the bar with its left edge near the mouse, like a dropdown from the
+; button that opened it (Screens, from the bar's monitor button), instead of centred like the rest.
+PalOpen(mode, items, title, dropDown := false) {
     global Pal
     PalClose()
     c := PalColors()
@@ -530,7 +532,16 @@ PalOpen(mode, items, title) {
     g.OnEvent('Close', (*) => PalClose())
     PalRefresh()
 
-    g.Show(Format('x{} y{} w{} h{}', wl + (wr - wl - Round(w * dpi)) // 2, wt + (wb - wt - Round(h * dpi)) // 2, w, h))
+    if dropDown {
+        CoordMode('Mouse', 'Screen')
+        MouseGetPos(&mx)
+        x := Max(wl, Min(mx - 24, wr - Round(w * dpi)))
+        y := wt + 4                        ; the work area starts under the bar (YASB reserves its strip)
+    } else {
+        x := wl + (wr - wl - Round(w * dpi)) // 2
+        y := wt + (wb - wt - Round(h * dpi)) // 2
+    }
+    g.Show(Format('x{} y{} w{} h{}', x, y, w, h))
     DllCall('dwmapi\DwmSetWindowAttribute', 'ptr', g.Hwnd, 'int', 33, 'int*', 2, 'int', 4)  ; DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND
     ed.Focus()
     OnMessage(0x200, PalMouseMove)       ; WM_MOUSEMOVE
@@ -1323,6 +1334,7 @@ OnMessage(AllowFromNormalProcesses(0x219), (wParam, *) => (wParam = 7 ? Schedule
 ScheduleKomorebiNudge(why) {
     global NudgeWhy := why
     SetTimer(KomorebiNudgeFirst, -3000)     ; a new change restarts the wait
+    SetTimer(RefreshScreens, -3000)         ; the Screens menu's snapshot, the same wait (Screens, below)
 }
 KomorebiNudgeFirst() {
     NudgeKomorebi('3 s')
@@ -1353,6 +1365,96 @@ DisplayLogLine(m) {
             FileMove(DisplayLog, DisplayLog '.old', 1)
         FileAppend(FormatTime(, 'yyyy-MM-dd HH:mm:ss') '  ' m '`n', DisplayLog, 'UTF-8-RAW')
     }
+}
+
+; ============================================================================
+; Screens (2026-10-05; the plan: claude\screens-plan.md in the project notes) -- every
+; connected screen, from the bar's monitor button (a dropdown under the mouse) and
+; SUPER+Alt+Space > Screens
+; ============================================================================
+; Stage (a), read-only: each screen by its Windows name, the main one marked, and whether it's on
+; and at what scale. The menu reads a snapshot, %LOCALAPPDATA%\710.DesktopRice\screens.tsv,
+; written by tools\screens.ps1 -Snapshot (the DisplayConfig module), instead of asking
+; PowerShell on every open: a cold pwsh plus the module costs about a second. It's taken when this
+; script starts and again 3 s after the last display or device change (ScheduleKomorebiNudge,
+; above) -- a scale change arrives as a WM_DISPLAYCHANGE too (display-changes.log, Godzilla,
+; 2026-10-04) -- so it's current by the time a menu opens.
+ScreensFile := EnvGet('LOCALAPPDATA') '\710.DesktopRice\screens.tsv'
+
+RefreshScreens(*) {
+    global RepoRoot
+    try Run('pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "' RepoRoot '\tools\screens.ps1" -Snapshot', , 'Hide')
+}
+RefreshScreens()
+
+; The snapshot as {screens: [{id, name, on, main, scale, steps}], error, waiting}; the file's
+; format is in tools\screens.ps1's header. waiting: there's no snapshot yet (this script started
+; a moment ago and the first one is still being taken).
+ReadScreens() {
+    global ScreensFile
+    r := {screens: [], error: '', waiting: false}
+    if !FileExist(ScreensFile) {
+        r.waiting := true
+        return r
+    }
+    try text := FileRead(ScreensFile, 'UTF-8')
+    catch {
+        r.error := "Couldn't read the screens snapshot (screens.tsv)"
+        return r
+    }
+    for line in StrSplit(text, '`n', '`r') {
+        if (line = '')
+            continue
+        if (SubStr(line, 1, 1) = '#') {
+            if RegExMatch(line, ' error: (.*)$', &m)
+                r.error := m[1]
+            continue
+        }
+        f := StrSplit(line, '`t')
+        if (f.Length < 6)
+            continue
+        steps := []
+        for s in StrSplit(f[5], ',')
+            if IsInteger(s)
+                steps.Push(Integer(s))
+        r.screens.Push({id: f[1], on: (f[2] = '1'), main: (f[3] = '1'), scale: f[4], steps: steps, name: f[6]})
+    }
+    return r
+}
+
+; One row per screen, its state on the right ("on · 150%" / "off"). Stage (a): the rows are
+; information only -- choosing one just closes the menu; turning screens off and on and scaling
+; them come next. A name two screens share gets the screen's number after it, so both menus can
+; tell them apart (the tray's native menu would merge two items with the same name). Something
+; wrong (DisplayConfig missing, or it threw) is one short row -- the whole message wouldn't fit --
+; and choosing it shows the message.
+ScreensMenuItems() {
+    r := ReadScreens()
+    items := []
+    if r.waiting
+        items.Push({text: 'Still reading your screens', hint: 'in a moment', action: (*) => 0})
+    if (r.error != '') {
+        err := r.error
+        items.Push({text: "Couldn't read your screens", hint: 'details', action: (*) => TrayTip(err, '710sRice')})
+    }
+    seen := Map()
+    for s in r.screens
+        seen[s.name] := seen.Has(s.name) ? seen[s.name] + 1 : 1
+    for s in r.screens {
+        name := s.name (seen[s.name] > 1 ? ' #' s.id : '') (s.main ? ' (main)' : '')
+        state := s.on ? 'on' (s.scale != '' ? ' ' Chr(0xB7) ' ' s.scale '%' : '') : 'off'
+        items.Push({text: name, hint: state, action: (*) => 0})
+    }
+    if !items.Length
+        items.Push({text: 'No screens found', action: (*) => 0})
+    return items
+}
+
+; The bar's monitor button runs config\ahk\send-command.ahk screens (RiceCommands, below). Opened
+; again while it's showing, it closes, like the other menus.
+OpenScreensMenu(*) {
+    if !PalClosed('screens')
+        PalOpen('screens', ScreensMenuItems(), 'Screens', true)
 }
 
 ; ============================================================================
@@ -1918,6 +2020,7 @@ MainMenuItems() {
         {text: 'Files',                    hint: 'SUPER+S',          action: (*) => ToggleFlowScoped('f ')},
         {text: 'Capture',                                            sub: CaptureItems},
         {text: 'Tiling',                                             sub: TilingItems},
+        {text: 'Screens',                                            sub: ScreensMenuItems()},
         {text: 'Palette profiles',                                   sub: PaletteMenuItems()},
         {text: 'Keybindings',              hint: 'SUPER+K',          action: (*) => ToggleKeyOverlay()},
         {text: GameModeText(),                                       action: (*) => ToggleGameMode()},
@@ -1993,7 +2096,8 @@ RiceCommands := Map(
     'screenshot-window', (*) => Sharex('ActiveWindow'),
     'screen-recording',  (*) => Sharex('ScreenRecorder'),
     'stop-recording',    (*) => Sharex('StopScreenRecording'),
-    'text-from-screen',  (*) => Sharex('OCR'))
+    'text-from-screen',  (*) => Sharex('OCR'),
+    'screens',           OpenScreensMenu)      ; the bar's monitor button -- no Start-menu command
 for name, fn in RiceCommands
     OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.Command.' name, 'UInt')), RiceCommandHandler(fn))
 RiceCommandHandler(fn) => (*) => SetTimer(() => fn(), -1)

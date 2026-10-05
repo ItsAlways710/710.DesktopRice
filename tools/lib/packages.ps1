@@ -311,6 +311,11 @@ $script:PackageProbes = @{
         $m = Get-Module -ListAvailable -Name PSFzf -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
         if ($m) { "$($m.Version)" }
     }
+    # The Screens menu's (tools\screens.ps1).
+    'DisplayConfig' = {
+        $m = Get-Module -ListAvailable -Name DisplayConfig -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
+        if ($m) { "$($m.Version)" }
+    }
 }
 
 function Get-PackageVersion {

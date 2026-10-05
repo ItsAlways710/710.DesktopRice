@@ -446,6 +446,10 @@ unplugged screen's workspaces and windows wait for it, and come back with it, pi
 
 ## The bar
 
+- **Screens:** the monitor icon after the home menu drops down a list of your screens, each by its
+  Windows name with the main one marked, showing whether it's on and at what scale. It's also in
+  SUPER+Alt+Space under **Screens**. It reads them through the DisplayConfig module (installed
+  with the other packages), so it works with whatever screens a machine has.
 - **Workspaces:** each screen's bar shows the workspace it's on and the ones with windows in
   them; empty ones appear while you're on them.
 - **Weather:** click the widget, type your city (two letters are enough to start), and pick

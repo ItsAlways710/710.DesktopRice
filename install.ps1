@@ -204,11 +204,11 @@ $StackRestarted = $false
 $Steps = [ordered]@{}
 
 # What didn't install (Group 1 W2): a winget install that failed, a pinned package left below
-# its pin, PSFzf, wallust. The run still finishes every step; the closing lines list these and
-# the run exits 1. "Core" = every versions.md row -- doctor's own rule (a missing package is its
-# [XX]), so install's exit code and doctor's verdict can't disagree (provisional, the user's
-# call 2026-09-30: open for discussion if it ever gets in the way). Restart-required and
-# already-installed count as installed.
+# its pin, a PowerShell module (PSFzf, DisplayConfig), wallust. The run still finishes every
+# step; the closing lines list these and the run exits 1. "Core" = every versions.md row --
+# doctor's own rule (a missing package is its [XX]), so install's exit code and doctor's
+# verdict can't disagree (provisional, the user's call 2026-09-30: open for discussion if it
+# ever gets in the way). Restart-required and already-installed count as installed.
 $NotInstalled = [System.Collections.Generic.List[string]]::new()
 
 $Steps['packages'] = {
@@ -337,7 +337,8 @@ $Steps['packages'] = {
 
         # PowerShell modules (PSGallery rows -- PSFzf: the PowerShell-side fzf
         # keybindings/integration, separate from the junegunn.fzf winget package above,
-        # which is just the fzf binary). No pin, always latest, matching this project's own
+        # which is just the fzf binary; DisplayConfig: the Screens menu's, tools\screens.ps1).
+        # No pin, always latest, matching this project's own
         # decided practice (winarchy never pinned it either).
         foreach ($row in @($versionRows | Where-Object { $_.Source -eq 'psgallery' })) {
             $module = $row.InstallId

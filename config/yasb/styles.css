@@ -1785,6 +1785,14 @@ which is 16 pixels same as the other sections. */
     color: var(--accent);
 }
 
+/* The Screens button (2026-10-05): like the capture drawer's buttons */
+.screens-widget .widget-container .icon {
+    color: var(--text);
+}
+.screens-widget .widget-container .icon:hover {
+    color: var(--accent);
+}
+
 /* The taskbar drawer (2026-10-05): its button like the capture drawer's, the focused app
    on the accent like the active workspace -- the theme's own variables only. */
 .taskbar-drawer .container {
