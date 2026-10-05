@@ -42,9 +42,10 @@
   unless komorebi still has windows on it, on any of that screen's workspaces: then nothing
   changes, and the result file lists them so the menu can ask first. -Anyway skips that check.
   Windows komorebi doesn't manage aren't counted: Windows moves those to the main display itself.
-  Never the main display, and never the last screen on. -On turns it back on -- "Extend desktop
-  to this display" -- and Windows puts it back where it was for this set of screens. The path
-  rides in the environment, never on a command line (710.ahk's rule for values like this).
+  Never the main display, and never the last screen on. The screens that stay on keep exactly
+  where they are (see the end of this file). -On turns it back on -- "Extend desktop to this
+  display" -- and Windows puts it back where it was for this set of screens. The path rides in
+  the environment, never on a command line (710.ahk's rule for values like this).
 
   -Scale <percent> sets that screen's scale -- Settings > Display's "Scale" -- to one of the steps
   Windows allows it (the snapshot's steps column). 710.ahk restarts the bar after any scale change,
@@ -57,7 +58,8 @@
   Exit codes: 0 = done, or nothing to do; 1 = failed (the result file says why); 2 = usage;
   3 = komorebi has windows on that screen (-Off without -Anyway; nothing changed); 4 = refused:
   the main display, the only screen on, or scaling a screen that's off; 5 = that screen isn't
-  connected any more.
+  connected any more; 6 = turned off, but Windows placed the screens left on (it wouldn't take
+  them where they were; the result file says why).
 #>
 param([switch]$Snapshot, [switch]$Off, [switch]$On, [switch]$Anyway, [int]$Scale)
 
@@ -197,8 +199,9 @@ function Get-KomorebiWindowsOn($Display) {
 # name another screen by now (a monitor going to sleep drops out of that list). Exits when it
 # isn't connected any more. For -Off, also exits (with what to say) when it mustn't or needn't
 # go off: already off, the main display, or the only one on.
-function Get-Screen([string]$Path, [switch]$ToTurnOff) {
-    $all = @(Get-DisplayInfo)
+function Get-Screen([string]$Path, [switch]$ToTurnOff, $Config) {
+    # -Config: read from that DisplayConfig snapshot, so its ids are the ones an action on it uses.
+    $all = if ($Config) { @(Get-DisplayInfo -DisplayConfig $Config) } else { @(Get-DisplayInfo) }
     $d = $all | Where-Object { $_.DevicePath -eq $Path } | Select-Object -First 1
     if (-not $d) { Write-StateFile $resultFile @("That screen isn't connected any more"); exit 5 }
     if ($ToTurnOff) {
@@ -267,8 +270,25 @@ try {
             exit 3
         }
     }
-    $d = Get-Screen $path -ToTurnOff        # again: asking komorebi took a moment
-    Disable-Display -DisplayId $d.DisplayId
+    # Off, with every screen that stays on kept exactly where it is: DisplayConfig takes the
+    # current layout, drops this screen (closing the gap it leaves along its row or column),
+    # applies that, and Windows saves it as its layout for the screens left. Asking Windows for
+    # its remembered layout instead -- Disable-Display on its own -- moved the 27-inch screen from
+    # below the main TV to its right on Godzilla (2026-10-05): main + 27-inch was a set of screens
+    # Windows had never seen, so it used its default. That's only the fallback now, for a layout
+    # Windows won't take (one left with a gap, say). The screen is read again first: asking
+    # komorebi took a moment.
+    $config = Get-DisplayConfig
+    $d = Get-Screen $path -ToTurnOff -Config $config
+    try {
+        $config | Disable-Display -DisplayId $d.DisplayId | Use-DisplayConfig
+    } catch {
+        $why = Get-Flat $_.Exception.Message
+        $d = Get-Screen $path -ToTurnOff
+        Disable-Display -DisplayId $d.DisplayId
+        Write-StateFile $resultFile @("$label turned off; Windows placed the screens left on, as it wouldn't keep them where they were ($why)")
+        exit 6
+    }
     Write-StateFile $resultFile @("$label turned off")
     exit 0
 } catch {

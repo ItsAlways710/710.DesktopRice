@@ -448,8 +448,10 @@ unplugged screen's workspaces and windows wait for it, and come back with it, pi
 
 - **Screens:** the monitor icon after the home menu drops down a list of your screens, each by its
   Windows name with the main one marked, showing whether it's on and at what scale. Pick one to
-  turn it off or back on, or to change its scale (the steps Windows allows it); back on, Windows
-  puts it where it was, so placement stays in Settings > Display. The main display always stays
+  turn it off or back on, or to change its scale (the steps Windows allows it). Off, the other
+  screens stay exactly where they are; back on, Windows puts it where it was with that set of
+  screens, so placement stays in Settings > Display (a set Windows has never seen gets its
+  default placement once: arrange it there and Windows keeps it). The main display always stays
   on. Turning off a screen where komorebi still has windows, on any of its workspaces, lists them
   and asks first: **Cancel** (the default) lets you move them, **Turn it off anyway** doesn't
   wait; a screen with none turns off straight away. Any scale change, from here or from Settings,

@@ -1621,7 +1621,7 @@ ScreensToast(code) {
         TrayTip("Couldn't start the screens helper (pwsh)", '710sRice')
     else if (code = -2)
         TrayTip("The screens helper didn't finish within a minute, so it was stopped", '710sRice')
-    else if (code > 0)                      ; 1 failed, 4 refused (main / the only one on), 5 gone
+    else if (code > 0)                      ; 1 failed, 4 refused (main / the only one on), 5 gone, 6 placed by Windows
         TrayTip(ScreensResult()[1], '710sRice')
 }
 
