@@ -236,10 +236,18 @@ function Get-ExeProductVersion {
 }
 
 function Find-ExeOnPath {
-    # The first $Name in a folder on this process's PATH, or $null. A plain scan: Get-Command
-    # took 614 ms for the five shell tools on the Dell (it looks through modules as well).
+    # The first $Name in a folder on this process's PATH -- or else on the PATH Windows gives
+    # every new window (the machine's and the user's, from the registry) -- or $null. A window
+    # opened before an install doesn't have what the install added: right after Godzilla's
+    # first install (2026-10-03) doctor, run in that same window, called fzf, zoxide, eza and
+    # bat "not installed", because winget had added its Links folder to the user PATH partway
+    # through. A plain scan: Get-Command took 614 ms for the five shell tools on the Dell (it
+    # looks through modules as well).
     param([Parameter(Mandatory)][string]$Name)
-    foreach ($dir in "$env:Path" -split [IO.Path]::PathSeparator) {
+    $dirs = @("$env:Path" -split [IO.Path]::PathSeparator) +
+        @("$([Environment]::GetEnvironmentVariable('Path', 'Machine'))" -split ';') +
+        @("$([Environment]::GetEnvironmentVariable('Path', 'User'))" -split ';')
+    foreach ($dir in $dirs) {
         if ([string]::IsNullOrWhiteSpace($dir)) { continue }
         try { $p = [IO.Path]::Combine([Environment]::ExpandEnvironmentVariables($dir.Trim().Trim('"')), $Name) } catch { continue }
         if ([IO.File]::Exists($p)) { return $p }

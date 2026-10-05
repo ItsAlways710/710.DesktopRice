@@ -1200,19 +1200,20 @@ function Test-DoctorProfileHook {
 }
 
 function Test-DoctorDefender {
-    # Every path install excludes, and no earlier pwsh.exe of ours left behind -- the same two
-    # lists install's defender step works from. Windows only shows the exclusions to an admin.
+    # Every path install excludes, and no old exclusion of ours left behind (an earlier
+    # pwsh.exe, or komorebi.exe from before komorebic.exe) -- the same two lists install's
+    # defender step works from. Windows only shows the exclusions to an admin.
     if (-not (Test-IsAdmin)) { return New-DoctorResult -Id 'defender' -Status '..' -Text 'Defender exclusions: Windows only shows them to an admin -- 710sRice doctor -repair checks them' }
     try { $pref = Get-MpPreference -ErrorAction Stop }
     catch { return New-DoctorResult -Id 'defender' -Status '..' -Text "Defender isn't in use here (another antivirus?) -- nothing to check" }
     $current = @($pref.ExclusionPath)
     $want    = @(Get-DefenderExclusionPaths)
     $missing = @($want | Where-Object { $current -notcontains $_ })
-    $stale   = @(Get-StalePwshExclusions -Current $current)
+    $stale   = @(Get-StaleDefenderExclusions -Current $current)
     if (-not $missing.Count -and -not $stale.Count) {
         return New-DoctorResult -Id 'defender' -Status 'OK' -Text "Defender exclusions: all $($want.Count) in place"
     }
-    $parts  = @(if ($missing.Count) { "$($missing.Count) missing" }; if ($stale.Count) { "$(Get-DoctorPlural $stale.Count 'old pwsh.exe' 'old pwsh.exes') left" })
+    $parts  = @(if ($missing.Count) { "$($missing.Count) missing" }; if ($stale.Count) { "$(Get-DoctorPlural $stale.Count 'old one' 'old ones') left" })
     $detail = @($missing | ForEach-Object { "missing: $(ConvertTo-SafePath $_)" }) + @($stale | ForEach-Object { "old: $(ConvertTo-SafePath $_)" })
     New-DoctorResult -Id 'defender' -Status 'XX' -Text "Defender exclusions: $($parts -join ', ')" -Detail $detail -Fix '710sRice install -Only defender' -Step 'defender'
 }

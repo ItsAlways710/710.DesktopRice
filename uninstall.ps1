@@ -35,6 +35,9 @@
   full-time before 710sRice saved one has them deleted instead, back to Windows' defaults,
   and an on-demand machine's are left alone -- 710sRice never changed them there.
 
+  Last, it deletes 710sRice's own folder, %LOCALAPPDATA%\710.DesktopRice: the logs and
+  what's left of its state there.
+
   Never touches the repo itself (config/, tools/, this script) or anything outside what
   install.ps1 itself touches -- delete the folder yourself if you want it gone too. Does
   not remove the wallust-generated palette files under config/wallust/generated/ -- those
@@ -428,18 +431,24 @@ if ($yourProfiles.Count -or $yourSchemes.Count) {
     Step-Info "Your palette profiles ($($yourProfiles.Count)) and scheme files ($($yourSchemes.Count)) in config\palettes are left in place -- they're yours; delete them if you want them gone."
 }
 
-# --- 10. Original-state snapshot folder --------------------------------------------------
-# Each Restore-* function above already deletes its own snapshot file once it's actually
-# used one -- except full time's Windows settings (full-time-settings.json), which
-# Restore-FullTimeWindowsSettings leaves for its caller on purpose; this cleans up the folder
-# itself, that copy, and any snapshot that was never consumed (e.g. Restore-LockScreenPolicy
-# skipped because this shell wasn't elevated) so a future re-install snapshots fresh state
-# again rather than restoring an increasingly stale one. -Force -ErrorAction
-# SilentlyContinue rather than checking "empty first": a leftover unconsumed snapshot is
-# still safe to just delete here, since its only purpose was this uninstall run.
-Invoke-Step "Remove original-state snapshot folder" {
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state')
-} 'Original-state snapshot folder removed'
+# --- 10. 710sRice's own folder, logs included -------------------------------------------
+# %LOCALAPPDATA%\710.DesktopRice: the logs (`710sRice logs`), the launch records, what's left of
+# the original-state snapshots and anything else 710sRice kept there. Each Restore-* function
+# above already deletes its own snapshot once it has used it -- except full time's Windows
+# settings (full-time-settings.json), which Restore-FullTimeWindowsSettings leaves for its
+# caller on purpose -- and one never used (Restore-LockScreenPolicy skipped in a shell that
+# wasn't elevated, say) would only go stale: a future install snapshots fresh state again. Last,
+# so every step above can still write here. Until 2026-10-05 only the snapshot folder went and
+# the logs stayed (the user's call, after reviewing Godzilla's uninstall). A file something
+# still holds open stays, and is named as left.
+Invoke-Step "Remove 710sRice's own folder (%LOCALAPPDATA%\710.DesktopRice: logs, snapshots, state)" {
+    $own = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
+    Remove-Item -LiteralPath $own -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $own) {
+        $left = @(Get-ChildItem -LiteralPath $own -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+        throw "in use, so left: $($left -join ', ') -- delete %LOCALAPPDATA%\710.DesktopRice after a restart"
+    }
+} "710sRice's own folder removed (%LOCALAPPDATA%\710.DesktopRice)"
 
 Write-Host ''
 if ($DryRun) {

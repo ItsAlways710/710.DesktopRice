@@ -440,8 +440,11 @@ function Get-DefenderExclusionPaths {
        sources: frequent I/O from ShareX/Everything, and Defender scanning komorebic.exe /
        pwsh.exe / this repo's own .ps1 files the first time they're touched per session
        (the "only the first time" lag seen on capture/window-close). Only returns paths
-       that actually exist on this machine, plus pwsh.exe (see Get-PwshImagePath). #>
-    $komorebic = Get-KomorebiExe
+       that actually exist on this machine, plus pwsh.exe (see Get-PwshImagePath).
+       komorebic.exe -- the command every hotkey runs; until 2026-10-05 this took komorebi.exe
+       (Get-KomorebiExe) instead, found on Godzilla, so that one is now an old exclusion of
+       ours (Get-StaleDefenderExclusions). #>
+    $komorebic = Get-KomorebicExe
     @(
         (Get-ShareXExe),
         "$env:USERPROFILE\Documents\ShareX",
@@ -483,6 +486,17 @@ function Get-StalePwshExclusions {
     })
 }
 
+function Get-StaleDefenderExclusions {
+    <# Existing Defender exclusions of ours that install no longer wants: an earlier pwsh.exe
+       (Get-StalePwshExclusions), and komorebi.exe itself -- excluded by mistake until
+       2026-10-05 in place of komorebic.exe (Get-DefenderExclusionPaths). Only those exact
+       paths, so nothing the person excluded themselves elsewhere is touched. #>
+    param([string[]]$Current)
+    @(Get-StalePwshExclusions -Current $Current)
+    $komorebi = Get-KomorebiExe
+    if ($komorebi -and $Current -contains $komorebi) { $komorebi }
+}
+
 function Set-DefenderExclusions {
     <# Requires an elevated shell; same not-elevated fallback as the rest of this file:
        warn and skip, never fail the install. Ported from Set-WinarchyDefenderExclusions. #>
@@ -496,15 +510,16 @@ function Set-DefenderExclusions {
         return
     }
     $current = @((Get-MpPreference).ExclusionPath)
-    # An earlier pwsh.exe exclusion (the alias, or a PowerShell version since updated
-    # away) is swapped for the current one rather than left to pile up.
-    $stale = @(Get-StalePwshExclusions -Current $current)
+    # An old exclusion of ours (an earlier pwsh.exe -- the alias, or a PowerShell version
+    # since updated away -- or komorebi.exe from before komorebic.exe) is removed rather than
+    # left to pile up.
+    $stale = @(Get-StaleDefenderExclusions -Current $current)
     if ($stale.Count -gt 0) {
         try {
             Remove-MpPreference -ExclusionPath $stale
-            Step-Ok "Old pwsh.exe Defender exclusion(s) removed: $(@($stale | ForEach-Object { ConvertTo-SafePath $_ }) -join ', ')"
+            Step-Ok "Old Defender exclusion(s) removed: $(@($stale | ForEach-Object { ConvertTo-SafePath $_ }) -join ', ')"
         } catch {
-            Step-Warn "Could not remove old pwsh.exe Defender exclusion(s): $($_.Exception.Message)"
+            Step-Warn "Could not remove old Defender exclusion(s): $($_.Exception.Message)"
         }
     }
     $missing = @($paths | Where-Object { $current -notcontains $_ })
@@ -538,8 +553,8 @@ function Remove-DefenderExclusions {
         return
     }
     $current = @((Get-MpPreference).ExclusionPath)
-    # Plus any earlier pwsh.exe exclusion of ours (see Get-StalePwshExclusions).
-    $toRemove = @(@($paths | Where-Object { $current -contains $_ }) + @(Get-StalePwshExclusions -Current $current))
+    # Plus any old exclusion of ours (see Get-StaleDefenderExclusions).
+    $toRemove = @(@($paths | Where-Object { $current -contains $_ }) + @(Get-StaleDefenderExclusions -Current $current))
     if ($toRemove.Count -eq 0) {
         Step-Info 'Defender exclusions already absent.'
         return

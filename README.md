@@ -370,6 +370,8 @@ It also takes the `710sRice` command off your PATH; `.\710sRice.ps1` in the repo
 works, for a reinstall.
 It removes the weather variables an older install set (`YASB_WEATHER_API_KEY`,
 `YASB_WEATHER_LOCATION`), if they're still there.
+Last, it deletes its own folder, `%LOCALAPPDATA%\710.DesktopRice`: the logs (`710sRice logs`)
+and the rest of what it kept there.
 It doesn't delete the repo folder or your personal files (`user.ahk`, `user.ps1`,
 `rules.local.toml` with your rules, games and pins, your palette profiles and scheme files).
 Delete the folder yourself if you're done with it.
