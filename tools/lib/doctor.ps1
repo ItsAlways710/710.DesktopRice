@@ -496,7 +496,7 @@ function Get-DoctorYasbWatchdogNote {
         if ($what -match 'stopped relaunching') {
             $note = "the watchdog gave up at $when after 3 relaunches -- the crash is in config\yasb\yasb.log"
         } elseif ($what -match 'Watchdog off') {
-            $note = "the watchdog couldn't relaunch it at $when (its task didn't run) -- watchdog off"
+            $note = "the watchdog couldn't relaunch it at $when (Windows PowerShell wouldn't start -- ahk-autostart.log says why) -- watchdog off"
         }
     }
     $note
@@ -543,9 +543,10 @@ function Test-DoctorStack {
     $ahkExe    = Get-AhkExe
     $parts = @(
         [pscustomobject]@{ Key = 'komorebi'; Name = 'komorebi'; Log = 'komorebi-autostart.log'; Installed = [bool](Get-KomorebiExe) }
-        [pscustomobject]@{ Key = 'yasb';     Name = 'YASB';     Log = 'yasb-autostart.log';     Installed = [bool](Get-Command yasbc.exe -CommandType Application -ErrorAction SilentlyContinue) }
+        [pscustomobject]@{ Key = 'yasb';     Name = 'YASB';     Log = 'yasb-autostart.log';     Installed = [bool](Get-YasbcExe) }
         [pscustomobject]@{ Key = 'ahk';      Name = '710.ahk';  Log = 'ahk-autostart.log';      Installed = [bool]$ahkExe }
-        [pscustomobject]@{ Key = 'sharex';   Name = 'ShareX';   Log = $null;                    Installed = [bool](Get-ShareXExe) }
+        # 710.ahk starts ShareX (and the bar, and Flow), and logs each start -- or why not -- there.
+        [pscustomobject]@{ Key = 'sharex';   Name = 'ShareX';   Log = 'ahk-autostart.log';      Installed = [bool](Get-ShareXExe) }
     )
     # What's running. 710.ahk by its window (Get-AhkWindowProcessId), the rest by name.
     $ahkPid = Get-AhkWindowProcessId -ScriptPath $ahkScript
@@ -557,12 +558,12 @@ function Test-DoctorStack {
     }
     # Not installed: group b already says so, and nothing here could start it.
     $parts = @($parts | Where-Object Installed)
-    # The components with their own task (tools\components\, Autostart): running = their process.
-    # A process that's up but running as admin gets its own install step (it restarts the app
-    # through its task) -- `710sRice restart` leaves these running.
-    $own = @(foreach ($comp in @(Get-AutostartComponents -NoWrite | Where-Object { $_.Process })) {
-        $procs[$comp.Key] = @(Get-Process -Name $comp.Process -ErrorAction SilentlyContinue)
-        [pscustomobject]@{ Key = $comp.Key; Name = (Get-DoctorComponentName $comp.Key); Log = $null; Installed = $true; Own = $true }
+    # Flow Launcher, which 710.ahk starts like the bar and ShareX (Get-AhkStartedApps): running =
+    # its process. Up but running as admin: its own install step (it stops Flow and has 710.ahk
+    # start it again) -- `710sRice restart` leaves Flow running.
+    $own = @(foreach ($app in @(Get-AhkStartedApps | Where-Object { $_.Key -eq 'flow' -and $_.Installed })) {
+        $procs[$app.Key] = @(Get-Process -Name $app.Process -ErrorAction SilentlyContinue)
+        [pscustomobject]@{ Key = $app.Key; Name = $app.Name; Log = 'ahk-autostart.log'; Installed = $true; Own = $true }
     })
     # (None of the four installed but Flow: just Flow's line below.)
     # "Running" means komorebi, YASB or 710.ahk. ShareX on its own isn't the stack, the way Flow on
@@ -638,10 +639,10 @@ function Test-DoctorPaused {
 }
 
 # --- d. Tasks and tiling mode --------------------------------------------------------------------
-# Every component starts through its scheduled task -- with a sign-in trigger on a full-time
-# (-Activate'd) machine, without one on an on-demand machine -- and install's tasks step
-# (`710sRice install -Only tasks`) re-registers them all in the machine's mode, which fixes
-# nearly everything here. The mode itself is install's own rule (Test-FullTimeMachine). The
+# komorebi and 710.ahk start through their scheduled tasks -- with a sign-in trigger on a
+# full-time (-Activate'd) machine, without one on an on-demand machine; 710.ahk starts the bar,
+# Flow and ShareX, whose own tasks are retired -- and install's tasks step (`710sRice install
+# -Only tasks`) re-registers them all in the machine's mode, which fixes nearly everything here. The mode itself is install's own rule (Test-FullTimeMachine). The
 # task's command is compared with what install would register now (Get-AutostartComponents
 # -NoWrite: the same answer, nothing written); a difference is reported by part, never with
 # the paths -- the launch files live under %LOCALAPPDATA%, whose path carries the user name.
@@ -681,11 +682,24 @@ function Get-DoctorTaskDrift {
 }
 
 function Test-DoctorTasks {
-    # The mode line and one line per component's task (the worst thing found). (The lock-screen
-    # sync task was checked here until it was retired, 2026-09-28: plan doc item 48.)
-    $components = @(Get-AutostartComponents -NoWrite)
-    if (-not $components.Count) { return }   # nothing installed: group b says so
+    # The mode line and one line per component's task (the worst thing found), then the bar's,
+    # Flow's and ShareX's old tasks if they're still here. (The lock-screen sync task was checked
+    # here until it was retired, 2026-09-28: plan doc item 48.)
     $tasksFix = @{ Fix = '710sRice install -Only tasks'; Step = 'tasks' }
+    $startup = [Environment]::GetFolderPath('Startup')
+    # Their tasks (2026-10-06): what a task starts runs in its job, and so does everything opened
+    # from it -- Mod Organizer 2 opened from the bar, Flow or a ShareX action couldn't start its
+    # tools (Error 5). 710.ahk starts all three now; the tasks step removes the old tasks and their
+    # Startup-folder fallbacks (Remove-RetiredStartTasks). A machine still has them until then.
+    $old = @(Get-RetiredStartTasks | Where-Object {
+        (Test-Task -TaskName $_.TaskName) -or ($startup -and (Test-Path -LiteralPath ([IO.Path]::Combine($startup, $_.LnkName))))
+    })
+    $oldResult = if ($old.Count) {
+        New-DoctorResult -Id 'task:retired' -Status 'XX' -Text "Old start-up tasks still here: $(($old | ForEach-Object Name) -join ', ')" `
+            -Detail "710.ahk starts $(if ($old.Count -eq 1) { 'it' } else { 'them' }) now -- what you open from an app a task started can't start programs of its own (Mod Organizer 2's tools: Error 5); the fix restarts the ones running" @tasksFix
+    }
+    $components = @(Get-AutostartComponents -NoWrite)
+    if (-not $components.Count) { return $oldResult }   # nothing installed: group b says so
     $fullTime = Test-FullTimeMachine
     $infos = @{}
     foreach ($c in $components) { $infos[$c.Key] = Get-ComponentTaskInfo -TaskName $c.TaskName }
@@ -706,7 +720,6 @@ function Test-DoctorTasks {
         New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: on demand (710sRice start) -- 710sRice activate switches to full-time'
     }
 
-    $startup = [Environment]::GetFolderPath('Startup')
     foreach ($c in $components) {
         $name = Get-DoctorComponentName $c.Key
         $id   = "task:$($c.Key)"
@@ -736,6 +749,7 @@ function Test-DoctorTasks {
         $kind = @(if ($t.AtLogOn) { 'sign-in' } else { 'on demand' }; if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' }) -join ', '
         New-DoctorResult -Id $id -Status 'OK' -Text "$name's task ($kind)"
     }
+    $oldResult
 }
 
 function Test-DoctorTilingMode {
@@ -795,9 +809,9 @@ function Test-DoctorKomorebiJson {
         3 {
             $text = if (Test-Path -LiteralPath $out) { 'komorebi.json is out of date with its sources' } else { 'komorebi.json is missing' }
             # A running komorebi: reload -- the hot reload plus its layouts put back. Not
-            # running: just the compile step -- reload-stack.ps1 STARTS komorebi (and the bar)
-            # when it's down, and a stopped stack has no layouts to keep; komorebi reads the
-            # new file at its next start.
+            # running: just the compile step -- reload-stack.ps1 STARTS komorebi when it's down
+            # (and `reload` then 710.ahk, and so the bar), and a stopped stack has no layouts to
+            # keep; komorebi reads the new file at its next start.
             if (Get-Process komorebi -ErrorAction SilentlyContinue) {
                 New-DoctorResult -Id 'komorebi-json' -Status 'XX' -Text $text -Fix '710sRice reload' -Repair 'reload'
             } else {
@@ -1404,16 +1418,24 @@ function Get-RepairPlan {
     if (-not (Get-Command Get-InstallStepOrder -ErrorAction SilentlyContinue)) { . (Join-Path $Root 'tools\lib\steps.ps1') }
     $installOrder = try { @(Get-InstallStepOrder) } catch { @($InstallFixedStepOrder) }
     $plan.Steps = @($installOrder | Where-Object { $steps.Contains($_) })
-    # The stack's own order (komorebi first: the rest look for it), then the components' tasks in
-    # install's order, whatever order they came in.
-    $order = @('komorebi', 'yasb', 'ahk', 'sharex') + @($installOrder | Where-Object { $_ -notin 'komorebi', 'yasb', 'ahk', 'sharex' })
+    # The stack's own order (komorebi first: the rest look for it; 710.ahk next: it starts the bar,
+    # Flow and ShareX), then anything else in install's order, whatever order they came in.
+    $first = @('komorebi', 'ahk', 'yasb', 'flow', 'sharex')
+    $order = $first + @($installOrder | Where-Object { $_ -notin $first })
     $plan.Start = @($starts | Sort-Object { $i = $order.IndexOf($_); if ($i -lt 0) { 99 } else { $i } })
+    $byAhk  = @(Get-AhkStartedApps | ForEach-Object Key)
+    $names  = { param($keys) @($keys | ForEach-Object { Get-DoctorComponentName $_ }) -join ', ' }
+    $viaTask = @($plan.Start | Where-Object { $byAhk -notcontains $_ })
+    $viaAhk  = @($plan.Start | Where-Object { $byAhk -contains $_ })
     $plan.Lines = @(
         if ($plan.Steps.Count) { "710sRice install -Only $($plan.Steps -join ',')" }
         if ($plan.Tiling)      { "710sRice tiling $($plan.Tiling)" }
         if ($plan.Restart)     { '710sRice restart' }
         if ($plan.Start.Count) {
-            "start $(@($plan.Start | ForEach-Object { Get-DoctorComponentName $_ }) -join ', ') ($(if ($plan.Start.Count -eq 1) { 'its task' } else { 'their tasks' }))"
+            "start " + (@(
+                if ($viaTask.Count) { "$(& $names $viaTask) ($(if ($viaTask.Count -eq 1) { 'its task' } else { 'their tasks' }))" }
+                if ($viaAhk.Count)  { "$(& $names $viaAhk) (710.ahk starts $(if ($viaAhk.Count -eq 1) { 'it' } else { 'them' }))" }
+            ) -join '; ')
         }
         if ($plan.ReloadBar)   { '710sRice reload bar' }
         if ($plan.Reload)      { '710sRice reload' }

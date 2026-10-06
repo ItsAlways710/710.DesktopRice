@@ -1092,11 +1092,12 @@ function Invoke-PaletteTargets {
 }
 
 function Send-PaletteAhkMessage {
-    <# Posts a registered message ('710sRice.PaletteFailed', ...) to 710.ahk's hidden window,
-       found by its title (activation.ps1's Find-AhkWindow, the same lookup -- this library stays
-       free of activation.ps1). 710.ahk lets these through UIPI itself; before it knows a message
-       the post is simply refused. $false when 710.ahk isn't there. #>
-    param([Parameter(Mandatory)][string]$Name)
+    <# Posts a registered message ('710sRice.PaletteFailed', '710sRice.StartApps' with -WParam,
+       ...) to 710.ahk's hidden window, found by its title (activation.ps1's Find-AhkWindow, the
+       same lookup -- this library stays free of activation.ps1). 710.ahk lets these through UIPI
+       itself; before it knows a message the post is simply refused. $false when 710.ahk isn't
+       there. #>
+    param([Parameter(Mandatory)][string]$Name, [int]$WParam = 0)
     try {
         if (-not ('Palette.Native.Ahk' -as [type])) {
             Add-Type -Namespace Palette.Native -Name Ahk -MemberDefinition @'
@@ -1120,6 +1121,6 @@ public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntP
             [void][Palette.Native.Ahk]::GetWindowText($hwnd, $sb, $sb.Capacity)
             if ($sb.ToString().IndexOf($script, [StringComparison]::OrdinalIgnoreCase) -ge 0) { break }
         }
-        [Palette.Native.Ahk]::PostMessage($hwnd, [Palette.Native.Ahk]::RegisterWindowMessage($Name), [IntPtr]::Zero, [IntPtr]::Zero)
+        [Palette.Native.Ahk]::PostMessage($hwnd, [Palette.Native.Ahk]::RegisterWindowMessage($Name), [IntPtr]$WParam, [IntPtr]::Zero)
     } catch { $false }
 }

@@ -1,10 +1,62 @@
 # Start-Yasb.ps1 -- starts YASB waiting for the shell to be ready, with retries.
 # No-op if YASB is already running. Ported from winarchy's scripts/Start-Yasb.ps1 @ 4574fc7.
+#
+# Only 710.ahk runs this (StartBar, config\ahk\710.ahk: "The apps 710.ahk starts"), through
+# Windows PowerShell, with no arguments but -Reason (what the log's header line says). Until
+# 2026-10-06 the bar's own Scheduled Task ran it, and everything a task starts sits in a job
+# that refuses a child's request to start apart from it -- an MO2 opened from the bar's taskbar
+# drawer couldn't start any of its tools (Error 5). -YasbExe / -YasbConfigHome still work (an
+# old task's command line passes them); without them: yasbc.exe where winget puts it, else on
+# PATH, and this clone's config\yasb.
+#
+# The environment is read fresh from the registry first (Update-ProcessEnvironment): 710.ahk's
+# own is the one it started with, so without this a bar restarted later wouldn't see a variable
+# set or removed since (the README's YASB_WALLPAPER_PATH, then `710sRice reload bar`) -- the
+# task's start always had a fresh one.
 
 param(
-    [Parameter(Mandatory)][string]$YasbExe,
-    [Parameter(Mandatory)][string]$YasbConfigHome
+    [string]$YasbExe,
+    [string]$YasbConfigHome,
+    [string]$Reason = 'autostart'
 )
+
+function Update-ProcessEnvironment {
+    <# This process's variables as a new sign-in would set them: the machine's, then yours over
+       them, Path the two joined (Windows' own order). A variable of the rice's (YASB_* or
+       DESKTOPRICE_*) that's in neither any more goes too -- removed since 710.ahk started.
+       Windows' per-session ones (USERNAME, APPDATA, ...) aren't in either list and stay as they
+       are. Windows PowerShell 5.1: [Environment] reads the registry and expands REG_EXPAND_SZ.
+       -Machine / -User: the two lists, for a test. #>
+    param($Machine = [Environment]::GetEnvironmentVariables('Machine'),
+          $User    = [Environment]::GetEnvironmentVariables('User'))
+    $machine = $Machine
+    $user    = $User
+    foreach ($vars in $machine, $user) {
+        foreach ($name in @($vars.Keys)) {
+            if ($name -ieq 'Path' -or $name -ieq 'PSModulePath') { continue }
+            [Environment]::SetEnvironmentVariable($name, [string]$vars[$name], 'Process')
+        }
+    }
+    # Names compared ignoring case, as Windows does (these hashtables don't: a user Path saved
+    # as PATH would otherwise be dropped, and every app opened from the bar would miss it).
+    $pathOf = { param($vars) foreach ($k in @($vars.Keys)) { if ($k -ieq 'Path') { return [string]$vars[$k] } } }
+    $env:Path = (@((& $pathOf $machine), (& $pathOf $user)) | Where-Object { $_ }) -join ';'
+    $known = @($machine.Keys) + @($user.Keys)
+    foreach ($name in @([Environment]::GetEnvironmentVariables('Process').Keys)) {
+        if ($name -notmatch '^(YASB_|DESKTOPRICE_)') { continue }
+        if (-not @($known | Where-Object { $_ -ieq $name }).Count) {
+            [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+        }
+    }
+}
+try { Update-ProcessEnvironment } catch { }   # best-effort: the inherited environment otherwise
+
+if (-not $YasbExe -and $env:ProgramFiles) {
+    $next = Join-Path $env:ProgramFiles 'YASB\yasbc.exe'
+    if (Test-Path -LiteralPath $next) { $YasbExe = $next }
+}
+if (-not $YasbExe) { $YasbExe = (Get-Command yasbc.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
+if (-not $YasbConfigHome) { $YasbConfigHome = Join-Path (Split-Path -Parent $PSScriptRoot) 'config\yasb' }
 
 $env:YASB_CONFIG_HOME = $YasbConfigHome
 $logDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
@@ -52,10 +104,10 @@ function Invoke-Hidden {
     $p.WaitForExit()
 }
 
-if (-not (Test-Path $YasbExe)) { Write-Log "yasbc.exe not found at $YasbExe; aborting."; exit 1 }
+if (-not $YasbExe -or -not (Test-Path -LiteralPath $YasbExe)) { Write-Log "yasbc.exe not found$(if ($YasbExe) { " at $YasbExe" } else { ' (not in Program Files\YASB, not on PATH)' }); aborting."; exit 1 }
 if (Test-YasbRunning) { Write-Log 'YASB already running; nothing to do.'; exit 0 }
 
-Write-Log '--- startup (autostart) ---'
+Write-Log "--- startup ($Reason) ---"
 
 # Bluetooth in the bar: config.yaml's network group lists "bluetooth$env:DESKTOPRICE_NO_BLUETOOTH"
 # -- 'bluetooth' (YASB's icon, "off" while the radio is off) on a machine with an adapter,

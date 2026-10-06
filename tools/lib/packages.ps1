@@ -10,7 +10,8 @@
 
   Dot-source AFTER tools\lib\activation.ps1: Invoke-WingetAsUser uses its Get-TaskFullName
   and $script:TaskFolder, Stop-PinnedApp its Find-AhkWindow / Send-AhkQuit / Get-KomorebicExe
-  and the caller's $Root, the ShareX probe its Get-ShareXExe. (install-wallust.ps1 only needs
+  and the caller's $Root, Invoke-MoveToPin its Start-AhkStartedApps, the ShareX probe its
+  Get-ShareXExe. (install-wallust.ps1 only needs
   Get-VersionsTable, which stands alone.)
 #>
 
@@ -368,12 +369,20 @@ function Compare-PinVersion {
 # service itself.
 
 function Get-PinnedAppTask {
-    # The autostart task that starts this row's app, or $null (Everything).
+    # The autostart task that starts this row's app (komorebi, 710.ahk), or $null.
     param($Row)
     switch ($Row.InstallId) {
         'LGUG2Z.komorebi'             { 'komorebi' }
-        'AmN.yasb'                    { 'yasb' }
         'AutoHotkey.AutoHotkey'       { 'ahk' }
+        default                       { $null }
+    }
+}
+
+function Get-PinnedAppAhkKey {
+    # This row's app when 710.ahk is what starts it (Get-AhkStartedApps: the bar, Flow), or $null.
+    param($Row)
+    switch ($Row.InstallId) {
+        'AmN.yasb'                    { 'yasb' }
         'Flow-Launcher.Flow-Launcher' { 'flow' }
         default                       { $null }
     }
@@ -460,7 +469,10 @@ function Invoke-MoveToPin {
        the upgrade step (what the probe reads is older) both run, so they can't differ. Stops
        the app if it's running (Stop-PinnedApp), pin remove -> winget upgrade --version <pin> ->
        pin add (Invoke-PinnedUpgrade -- as the user for a per-user package, Flow), reads the
-       version again, then starts the app through its own task if it was running before. Never
+       version again, then starts the app again if it was running before: komorebi and 710.ahk
+       through their own tasks, the bar and Flow by asking 710.ahk (Start-AhkStartedApps -- only
+       it starts them; never 710.ahk itself for them: on an on-demand machine between sessions
+       that would start half the stack). Never
        down: callers only come here for a package below its pin, never for one newer than it
        (the user's call -- doctor's [!!]). Prints its own lines. $true when the package ended at
        its pin (a restart-to-finish counts); $false when it didn't -- the caller counts that as
@@ -500,7 +512,13 @@ function Invoke-MoveToPin {
         Write-Host "  [XX] $($name): $($_.Exception.Message)" -ForegroundColor Red
     }
     $task = Get-PinnedAppTask $Row
-    if ($wasRunning -and $task) {
+    $ahkKey = Get-PinnedAppAhkKey $Row
+    if ($wasRunning -and $ahkKey) {
+        $apps = Start-AhkStartedApps -Keys $ahkKey -NoAhkStart -WaitSeconds 15
+        if ($apps.NoAhk) { Step-Warn "$name was running, but 710.ahk -- the only thing that starts it -- isn't, so it stays closed: 710sRice start brings it back." }
+        elseif ($apps.Missing.Count) { Step-Warn "$($name): 710.ahk was asked to start it again, but it isn't up after 15 s -- 710sRice logs shows why." }
+        else { Step-Ok "$($name): started again by 710.ahk" }
+    } elseif ($wasRunning -and $task) {
         if (Test-Task -TaskName $task) {
             $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $task) 2>&1
             if ($LASTEXITCODE -eq 0) { Step-Ok "$($name): started again through its task" }

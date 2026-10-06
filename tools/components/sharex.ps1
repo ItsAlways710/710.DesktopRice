@@ -1,7 +1,7 @@
 # ShareX (Group 1 W4): no update check of its own (it's version-managed here), and its tray icon
 # hidden from the bar -- YASB's systray hide_icons: ["ShareX"] in config\yasb\config.yaml (YASB
 # 2.0.7 matches an icon's exe name up to its first dot, case-insensitively). ShareX itself keeps
-# ShowTray ON: ShareX 21.0.0 honours -silent (the sign-in task's "no main window") only while its
+# ShowTray ON: ShareX 21.0.0 honours -silent (710.ahk's start: "no main window") only while its
 # tray icon is on (MainForm.cs:1270) -- winarchy turned it off once (2463825) and had to revert it
 # (4945ea1). So this step turns AutoCheckUpdate off and makes sure ShowTray is on.
 #
@@ -14,9 +14,11 @@
 # ShareX never run -> the file is created with just those two keys; ShareX fills in the rest.
 #
 # ShareX is force-stopped before the write (it saves its settings over the file on exit) and, when
-# it was running, started again through its own task (\710.DesktopRice\sharex, as you), or
-# Start-AsUser when there's none yet. Snapshot 'sharex-settings' (each key: existed + value);
-# uninstall puts them back with ShareX stopped.
+# it was running, started again by 710.ahk (asked -- only 710.ahk starts ShareX: a task's job, which
+# \710.DesktopRice\sharex gave it until 2026-10-06, kept a program a capture's action opens from
+# starting programs of its own; config\ahk\710.ahk, "The apps 710.ahk starts"). No 710.ahk running:
+# ShareX stays closed until `710sRice start`. Snapshot 'sharex-settings' (each key: existed +
+# value); uninstall puts them back with ShareX stopped.
 #
 # ShareX's own sign-in start goes too. Its "Run ShareX when Windows starts" is a ShareX.lnk in your
 # Startup folder, ShareX.exe -silent (ShareX's StartupManager: ShortcutHelpers on
@@ -24,7 +26,7 @@
 # StartupFolder value ShareX.lnk starting with byte 3, ShareX's own test). Its installer makes it
 # on a new install, ticked by default, so ShareX came up at every sign-in -- on an on-demand
 # machine too, alone, which doctor read as a half-started stack, and repair started the rest
-# around it (the Dell, 2026-10-03). One thing starts ShareX at sign-in: its task, on a full-time
+# around it (the Dell, 2026-10-03). One thing starts ShareX at sign-in: 710.ahk, on a full-time
 # machine only -- the rule flow.ps1 applies to Flow's own startup. A shortcut you switched off in
 # Task Manager is left alone (it starts nothing). Snapshot 'sharex-startup' (the shortcut as it
 # was); uninstall makes it again while ShareX is installed.
@@ -121,13 +123,11 @@
         }
 
         function Start-ShareXAgain {
-            # As you: its task, else Start-AsUser (tray only, -silent -- as at sign-in).
-            param([string]$Exe)
-            if (Test-Task -TaskName 'sharex') {
-                $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName 'sharex') 2>&1
-                if ($LASTEXITCODE -eq 0) { return $true }
-            }
-            Start-AsUser -Exe $Exe -Arguments '-silent' -Process 'ShareX' -Name 'sharex'
+            # By 710.ahk, as you (tray only, -silent -- as at sign-in): its line said.
+            $r = Start-AhkStartedApps -Keys 'sharex' -NoAhkStart -WaitSeconds 15
+            if ($r.Up.Count) { Step-Ok 'ShareX started again (by 710.ahk, as you)' }
+            elseif ($r.NoAhk) { Step-Warn "ShareX stays closed for now: only 710.ahk starts it, and 710.ahk isn't running -- 710sRice start starts both" }
+            else { Step-Warn "710.ahk was asked to start ShareX again, but it isn't up after 15 s -- 710sRice logs shows why" }
         }
 
         function Get-ShareXStartupFolder { [Environment]::GetFolderPath('Startup') }
@@ -168,10 +168,7 @@
             Write-ShareXValues $path ([ordered]@{ AutoCheckUpdate = $false; ShowTray = $true })
             $what = @(if ($now.AutoCheckUpdate -ne $false) { 'update check off' }; if ($now.ShowTray -ne $true) { 'tray icon on (it starts hidden only with it)' })
             Step-Ok "ShareX set up: $($what -join '; ')$(if (-not $now.FileExisted) { " (it hadn't run yet: $(ConvertTo-SafePath $path) created with just these)" })"
-            if ($wasUp) {
-                if (Start-ShareXAgain $exe) { Step-Ok 'ShareX started again (as you)' }
-                else { Step-Warn "ShareX didn't start again -- 710sRice start brings it back" }
-            }
+            if ($wasUp) { Start-ShareXAgain }
         }
 
         # ShareX's own sign-in start off (the file's header says why). Only the shortcut: ShareX
@@ -182,7 +179,7 @@
             Save-OriginalState -Label 'sharex-startup' -Data @{ Target = "$($s.Target)"; Arguments = "$($s.Arguments)"; WorkingDirectory = "$($s.WorkingDirectory)"; Icon = "$($s.Icon)"; Description = "$($s.Description)" }
             try {
                 Remove-Item -LiteralPath $own.Path -Force -ErrorAction Stop
-                Step-Ok "ShareX's own sign-in start turned off (its ""Run ShareX when Windows starts"" shortcut) -- $(if ($Ctx.FullTime) { 'its task starts it at sign-in' } else { 'on demand, nothing starts at sign-in' })"
+                Step-Ok "ShareX's own sign-in start turned off (its ""Run ShareX when Windows starts"" shortcut) -- $(if ($Ctx.FullTime) { '710.ahk starts it at sign-in' } else { 'on demand, nothing starts at sign-in' })"
             } catch { Step-Warn "Couldn't remove ShareX's own sign-in shortcut (ShareX.lnk in your Startup folder): $($_.Exception.Message)" }
         }
     }

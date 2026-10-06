@@ -13,8 +13,9 @@
   names, run in place:
     1. the install steps, as ONE `install.ps1 -Only <steps>` run, in install's order
     2. `tiling <mode>` (not when the tasks step ran: it registers komorebi's task anyway)
-    3. the stack: `restart`, or else each component that's down started through its task
-       (and waited for), then `reload bar` for two YASBs
+    3. the stack: `restart`, or else each component that's down started -- komorebi and
+       710.ahk through their tasks, the bar, Flow and ShareX by asking 710.ahk -- and waited
+       for, then `reload bar` for two YASBs
     4. `reload` -- after the starts, so 710.ahk is back to run it
   then a note when the config env vars changed under a running komorebi / YASB, and a wait
   for everything that was running when repair began to be up again before the re-check.
@@ -71,9 +72,8 @@ function Test-RepairKomorebiLauncherBusy {
 }
 
 function Get-RepairStackState {
-    # The stack components that are up right now, by key: komorebi / YASB / ShareX by process,
-    # 710.ahk by its window (its process name can't tell it from another AHK v2 script), a
-    # component with its own task (Flow) by the process it declares.
+    # The stack components that are up right now, by key: komorebi / YASB / ShareX / Flow by
+    # process, 710.ahk by its window (its process name can't tell it from another AHK v2 script).
     # komorebi counts once its launcher has finished too (Test-RepairKomorebiLauncherBusy).
     $ahk = Join-Path $Root 'config\ahk\710.ahk'
     @(
@@ -82,9 +82,7 @@ function Get-RepairStackState {
         $w = try { Find-AhkWindow -ScriptPath $ahk } catch { [IntPtr]::Zero }   # can't tell = not up
         if ($w -and $w -ne [IntPtr]::Zero) { 'ahk' }
         if (Get-Process ShareX -ErrorAction SilentlyContinue) { 'sharex' }
-        foreach ($c in @(Get-RiceComponents | Where-Object { $_.Contains('Autostart') })) {
-            if (Get-Process -Name $c.Autostart.Process -ErrorAction SilentlyContinue) { $c.Id }
-        }
+        if (Get-Process Flow.Launcher -ErrorAction SilentlyContinue) { 'flow' }
     )
 }
 
@@ -101,16 +99,19 @@ function Wait-RepairComponents {
 }
 
 function Start-RepairComponents {
-    # The components that are down, started through their own tasks -- the same `schtasks
-    # /Run` 710sRice start fires, so each one comes up at its task's run level whatever this
-    # (admin) window is -- then waited for: komorebi's launcher alone takes ~10 s (more on a
-    # first start, when it writes the monitor map), and the re-check mustn't catch one halfway
-    # up. Up to 60 s -- a repair takes as long as it takes (user, 2026-09-27).
+    # The components that are down: komorebi and 710.ahk through their own tasks -- the same
+    # `schtasks /Run` 710sRice start fires, so each one comes up at its task's run level
+    # whatever this (admin) window is -- and the bar, Flow and ShareX by asking 710.ahk
+    # (Start-AhkStartedApps; only it starts them, at its own level -- never this window's). Then
+    # waited for: komorebi's launcher alone takes ~10 s (more on a first start, when it writes
+    # the monitor map), and the re-check mustn't catch one halfway up. Up to 60 s -- a repair
+    # takes as long as it takes (user, 2026-09-27).
     param([string[]]$Keys)
     Write-Host "`n-- Starting what's down --" -ForegroundColor Cyan
     $taskOf = @{}
     foreach ($c in @(Get-AutostartComponents -NoWrite)) { $taskOf[$c.Key] = $c.TaskName }
-    $fired = @(foreach ($k in $Keys) {
+    $appKeys = @(Get-AhkStartedApps | ForEach-Object Key)
+    $fired = @(foreach ($k in @($Keys | Where-Object { $appKeys -notcontains $_ })) {
         $name = Get-DoctorComponentName $k
         if (-not $taskOf[$k] -or -not (Test-Task -TaskName $taskOf[$k])) {
             Step-Warn "$($name): no task to start it with -- 710sRice install -Only tasks registers it"
@@ -120,12 +121,29 @@ function Start-RepairComponents {
         if ($LASTEXITCODE -ne 0) { Step-Warn "$($name): its task didn't run (schtasks exit $LASTEXITCODE)"; continue }
         $k
     })
-    if (-not $fired.Count) { return }
-    $missing = @(Wait-RepairComponents $fired 60)
+    # The bar, Flow, ShareX: asked of 710.ahk, which is started first through its task if it
+    # isn't up yet (fired above, or not) -- and starts all three as it loads. The wait below is
+    # the one that counts.
+    $asked = @()
+    $viaAhk = @($Keys | Where-Object { $appKeys -contains $_ })
+    if ($viaAhk.Count) {
+        $r = Start-AhkStartedApps -Keys $viaAhk -WaitSeconds 0
+        if ($r.NoAhk) {
+            foreach ($k in $viaAhk) { Step-Warn "$(Get-DoctorComponentName $k): only 710.ahk starts it, and 710.ahk isn't running and has no task to start it with -- 710sRice install -Only tasks registers it" }
+        } else { $asked = $viaAhk }
+    }
+    $started = @($fired) + @($asked)
+    if (-not $started.Count) { return }
+    $missing = @(Wait-RepairComponents $started 60)
     foreach ($k in $fired) {
         $name = Get-DoctorComponentName $k
         if ($missing -contains $k) { Step-Warn "$($name): its task fired, but it isn't up after 60 s -- 710sRice logs shows why" }
         else { Step-Ok "$($name): started through its task, running" }
+    }
+    foreach ($k in $asked) {
+        $name = Get-DoctorComponentName $k
+        if ($missing -contains $k) { Step-Warn "$($name): 710.ahk was asked to start it, but it isn't up after 60 s -- 710sRice logs shows why" }
+        else { Step-Ok "$($name): started by 710.ahk, running" }
     }
 }
 
@@ -183,8 +201,8 @@ function Invoke-RiceRepair {
     <# `710sRice doctor -repair`. Returns the number of [XX] left -- 710sRice's exit code. #>
     Write-Host ''
     Write-Host '  Checking...' -ForegroundColor DarkGray
-    # What's up now: before each re-check, these are waited for (an upgrade restarts what it
-    # stopped through its task and doesn't wait).
+    # What's up now: before each re-check, these are waited for (an upgrade starts what it
+    # stopped again -- through its task, or by asking 710.ahk -- and only waits 15 s at most).
     $upBefore = @(Get-RepairStackState)
     $report = Get-DoctorReport
     $title  = $report.Header.Title -replace '^710sRice doctor', '710sRice doctor -repair'

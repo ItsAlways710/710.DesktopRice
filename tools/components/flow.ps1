@@ -1,14 +1,17 @@
-# Flow Launcher (Group 1 #4 + W3): started at sign-in by our own task, set up on the very first
-# install, and its settings kept the way 710.ahk's three Flow hotkeys need them.
+# Flow Launcher (Group 1 #4 + W3): started by 710.ahk, set up on the very first install, and its
+# settings kept the way 710.ahk's three Flow hotkeys need them.
 #
-# Sign-in: \710.DesktopRice\flow (Autostart below) runs Flow's stable root Flow.Launcher.exe (the
-# Squirrel stub; it starts app-<version>\Flow.Launcher.exe) as you, Normal priority, 2 s after
-# sign-in -- what Flow's own "start on system startup" task does, without its traps: Flow creates
-# that one with RunLevel Highest whenever the Flow creating it runs elevated and never lowers it
-# again, points it at the versioned exe Flow's updater deletes, and only creates it the next time
-# Flow starts. Exactly one thing may start Flow at sign-in -- a second start shows Flow's window
-# (App.xaml.cs OnSecondAppStarted) -- so this step switches Flow's own off, in the same run that
-# registers ours. On an on-demand machine the task has no trigger and `710sRice start` fires it.
+# Start: 710.ahk runs Flow's stable root Flow.Launcher.exe (the Squirrel stub; it starts
+# app-<version>\Flow.Launcher.exe) as you, as it loads -- so at sign-in on a full-time machine,
+# with `710sRice start` on an on-demand one -- and whenever Flow has to come back
+# (config\ahk\710.ahk, "The apps 710.ahk starts"). That replaces Flow's own "start on system
+# startup" task, which has traps of its own: Flow creates it with RunLevel Highest whenever the
+# Flow creating it runs elevated and never lowers it again, points it at the versioned exe Flow's
+# updater deletes, and only creates it the next time Flow starts -- and a task's job keeps what
+# you open from Flow from starting programs of its own (Mod Organizer 2's tools: Error 5).
+# \710.DesktopRice\flow, our own task until 2026-10-06, had that last trap; the tasks step
+# retires it. Exactly one thing may start Flow at sign-in -- a second start shows Flow's window
+# (App.xaml.cs OnSecondAppStarted) -- so this step switches Flow's own off.
 #
 # Why Flow must already be running before the first SUPER+Space (read in Flow 2.1.3's source):
 # it starts hidden (HideOnStartup) and registers its hotkey only at the end of its startup
@@ -35,20 +38,23 @@
 #     2.1.3 MainViewModel.ShouldIgnoreHotkeys: the foreground window exactly covers its monitor).
 #     Focus a window on another screen and Flow opens there.
 #   - StartFlowLauncherOnSystemStartup / UseLogonTaskForStartup off, and \Flow.Launcher Startup
-#     (or the HKCU Run value Flow.Launcher it uses instead) deleted: our task replaces them.
+#     (or the HKCU Run value Flow.Launcher it uses instead) deleted: 710.ahk's start replaces them.
 #   - The legacy standalone Everything plugin (ID D2D2C23B...) this repo once installed is
 #     removed: archived upstream, broken on Flow 2.x, replaced by the Explorer plugin on the
 #     Everything engine (winarchy a4dd1f7 reached the same conclusion).
 #
 # Flow is stopped before anything is written -- a running Flow keeps its settings in memory and
 # saves them back over the files, and holds its plugin DLLs locked -- and the files are read again
-# as the stopped Flow left them. It is started again, through its task (as you -- this step runs
-# in install's admin window), when it was running before; a Flow found running as admin is
-# restarted that way too. Never started from here directly.
+# as the stopped Flow left them. It is started again by 710.ahk (asked -- this step runs in
+# install's admin window, and only 710.ahk starts Flow) when it was running before; a Flow found
+# running as admin is restarted that way too. Never started from here directly. No 710.ahk
+# running: Flow stays closed until `710sRice start` (starting 710.ahk from here would start the
+# bar and ShareX too).
 #
 # The first start (W3; winarchy 57fad9e's Initialize-WinarchyFlow, reshaped): Flow creates its
 # settings files only when it first runs. Installed but never run -> started once through
-# Start-AsUser, both files waited for (up to 30 s), Flow stopped, then set up -- so a first install
+# Start-AsUser (a one-shot task -- fine for a Flow that's stopped again seconds later), both files
+# waited for (up to 30 s), Flow stopped, then set up -- so a first install
 # sets Flow up in one run, and the theme step right after this one (After = 'wallust') themes it.
 # Its Welcome window shows for those seconds, once (Flow saves FirstLaunch = false before opening it).
 #
@@ -67,12 +73,6 @@
     Label = 'Flow Launcher'
     After = 'wallust'
     Group = 'Integrations'
-
-    Autostart = @{
-        Exe     = { $e = Join-Path $env:LOCALAPPDATA 'FlowLauncher\Flow.Launcher.exe'; if (Test-Path -LiteralPath $e) { $e } }
-        Delay   = 'PT2S'
-        Process = 'Flow.Launcher'
-    }
 
     Functions = {
         function Get-FlowPaths {
@@ -239,7 +239,7 @@
                 $r.Todo.Add('its hotkey ignored over fullscreen windows')
             }
 
-            # Flow's own sign-in start: off -- our task starts it (#4).
+            # Flow's own sign-in start: off -- 710.ahk starts it (#4).
             $startup = $false
             foreach ($k in 'StartFlowLauncherOnSystemStartup', 'UseLogonTaskForStartup') {
                 if ($settings[$k] -eq $true) { $settings[$k] = $false; $r.SettingsChanged = $true; $startup = $true }
@@ -248,7 +248,7 @@
             $r.OwnRunValue = Test-FlowRunValue
             if ($startup -or $r.OwnTask -or $r.OwnRunValue) {
                 & $find 'Flow also starts itself at sign-in (its own setting) -- two starts open its window' 'startup'
-                $r.Todo.Add("its own sign-in start off (710sRice's task starts it)")
+                $r.Todo.Add("its own sign-in start off (710.ahk starts it)")
             }
             $r
         }
@@ -429,20 +429,13 @@
             Step-Ok 'Flow Launcher already set up'
         }
 
-        # Our task, in the machine's mode -- in this same run, so Flow's own start is never off
-        # without ours on (a plain run's tasks step registers it again, the same).
-        if ($Ctx.FullTime) { Register-Autostart -Key 'flow' } else { Register-OnDemandTasks -Key 'flow' }
-
-        # Started again as it was -- through its task, as you, never from this admin window.
+        # Started again as it was -- by 710.ahk, as you, never from this admin window (see the
+        # header).
         if (($wasUp -or $asAdmin) -and -not (Get-Process -Name 'Flow.Launcher' -ErrorAction SilentlyContinue)) {
-            $started = $false
-            if (Test-Task -TaskName 'flow') {
-                $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName 'flow') 2>&1
-                $started = $LASTEXITCODE -eq 0
-            }
-            if (-not $started) { $started = Start-AsUser -Exe $p.Exe -Process 'Flow.Launcher' -Name 'flow' }
-            if ($started) { Step-Ok 'Flow Launcher started again (as you)' }
-            else { Step-Warn "Flow Launcher didn't start again -- SUPER+Space starts it" }
+            $r = Start-AhkStartedApps -Keys 'flow' -NoAhkStart -WaitSeconds 15
+            if ($r.Up.Count) { Step-Ok 'Flow Launcher started again (by 710.ahk, as you)' }
+            elseif ($r.NoAhk) { Step-Warn "Flow Launcher stays closed for now: only 710.ahk starts it, and 710.ahk isn't running -- 710sRice start starts both" }
+            else { Step-Warn "710.ahk was asked to start Flow Launcher again, but it isn't up after 15 s -- SUPER+Space starts it" }
         }
     }
 

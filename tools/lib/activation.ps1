@@ -33,9 +33,8 @@
 # uninstall use them below; the wallpaper pipeline dot-sources the same file).
 . (Join-Path $PSScriptRoot 'lockscreen.ps1')
 
-# The components (tools\components\<id>.ps1, Group 1 #12): a component can declare its own
-# sign-in task (its Autostart field), which Get-AutostartComponents below picks up. Only
-# functions -- nothing is read until something asks.
+# The components (tools\components\<id>.ps1, Group 1 #12). Only functions -- nothing is read
+# until something asks.
 if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Join-Path $PSScriptRoot 'components.ps1') }
 
 # --- Paths as they get printed ------------------------------------------------------------
@@ -1226,20 +1225,19 @@ function ConvertTo-HiddenLaunch {
 }
 
 function Get-AutostartComponents {
-    <# Definition of the 4 autostart components this repo actually uses (komorebi, YASB,
-       ShareX, AHK). net-icon is deliberately not ported -- see this file's header comment.
+    <# The parts of the stack that start through a Scheduled Task of their own: komorebi and
+       710.ahk (AHK). net-icon is deliberately not ported -- see this file's header comment.
        Returns only the components whose executable is actually present.
        Each item: Key, TaskName, LnkName, Exe, Arguments, Delay (ISO-8601 duration, for the
-       LogonTrigger's Delay). The 3 powershell-hosted components (all but ShareX, which
-       launches its own GUI exe directly and has no console to begin with) go through
-       ConvertTo-HiddenLaunch -- see that function for why; their items also carry Spec (the
-       launch-<key>.txt path) and SpecLines (what goes in it).
+       LogonTrigger's Delay), Spec (the launch-<key>.txt path) and SpecLines (what goes in it):
+       both are powershell-hosted, so both go through ConvertTo-HiddenLaunch -- see that function
+       for why. Process is always $null (their launchers check for themselves; kept for callers
+       that ask).
        -NoWrite: the same answer without writing any launch-<key>.txt -- for `710sRice doctor`
        (read-only) and Get-AutostartStatus, which only need the names.
-       Since Group 1 (#12 / #4) a component (tools\components\<id>.ps1) can declare its own task
-       with an Autostart field: Key and TaskName = its Id, a GUI exe started directly (no
-       run-hidden.vbs), and Process -- the process name that means "already running" (the four
-       above leave it $null: their launchers check for themselves). #>
+       The bar, Flow Launcher and ShareX had tasks of their own until 2026-10-06; 710.ahk starts
+       them now (Get-AhkStartedApps below says why), and their old tasks are retired
+       (Remove-RetiredStartTasks). No other app gets one: a task's job is what broke them. #>
     param([switch]$NoWrite)
     $items = [System.Collections.Generic.List[object]]::new()
     $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -1260,35 +1258,8 @@ function Get-AutostartComponents {
         })
     }
 
-    # YASB via its own resilient launcher (waits for shell ready, retries).
-    $yasbc = (Get-Command yasbc -ErrorAction SilentlyContinue)?.Source
-    if ($yasbc) {
-        $launcher = Join-Path $Root 'scripts\Start-Yasb.ps1'
-        $yasbHome = Join-Path $Root 'config\yasb'
-        $hidden = ConvertTo-HiddenLaunch -NoWrite:$NoWrite -Key 'yasb' -Exe $ps -Arguments "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -YasbExe `"$yasbc`" -YasbConfigHome `"$yasbHome`""
-        $items.Add([pscustomobject]@{
-            Key = 'yasb'; TaskName = 'yasb'; LnkName = '710.DesktopRice YASB.lnk'
-            Exe = $hidden.Exe
-            Arguments = $hidden.Arguments
-            Delay = 'PT0S'
-            Spec = $hidden.Spec; SpecLines = $hidden.SpecLines; Process = $null
-        })
-    }
-
-    # ShareX resident in the tray (-silent: no main window) so the first capture of the
-    # day doesn't also pay for the exe's cold start.
-    $sharexExe = Get-ShareXExe
-    if ($sharexExe) {
-        $items.Add([pscustomobject]@{
-            Key = 'sharex'; TaskName = 'sharex'; LnkName = '710.DesktopRice ShareX.lnk'
-            Exe = $sharexExe
-            Arguments = '-silent'
-            Delay = 'PT0S'
-            Spec = $null; SpecLines = $null; Process = $null
-        })
-    }
-
-    # AHK dispatcher via its own resilient launcher.
+    # AHK dispatcher via its own resilient launcher. 710.ahk starts the bar, Flow and ShareX as
+    # it loads (config\ahk\710.ahk, "The apps 710.ahk starts").
     $ahkExe = Get-AhkExe
     if ($ahkExe) {
         $launcher = Join-Path $Root 'scripts\Start-Ahk.ps1'
@@ -1303,23 +1274,265 @@ function Get-AutostartComponents {
         })
     }
 
-    # The components' own tasks (their Autostart field), in install order. Exe returning
-    # nothing = not installed, so no task -- the same rule as the four above.
-    $order = @(Get-RiceStepOrder)
-    foreach ($comp in @(Get-RiceComponents | Where-Object { $_.Contains('Autostart') } | Sort-Object { $order.IndexOf($_.Id) })) {
-        $a = $comp.Autostart
-        $exe = & $a.Exe
-        if (-not $exe) { continue }
-        $items.Add([pscustomobject]@{
-            Key = $comp.Id; TaskName = $comp.Id; LnkName = "710.DesktopRice $($comp.Label).lnk"
-            Exe = "$exe"
-            Arguments = "$($a.Arguments)"
-            Delay = if ($a.Delay) { "$($a.Delay)" } else { 'PT0S' }
-            Spec = $null; SpecLines = $null; Process = "$($a.Process)"
-        })
-    }
-
     $items
+}
+
+function Get-AhkStartedApps {
+    <# The apps only 710.ahk starts (config\ahk\710.ahk, "The apps 710.ahk starts"): the bar, Flow
+       Launcher and ShareX -- at its own start, and whenever one has to come back. Never a Scheduled
+       Task (2026-10-06): whatever a task starts runs inside a job that refuses a child's request to
+       start apart from it, and everything it starts inherits that job -- Mod Organizer 2 opened
+       from the bar's taskbar drawer, from Flow or by a ShareX action couldn't start LOOT, xEdit or
+       the game (Error 5). Proven on both machines; what 710.ahk starts is clean. Each: Key, Name,
+       Process (the process name that means "running"), Bit (its share of the '710sRice.StartApps'
+       message's wParam), Installed. #>
+    $flowExe = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'FlowLauncher\Flow.Launcher.exe' }
+    @(
+        [pscustomobject]@{ Key = 'yasb';   Name = 'YASB';          Process = 'yasb';          Bit = 1; Installed = [bool](Get-YasbcExe) }
+        [pscustomobject]@{ Key = 'flow';   Name = 'Flow Launcher'; Process = 'Flow.Launcher'; Bit = 2; Installed = [bool]($flowExe -and (Test-Path -LiteralPath $flowExe)) }
+        [pscustomobject]@{ Key = 'sharex'; Name = 'ShareX';        Process = 'ShareX';        Bit = 4; Installed = [bool](Get-ShareXExe) }
+    )
+}
+
+function Start-AhkFromTask {
+    <# Starts 710.ahk through its own task (schtasks /Run: at the task's level, whatever shell
+       this is) unless it's running, then waits up to -WaitSeconds for its window -- Start-Ahk.ps1
+       waits for the desktop first, so it can take a while at sign-in. 'running' (it already
+       was), 'started', 'late' (the task ran, no window yet when the wait ended) or 'none' (no
+       task, or it wouldn't run). As it loads, 710.ahk starts the bar, Flow and ShareX. #>
+    param([int]$WaitSeconds = 30)
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    $find = { try { Find-AhkWindow -ScriptPath $ahkScript } catch { [IntPtr]::Zero } }
+    if ((& $find) -ne [IntPtr]::Zero) { return 'running' }
+    if (-not (Test-Task -TaskName 'ahk')) { return 'none' }
+    $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName 'ahk') 2>&1
+    if ($LASTEXITCODE -ne 0) { return 'none' }
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    while ((& $find) -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    if ((& $find) -ne [IntPtr]::Zero) { 'started' } else { 'late' }
+}
+
+function Restart-AhkFromTask {
+    <# Restarts a running 710.ahk through its own task: what `710sRice restart` does to 710.ahk,
+       for 710.ahk alone. Asked to quit ('710sRice.Quit', which every 710.ahk since 2026-09-25
+       knows), then ended if its window is still there after 2 s -- an older one, or one that's
+       stuck; only from an admin window, and only a process whose command line names this
+       710.ahk (Stop-RunningComponents' rule: never another AutoHotkey script) -- and waited for
+       until its process is gone. Then Start-AhkFromTask: Start-Ahk.ps1, as at sign-in. Used by
+       Request-RetiredAppsRestart, for a 710.ahk too old to hear its ask (it reads that file as it
+       starts). Does nothing without the ahk task (it could be stopped but not started again) or
+       when 710.ahk isn't running. Returns 'started' / 'late' (Start-AhkFromTask's), 'none' (it was
+       stopped and its task didn't start it again: 710.ahk is down), 'stuck' (it wouldn't stop),
+       'notask' or 'notrunning'. #>
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    $find = { try { Find-AhkWindow -ScriptPath $ahkScript } catch { [IntPtr]::Zero } }
+    if ((& $find) -eq [IntPtr]::Zero) { return 'notrunning' }
+    if (-not (Test-Task -TaskName 'ahk')) { return 'notask' }
+    $ahkPid = try { Get-AhkWindowProcessId -ScriptPath $ahkScript } catch { $null }
+    try { [void](Send-AhkQuit -ScriptPath $ahkScript) } catch { }
+    $deadline = (Get-Date).AddSeconds(2)
+    while ((& $find) -ne [IntPtr]::Zero -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+    if ((& $find) -ne [IntPtr]::Zero) {
+        try {
+            Get-CimInstance Win32_Process -Filter "Name = 'AutoHotkey64.exe' OR Name = 'AutoHotkey64_UIA.exe'" -ErrorAction Stop |
+                Where-Object { $_.CommandLine -and $_.CommandLine.Contains($ahkScript) } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        } catch { }
+        $deadline = (Get-Date).AddSeconds(2)
+        while ((& $find) -ne [IntPtr]::Zero -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+    }
+    if ((& $find) -ne [IntPtr]::Zero) { return 'stuck' }
+    if ($ahkPid) {
+        $deadline = (Get-Date).AddSeconds(5)
+        while ((Get-Process -Id $ahkPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+    }
+    Start-AhkFromTask
+}
+
+function Start-AhkStartedApps {
+    <# Has 710.ahk start the ones of -Keys (Get-AhkStartedApps: yasb, flow, sharex) that are
+       installed and not running -- the '710sRice.StartApps' message -- then waits up to
+       -WaitSeconds for them. 710.ahk not running: it's started first, through its own task
+       (Start-AhkFromTask) -- it starts all three as it loads -- unless -NoAhkStart, or it has no
+       task (then nothing starts: NoAhk). Used wherever one of them must come (back) up: Start-All
+       and `activate` (with -NoAhkStart: they start 710.ahk themselves), `reload bar`, repair,
+       update, install's Flow and ShareX steps, a theme change. Returns {Up; Missing; AhkStarted;
+       NoAhk} -- Up and Missing are Get-AhkStartedApps items (Missing: not running when the wait
+       ended). Never throws for a start that didn't happen. #>
+    param([string[]]$Keys = @('yasb', 'flow', 'sharex'), [int]$WaitSeconds = 30, [switch]$NoAhkStart)
+    $apps = @(Get-AhkStartedApps | Where-Object { $Keys -contains $_.Key -and $_.Installed })
+    $todo = @($apps | Where-Object { -not (Get-Process -Name $_.Process -ErrorAction SilentlyContinue) })
+    $result = [pscustomobject]@{ Up = @($apps | Where-Object { $todo -notcontains $_ }); Missing = @(); AhkStarted = $false; NoAhk = $false }
+    if (-not $todo.Count) { return $result }
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    $find = { try { Find-AhkWindow -ScriptPath $ahkScript } catch { [IntPtr]::Zero } }
+    $hwnd = & $find
+    if ($hwnd -eq [IntPtr]::Zero) {
+        if ($NoAhkStart -or (Start-AhkFromTask) -eq 'none') { $result.NoAhk = $true; $result.Missing = $todo; return $result }
+        $result.AhkStarted = $true
+        # It starts all three as it loads; the message below covers one it found running then
+        # that has gone since. 'late': no window to post to -- it starts them when it's up.
+        $hwnd = & $find
+    }
+    if ($hwnd -ne [IntPtr]::Zero) {
+        $bits = 0
+        foreach ($a in $todo) { $bits = $bits -bor $a.Bit }
+        [void](Send-AhkMessage -ScriptPath $ahkScript -Name '710sRice.StartApps' -WParam $bits)
+    }
+    $missing = $todo
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    while ($missing.Count -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $missing = @($missing | Where-Object { -not (Get-Process -Name $_.Process -ErrorAction SilentlyContinue) })
+    }
+    $result.Up = @($result.Up) + @($todo | Where-Object { $missing -notcontains $_ })
+    $result.Missing = @($missing)
+    $result
+}
+
+function Get-RetiredStartTasks {
+    <# The tasks that started the bar, Flow and ShareX until 2026-10-06 (710.ahk starts them now),
+       with the Startup-folder shortcut each one fell back to when its task couldn't be made. #>
+    @(
+        [pscustomobject]@{ TaskName = 'yasb';   Name = 'the bar';       LnkName = '710.DesktopRice YASB.lnk' }
+        [pscustomobject]@{ TaskName = 'flow';   Name = 'Flow Launcher'; LnkName = '710.DesktopRice Flow Launcher.lnk' }
+        [pscustomobject]@{ TaskName = 'sharex'; Name = 'ShareX';        LnkName = '710.DesktopRice ShareX.lnk' }
+    )
+}
+
+function Join-RiceNameList {
+    # 'a', 'a and b', 'a, b and c'.
+    param([string[]]$Names)
+    $n = @($Names | Where-Object { $_ })
+    if ($n.Count -le 1) { return "$($n -join '')" }
+    "$(@($n | Select-Object -SkipLast 1) -join ', ') and $($n[-1])"
+}
+
+function Remove-RetiredStartTasks {
+    <# Retires the bar's, Flow's and ShareX's old tasks (Get-RetiredStartTasks), their Startup
+       shortcuts and the bar's launch-yasb.txt, wherever they're still here. Called by install's
+       tasks step (Register-Autostart / Register-OnDemandTasks: -Activate, a plain re-run,
+       `710sRice install -Only tasks` -- repair's fix, and so update's -- activate and deactivate)
+       and by uninstall (Unregister-Autostart). A no-op on a machine without them; says what it
+       removed, then has 710.ahk restart what those tasks may have started
+       (Request-RetiredAppsRestart). -Uninstall: no lines (uninstall prints its own) and nothing
+       restarted (it has stopped everything). Returns what it removed. #>
+    param([switch]$Uninstall)
+    $removed = [System.Collections.Generic.List[string]]::new()
+    $tasksGone = [System.Collections.Generic.List[string]]::new()
+    $startup = [Environment]::GetFolderPath('Startup')
+    foreach ($r in Get-RetiredStartTasks) {
+        if (Test-Task -TaskName $r.TaskName) {
+            $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName $r.TaskName) /F 2>&1
+            if (Test-Task -TaskName $r.TaskName) {
+                if (-not $Uninstall) { Step-Warn "Couldn't remove the old task that started $($r.Name) ($(Get-TaskFullName -TaskName $r.TaskName)) -- run 710sRice install -Only tasks from an admin window." }
+            } else {
+                $tasksGone.Add($r.TaskName)
+                if ($removed -notcontains $r.Name) { $removed.Add($r.Name) }
+            }
+        }
+        if ($startup) {
+            $lnk = Join-Path $startup $r.LnkName
+            if (Test-Path -LiteralPath $lnk) {
+                Remove-Item -LiteralPath $lnk -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path -LiteralPath $lnk) -and $removed -notcontains $r.Name) { $removed.Add($r.Name) }
+            }
+        }
+    }
+    if ($env:LOCALAPPDATA) { Remove-Item (Join-Path $env:LOCALAPPDATA '710.DesktopRice\launch-yasb.txt') -Force -ErrorAction SilentlyContinue }
+    if ($Uninstall) {
+        if ($env:LOCALAPPDATA) { Remove-Item -LiteralPath (Get-RetiredRestartPath) -Force -ErrorAction SilentlyContinue }
+        return $removed
+    }
+    if ($removed.Count) {
+        Step-Info "Removed the old start-up task$(if ($removed.Count -gt 1) { 's' }) of $(Join-RiceNameList $removed) -- 710.ahk starts $(if ($removed.Count -gt 1) { 'them' } else { 'it' }) now."
+    }
+    # (A Startup shortcut's start came from Explorer, not a task: nothing to restart for those.)
+    if ($tasksGone.Count) { Request-RetiredAppsRestart -Keys $tasksGone }
+    $removed
+}
+
+function Get-RetiredRestartPath { Join-Path $env:LOCALAPPDATA '710.DesktopRice\restart-after-retire.txt' }
+
+function Request-RetiredAppsRestart {
+    <# The apps whose old task Remove-RetiredStartTasks just removed (-Keys: Get-AhkStartedApps
+       keys), when they're running: each may be the copy its task started -- still inside the
+       task's job, so what you open from it still can't start programs of its own -- and it stays
+       that way until it restarts. They're added to restart-after-retire.txt (the StartApps bits,
+       with any already there), which 710.ahk reads once -- stopping each one still running and
+       starting it again itself (its RestartRetired) -- as it loads, and when asked
+       ('710sRice.RestartRetired', posted here). Waits 5 s for the ask to be taken (the file gone).
+       Still there with 710.ahk running: it's one from before this version (every existing
+       install's first update to it -- it has no ear for the ask), so it's restarted through its
+       task (Restart-AhkFromTask) and the new one takes the file as it starts; up to 30 s more.
+       Then up to 30 s for each one to run again as a new process, and says how it went. No
+       710.ahk running: nothing is started here, and the file waits for its next start
+       (`710sRice restart`). #>
+    param([string[]]$Keys)
+    # Named as the retired tasks name them ('the bar', not 'YASB').
+    $label = @{}
+    foreach ($r in Get-RetiredStartTasks) { $label[$r.TaskName] = $r.Name }
+    $apps = @(Get-AhkStartedApps | Where-Object { $Keys -contains $_.Key } |
+              ForEach-Object { $_ | Select-Object *, @{ n = 'Label'; e = { $label[$_.Key] } } })
+    $running = @($apps | Where-Object { Get-Process -Name $_.Process -ErrorAction SilentlyContinue })
+    if (-not $running.Count) { return }
+    $oldIds = @{}
+    foreach ($a in $running) { $oldIds[$a.Key] = @(Get-Process -Name $a.Process -ErrorAction SilentlyContinue | ForEach-Object Id) }
+    $bits = 0
+    foreach ($a in $running) { $bits = $bits -bor $a.Bit }
+    $file = Get-RetiredRestartPath
+    try { $bits = $bits -bor ([int]"$(Get-Content -LiteralPath $file -Raw -ErrorAction Stop)".Trim()) } catch { }
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+        Set-Content -LiteralPath $file -Value $bits -Encoding ascii -ErrorAction Stop
+    } catch {
+        Step-Warn "Couldn't ask 710.ahk to restart $(Join-RiceNameList @($running | ForEach-Object Label)) ($($_.Exception.Message)) -- sign out and back in before opening Mod Organizer 2 from $(if ($running.Count -gt 1) { 'them' } else { 'it' })."
+        return
+    }
+    $names = Join-RiceNameList @($running | ForEach-Object Label)
+    $first = $names.Substring(0, 1).ToUpper() + $names.Substring(1)   # the same, starting a sentence
+    $many = $running.Count -gt 1
+    $them = if ($many) { 'them' } else { 'it' }
+    $ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+    try { [void](Send-AhkMessage -ScriptPath $ahkScript -Name '710sRice.RestartRetired') } catch { }
+    $deadline = (Get-Date).AddSeconds(5)
+    while ((Test-Path -LiteralPath $file) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    $running710 = { try { (Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero } catch { $false } }
+    if ((Test-Path -LiteralPath $file) -and (& $running710) -and (Test-Task -TaskName 'ahk')) {
+        # Not taken, with 710.ahk running: one from before this version can't hear the ask -- every
+        # existing install's first update to it. It reads the file as it starts, so it's restarted
+        # through its task (Restart-AhkFromTask). (One running as admin, or stuck, comes back as a
+        # normal one that takes it.) A 710.ahk that isn't running is left so -- an on-demand machine
+        # with its stack stopped -- and the file waits for its next start.
+        Step-Info "710.ahk didn't answer (a copy from before this version can't hear it) -- restarting it through its task; the new one restarts $them as it starts..."
+        $how = "$(Restart-AhkFromTask)"
+        if ($how -eq 'stuck') { Step-Warn "710.ahk wouldn't stop (only an admin window can end it) -- left running as it was." }
+        elseif ($how -in 'started', 'late') {
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Test-Path -LiteralPath $file) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+        }
+        if ((Test-Path -LiteralPath $file) -and $how -ne 'stuck' -and -not (& $running710)) {
+            Step-Warn "710.ahk was stopped for this, but it isn't back -- 710sRice start brings it back, and it restarts $them as it starts (ahk-autostart.log says what happened)."
+            return
+        }
+    }
+    if (Test-Path -LiteralPath $file) {
+        Step-Info "$first may still be the cop$(if ($many) { 'ies their old tasks' } else { 'y its old task' }) started -- 710.ahk restarts $them the next time it starts (710sRice restart does that now). Until then, what you open from $them can't start programs of its own."
+        return
+    }
+    $isBack = { param($a) [bool]@(Get-Process -Name $a.Process -ErrorAction SilentlyContinue | Where-Object { $oldIds[$a.Key] -notcontains $_.Id }).Count }
+    $deadline = (Get-Date).AddSeconds(30)
+    while (@($running | Where-Object { -not (& $isBack $_) }).Count -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    $back    = @($running | Where-Object { & $isBack $_ })
+    $notBack = @($running | Where-Object { $back -notcontains $_ })
+    if ($back.Count) {
+        Step-Ok "Restarted $(Join-RiceNameList @($back | ForEach-Object Label)) through 710.ahk, in case $(if ($back.Count -gt 1) { 'their old tasks had started them' } else { 'its old task had started it' })"
+        if ($back.Key -contains 'yasb') { Step-Info 'Chrome, the Claude app and other Chromium apps can pick up an extra title bar when the bar restarts -- focus the app and press SUPER+Ctrl+C to redraw it.' }
+    }
+    if ($notBack.Count) {
+        $nb = Join-RiceNameList @($notBack | ForEach-Object Label)
+        Step-Warn "$($nb.Substring(0, 1).ToUpper() + $nb.Substring(1)) didn't come back as a new copy within 30 s -- ahk-autostart.log says why; 710sRice restart (or sign out and in) finishes it."
+    }
 }
 
 function Get-TaskFullName {
@@ -1408,15 +1621,15 @@ function New-TaskXml {
        wscript -> powershell -> launcher chain komorebi/YASB/AHK all came up BelowNormal
        (winarchy saw delayed retiles under load from exactly this). 4 = Normal. #>
     # -RunLevel HighestAvailable: komorebi in elevated tiling mode (Get-KomorebiRunLevel).
-    # -NoTrigger: an on-demand task that never fires on its own -- Start-All.ps1,
-    # reload-stack.ps1 and the AHK bar watchdog fire it (Register-OnDemandTasks). Labelled
-    # "on demand" rather than "autostart" in Task Scheduler, so the list doesn't lie.
+    # -NoTrigger: an on-demand task that never fires on its own -- Start-All.ps1 and
+    # reload-stack.ps1 fire it (Register-OnDemandTasks), Start-AsUser runs its one-shot.
+    # Labelled "on demand" rather than "autostart" in Task Scheduler, so the list doesn't lie.
     param([Parameter(Mandatory)][object]$Component, [Parameter(Mandatory)][string]$User,
           [ValidateSet('LeastPrivilege', 'HighestAvailable')][string]$RunLevel = 'LeastPrivilege',
           [switch]$NoTrigger)
     $u = [System.Security.SecurityElement]::Escape($User)
     $cmd = [System.Security.SecurityElement]::Escape($Component.Exe)
-    # No arguments = no <Arguments> element (a component's GUI exe may take none -- Flow).
+    # No arguments = no <Arguments> element (a GUI exe may take none -- Start-AsUser's Flow).
     $argLine = if ("$($Component.Arguments)") { "`n      <Arguments>$([System.Security.SecurityElement]::Escape($Component.Arguments))</Arguments>" } else { '' }
     $delay = if ($Component.Delay) { $Component.Delay } else { 'PT0S' }
     $label = if ($NoTrigger) { 'on demand' } else { 'autostart' }
@@ -1465,12 +1678,12 @@ $triggers
 function Register-Autostart {
     <# Registers every present component as an At-LogOn Scheduled Task, delay 0 (or per-
        component), unelevated, interactive-session-only. Deletes legacy .lnk files first
-       (migration). Idempotent. Falls back to a Startup .lnk for any component whose task
-       registration fails.
-       -Key: just that one component, and no whole-install cleanup (Startup shortcuts) --
-       `710sRice tiling` re-registers komorebi alone. #>
+       (migration), and the bar's, Flow's and ShareX's old tasks (Remove-RetiredStartTasks).
+       Idempotent. Falls back to a Startup .lnk for any component whose task registration fails.
+       -Key: just that one component, and no whole-install cleanup (Startup shortcuts, old
+       tasks) -- `710sRice tiling` re-registers komorebi alone. #>
     param([string]$Key)
-    if (-not $Key) { Remove-StartupShortcuts }
+    if (-not $Key) { Remove-StartupShortcuts; [void](Remove-RetiredStartTasks) }
     $user = "$env:USERDOMAIN\$env:USERNAME"
     $components = @(Get-AutostartComponents | Where-Object { -not $Key -or $_.Key -eq $Key })
     if ($components.Count -eq 0) {
@@ -1526,11 +1739,9 @@ function Unregister-Autostart {
         $full = Get-TaskFullName -TaskName $c.TaskName
         & schtasks.exe /Delete /TN $full /F *> $null
     }
-    # A component's task goes even when its app is already gone (Get-AutostartComponents only
-    # lists an installed one).
-    foreach ($comp in @(Get-RiceComponents | Where-Object { $_.Contains('Autostart') })) {
-        if (Test-Task -TaskName $comp.Id) { $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName $comp.Id) /F 2>&1 }
-    }
+    # The bar's, Flow's and ShareX's tasks from before 2026-10-06, wherever they're still here
+    # -- even when the app itself is already gone.
+    [void](Remove-RetiredStartTasks -Uninstall)
     Remove-StartupShortcuts
 }
 
@@ -1648,19 +1859,21 @@ function Write-RiceModeLines {
 
 function Register-OnDemandTasks {
     <# For an install WITHOUT -Activate: every component's task, with no trigger at all.
-       Nothing starts at sign-in; Start-All.ps1 (`710sRice start`), reload-stack.ps1
-       (SUPER+Shift+R) and 710.ahk's bar watchdog fire them, so an on-demand stack starts
-       and restarts exactly like an -Activate'd one -- each at its task's own run level,
-       whatever shell fires it: komorebi at the tiling mode's (elevated by default, and no
-       UAC prompt), everything else LeastPrivilege. That's also why `710sRice start` works
-       from an admin window here: nothing has to be launched directly from it.
+       Nothing starts at sign-in; Start-All.ps1 (`710sRice start`) and reload-stack.ps1
+       (SUPER+Shift+R) fire them, so an on-demand stack starts and restarts exactly like an
+       -Activate'd one -- each at its task's own run level, whatever shell fires it: komorebi
+       at the tiling mode's (elevated by default, and no UAC prompt), 710.ahk LeastPrivilege
+       (and it starts the bar, Flow and ShareX). That's also why `710sRice start` works from an
+       admin window here: nothing has to be launched directly from it.
        Until 2026-09-26 only komorebi got one (plan doc Open item 37), so on these installs
        every YASB restart through its task -- SUPER+Shift+R's, the watchdog's -- killed the
        bar and left it down (cli-plan, commit 3a). Test-Task -AtLogOn ignores these tasks,
        so they never make the machine look -Activate'd, and uninstall's Unregister-Autostart
-       deletes them like any other component task. -Key: just that one component (the
-       `tiling` command re-registers komorebi alone). Idempotent (/F). #>
+       deletes them like any other component task. The bar's, Flow's and ShareX's old tasks go
+       (Remove-RetiredStartTasks): 710.ahk starts those three now. -Key: just that one component
+       (the `tiling` command re-registers komorebi alone), no cleanup. Idempotent (/F). #>
     param([string]$Key)
+    if (-not $Key) { [void](Remove-RetiredStartTasks) }
     $components = @(Get-AutostartComponents | Where-Object { -not $Key -or $_.Key -eq $Key })
     if ($components.Count -eq 0) {
         Step-Warn "On-demand tasks: $(if ($Key) { "$Key isn't installed" } else { 'no components installed' }) -- nothing registered."
@@ -1981,13 +2194,14 @@ function Start-StackFromTasks {
        "start now" and "start at next sign-in" stay one code path. A component whose task couldn't
        be registered (Register-Autostart fell back to a Startup shortcut) is started from that
        shortcut only when this shell is NOT elevated; elevated, it says so and waits for the next
-       sign-in. A component that declares its process (Flow) is left alone when it's already
-       running: a second start of Flow shows its window. #>
+       sign-in. The bar, Flow and ShareX: 710.ahk starts them as it loads -- and when it was
+       already running, it's asked to (Start-AhkStartedApps), so one of them that's down comes up
+       too. #>
     Step-Info 'Starting services...'
     $elevated = Test-IsAdmin
     $startupDir = [Environment]::GetFolderPath('Startup')
+    $ahkWasUp = try { (Find-AhkWindow -ScriptPath (Join-Path $Root 'config\ahk\710.ahk')) -ne [IntPtr]::Zero } catch { $false }
     foreach ($c in @(Get-AutostartComponents)) {
-        if ($c.Process -and (Get-Process -Name $c.Process -ErrorAction SilentlyContinue)) { Step-Ok "$($c.Key): already running"; continue }
         if (Test-Task -TaskName $c.TaskName) {
             $null = & schtasks.exe /Run /TN (Get-TaskFullName -TaskName $c.TaskName) 2>&1
             if ($LASTEXITCODE -eq 0) { Step-Ok "$($c.Key): started via its autostart task" }
@@ -2003,6 +2217,12 @@ function Start-StackFromTasks {
         } else {
             Step-Warn "$($c.Key): no autostart task or Startup shortcut -- not started."
         }
+    }
+    if ($ahkWasUp) {
+        $apps = Start-AhkStartedApps -NoAhkStart -WaitSeconds 0
+        $down = @($apps.Missing | ForEach-Object Name)
+        if ($down.Count -and $apps.NoAhk) { Step-Warn "710.ahk stopped just now -- $($down -join ', ') not started; run 710sRice start." }
+        elseif ($down.Count) { Step-Ok "Asked 710.ahk to start $($down -join ', ')" }
     }
     Step-Ok 'Services starting in the background (see %LOCALAPPDATA%\710.DesktopRice\*-autostart.log if one seems to not have come up).'
 }
@@ -2030,16 +2250,17 @@ function Find-AhkWindow {
 }
 
 function Send-AhkMessage {
-    <# Posts the registered window message -Name ('710sRice.Quit', '710sRice.ReloadStack') to
-       710.ahk -- see the OnMessage hooks next to OpenMainMenu in config\ahk\710.ahk, each let
-       through UIPI there because AHK runs with UI Access. $true if a 710.ahk window was found
-       and the post went through, $false otherwise (AHK not running, as far as the caller
-       cares). Fire-and-forget: a post doesn't wait for AHK to act on it. #>
-    param([Parameter(Mandatory)][string]$ScriptPath, [Parameter(Mandatory)][string]$Name)
+    <# Posts the registered window message -Name ('710sRice.Quit', '710sRice.ReloadStack',
+       '710sRice.StartApps' with -WParam) to 710.ahk -- see the OnMessage hooks next to
+       OpenMainMenu in config\ahk\710.ahk, each let through UIPI there because AHK runs with UI
+       Access. $true if a 710.ahk window was found and the post went through, $false otherwise
+       (AHK not running, as far as the caller cares). Fire-and-forget: a post doesn't wait for
+       AHK to act on it. #>
+    param([Parameter(Mandatory)][string]$ScriptPath, [Parameter(Mandatory)][string]$Name, [int]$WParam = 0)
     $hwnd = Find-AhkWindow -ScriptPath $ScriptPath
     if ($hwnd -eq [IntPtr]::Zero) { return $false }
     $msg = [Win710.AhkWindow]::RegisterWindowMessage($Name)
-    return [Win710.AhkWindow]::PostMessage($hwnd, $msg, [IntPtr]::Zero, [IntPtr]::Zero)
+    return [Win710.AhkWindow]::PostMessage($hwnd, $msg, [IntPtr]$WParam, [IntPtr]::Zero)
 }
 
 function Send-AhkQuit {

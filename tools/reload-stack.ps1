@@ -3,9 +3,9 @@
 .SYNOPSIS
   SUPER+Shift+R: make every config edit take effect without a logoff -- recompile the
   komorebi rules (komorebi picks them up), keep your live workspace layouts, put the
-  wallust borders back, and restart YASB when it actually needs it.
+  wallust borders back, and stop YASB when it actually needs a restart.
   AHK restarts itself afterwards (710.ahk's ReloadStack()), which is why AHK isn't
-  touched here.
+  touched here -- and the restarted 710.ahk starts the bar again as it loads.
 
 .DESCRIPTION
   Launched hidden by 710.ahk's ReloadStack() via RunWait; AHK reads the exit code to pick
@@ -39,7 +39,7 @@
        Rule additions (quick-add-rule's whole job) stay on the fast hot-reload path. So
        does every pin change, removals included: pins are workspace rules in `monitors`,
        which komorebi clears and rebuilds on every hot reload (Group 1 #7).
-    3. YASB: kill + restart, never `yasbc reload` -- its hot reload re-subscribes the
+    3. YASB: stopped for a restart, never `yasbc reload` -- its hot reload re-subscribes the
        komorebi widgets to the named pipe without closing the old subscription (watch_config
        stays off for the same reason). ONLY when needed, though: YASB isn't running,
        komorebi was restarted in step 2 (the widgets need the new komorebi), or config.yaml
@@ -48,22 +48,28 @@
        work area (YASB is an app bar), and Chromium apps (Chrome, Claude Desktop) can pick
        up an extra title bar from it (plan doc Open item 40). styles.css and wallpaper
        colours hot-reload on their own (watch_stylesheet) and never needed the restart.
+       This script never STARTS the bar: only 710.ahk does (config\ahk\710.ahk, "The apps
+       710.ahk starts" -- a bar started any other way runs in a job that keeps what you open
+       from it from starting programs of its own). SUPER+Shift+R's 710.ahk restarts itself
+       after this, and starts the bar as it loads; `710sRice reload` without a 710.ahk asks
+       for it afterwards.
 
-  Starting things goes through the registered autostart Scheduled Tasks
-  (`schtasks /Run \710.DesktopRice\<name>`) -- the exact wscript/run-hidden.vbs path boot
-  uses, so no console flash, non-elevated like every autostart task (LeastPrivilege), and
-  no second copy of every launch command line to keep in sync. Every install registers
-  them -- an on-demand one (no -Activate) with no sign-in trigger. An unregistered task (an
-  install from before 2026-09-26 that hasn't been re-run, or a failed registration) is
-  logged and skipped.
+  komorebi is started through its registered Scheduled Task (`schtasks /Run
+  \710.DesktopRice\komorebi`) -- the exact wscript/run-hidden.vbs path boot uses, so no
+  console flash, at the task's own level (elevated tiling's), and no second copy of its
+  launch command line to keep in sync. Every install registers it -- an on-demand one (no
+  -Activate) with no sign-in trigger. An unregistered task (a failed registration) is logged
+  and skipped.
 
-  -BarOnly (`710sRice reload bar`, never AHK -- SUPER+Shift+R is exactly the above): step 3
-  alone, and ALWAYS -- the manual "restart the bar" for what step 3 deliberately skips (an
-  environment variable change, a bar that's up but wrong). Same kill/wait/start-through-its-task
-  code, same log, no rule compile, no komorebi steps. First a pause check: a bar started
-  while komorebi is paused never connects its komorebi widgets (plan doc Open item 41), so
-  with komorebi paused (`komorebic state` -> is_paused, komorebi 0.1.41) it leaves YASB alone
-  and exits 3. komorebi not running at all -> restarts the bar anyway.
+  -BarOnly (`710sRice reload bar`, and 710.ahk after a display-scale change -- SUPER+Shift+R
+  is exactly the above): step 3 alone, and ALWAYS -- the manual "restart the bar" for what
+  step 3 deliberately skips (an environment variable change, a bar that's up but wrong). Same
+  stop/wait code, same log, no rule compile, no komorebi steps; the caller has 710.ahk start
+  the bar again (the CLI's '710sRice.StartApps' message, 710.ahk's BarRestarted). First a
+  pause check: a bar started while komorebi is paused never connects its komorebi widgets
+  (plan doc Open item 41), so with komorebi paused (`komorebic state` -> is_paused, komorebi
+  0.1.41) it leaves YASB alone and exits 3. komorebi not running at all -> stops the bar
+  anyway.
 
   Exit codes: 0 = everything reloaded; 1 = rule compile failed, nothing was touched;
   2 = compile was fine but at least one later step failed (see the log); 3 = -BarOnly only:
@@ -97,9 +103,10 @@ function Test-AutostartTask([string]$Name) {
 }
 
 function Start-AutostartTask([string]$Name) {
-    <# Fires the component's own autostart task. Returns $true if it was fired -- which
-       only means Task Scheduler accepted it; the launcher scripts themselves log whether
-       the component actually came up (komorebi-autostart.log, yasb-autostart.log, ...). #>
+    <# Fires the component's own autostart task (komorebi's -- the only one this starts).
+       Returns $true if it was fired -- which only means Task Scheduler accepted it; the
+       launcher script itself logs whether the component actually came up
+       (komorebi-autostart.log). #>
     if (-not (Test-AutostartTask $Name)) {
         Write-Log "   ${Name}: task $TaskFolder\$Name isn't registered (re-run ``710sRice install``) -- skipped."
         return $false
@@ -263,28 +270,24 @@ function Restore-Layouts($Snap) {
     if ($restored -eq 0 -and $columnFixes.Count -eq 0) { Write-Log '   nothing needed restoring.' }
 }
 
-function Restart-Yasb([string]$Reason) {
-    <# Step 3's kill + start -- and all of -BarOnly. $false if a step failed (it's logged). #>
-    $ok = $true
-    if (Get-Process yasb -ErrorAction SilentlyContinue) {
-        Write-Log "3. YASB restarting ($Reason)."
-        Stop-Process -Name yasb -Force -ErrorAction SilentlyContinue
-        # Start-Yasb.ps1 no-ops if it still sees a yasb process, so wait for the kill to land.
-        $deadline = (Get-Date).AddSeconds(5)
-        while ((Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-        if (Get-Process yasb -ErrorAction SilentlyContinue) {
-            Write-Log '3. YASB still alive 5s after kill -- not restarting it.'
-            $ok = $false
-        } else {
-            Write-Log '3. YASB stopped.'
-        }
-    } else {
-        Write-Log "3. YASB wasn't running."
-    }
+function Stop-YasbForRestart([string]$Reason) {
+    <# Step 3's kill -- and all of -BarOnly. 710.ahk starts the bar again (see the header).
+       $false if the kill didn't land (it's logged): YASB is still running as it was. #>
     if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
-        if (-not (Start-AutostartTask 'yasb')) { $ok = $false }
+        Write-Log "3. YASB wasn't running -- 710.ahk starts it."
+        return $true
     }
-    $ok
+    Write-Log "3. YASB stopping for a restart ($Reason)."
+    Stop-Process -Name yasb -Force -ErrorAction SilentlyContinue
+    # Start-Yasb.ps1 no-ops if it still sees a yasb process, so wait for the kill to land.
+    $deadline = (Get-Date).AddSeconds(5)
+    while ((Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+    if (Get-Process yasb -ErrorAction SilentlyContinue) {
+        Write-Log '3. YASB still alive 5s after kill -- not restarted.'
+        return $false
+    }
+    Write-Log '3. YASB stopped -- 710.ahk starts it again.'
+    $true
 }
 
 $failed = $false
@@ -302,7 +305,7 @@ if ($BarOnly) {
             exit 3
         }
     }
-    if (Restart-Yasb 'asked for: 710sRice reload bar') { Write-Log 'done.'; exit 0 }
+    if (Stop-YasbForRestart 'asked for: 710sRice reload bar') { Write-Log 'done.'; exit 0 }
     Write-Log 'done, with failures (see above).'
     exit 2
 }
@@ -421,7 +424,7 @@ if ($komorebiUp -and $removedRules -gt 0) {
     if (-not (Start-AutostartTask 'komorebi')) { $failed = $true }
 }
 
-# --- 3. YASB: kill + restart, only when it has to ----------------------------------------------
+# --- 3. YASB: stopped for a restart, only when it has to (710.ahk starts it) --------------------
 $yasbReason = $null
 if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
     $yasbReason = 'not running'
@@ -440,7 +443,7 @@ if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) {
 }
 if (-not $yasbReason) {
     Write-Log '3. YASB left running (config.yaml unchanged, komorebi not restarted).'
-} elseif (-not (Restart-Yasb $yasbReason)) {
+} elseif (-not (Stop-YasbForRestart $yasbReason)) {
     $failed = $true
 }
 

@@ -25,8 +25,9 @@
   <command as typed>`. The admin window holds the output and always ends with "Press Enter to
   close"; this window reports its exit code and passes it on. Already admin: it just runs.
   Nothing that STARTS the stack needs that: start, reload and reload bar only ever start
-  things through the components' own scheduled tasks, which carry their own run level, so
-  they're safe from any window (see claude/cli-plan.md).
+  things through komorebi's and 710.ahk's own scheduled tasks, which carry their own run
+  level, or by asking the running 710.ahk (the bar, Flow Launcher and ShareX -- only it starts
+  those), so they're safe from any window (see claude/cli-plan.md).
 
   Exit codes: help 0; unknown command, an error or a declined UAC prompt 1; otherwise the
   called script's own (relayed from the admin window when it ran there) -- for reload, read
@@ -156,7 +157,7 @@ $Commands = [ordered]@{
     'reload'    = @{ Usage = 'reload'; Help = 'Reload the whole stack (same as SUPER+Shift+R)'; Admin = 'Any'
                      Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Invoke-RiceReload } }
     'reload bar' = @{ Usage = 'reload bar'; Help = 'Restart just the bar (YASB)'; Admin = 'Any'
-                     Run = { Invoke-RiceReloadBar } }
+                     Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); Invoke-RiceReloadBar } }
     'logs'      = @{ Usage = 'logs'; Help = 'Open the logs folder (and list what''s in it)'; Admin = 'Any'
                      Run = { Show-RiceLogs } }
     # palette: the palette profiles (tools\lib\palette.ps1, loaded only here). Any window: a
@@ -318,27 +319,44 @@ function Invoke-RiceReload {
         if (-not $reloaded) { Step-Warn "710.ahk hasn't reloaded itself 10 s after the stack did -- give it a moment (SUPER+Shift+R if its hotkeys act up)." }
         return
     }
-    # No 710.ahk: run the script ourselves. Safe from any window (it starts things only through
-    # their tasks), but nothing brings AHK back afterwards -- so say what does.
+    # No 710.ahk: run the script ourselves (safe from any window: it starts komorebi only
+    # through its task, and never the bar), then 710.ahk through its task -- a SUPER+Shift+R
+    # leaves a fresh 710.ahk too, and only 710.ahk starts the bar again (as it loads).
     Step-Info "Reloading without 710.ahk (it isn't running)..."
     Invoke-RiceScript 'tools\reload-stack.ps1'
     Write-RiceReloadResult $script:RiceExit (Get-RiceReloadOutcome (Read-RiceLogFrom $RiceReloadLog $offset)).Lines
-    Step-Warn "710.ahk isn't running -- reloaded without it; ``710sRice start`` brings it back."
+    if ($script:RiceExit -eq 1) { return }   # nothing was touched
+    if ((Start-AhkFromTask) -eq 'none') {
+        Step-Warn "710.ahk couldn't be started through its task$(if (-not (Get-Process yasb -ErrorAction SilentlyContinue)) { ', so the bar stays down' }) -- ``710sRice install -Only tasks``, then ``710sRice start``."
+        return
+    }
+    if (-not (Get-YasbcExe)) { Step-Ok '710.ahk started again through its task'; return }
+    $deadline = (Get-Date).AddSeconds(15)
+    while (-not (Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    if (Get-Process yasb -ErrorAction SilentlyContinue) { Step-Ok "710.ahk started again through its task; the bar is up" }
+    else { Step-Warn "710.ahk's task ran, but the bar isn't up after 15s -- it may still be starting (see yasb-autostart.log and ahk-autostart.log)." }
 }
 
 function Invoke-RiceReloadBar {
-    # `reload bar`: reload-stack.ps1 -BarOnly, right here -- no AHK, no Reload(). YASB only ever
-    # starts through its task, so any window will do. "Restarted" only once yasb.exe is back:
-    # the script is done when the task has fired, and YASB takes a few seconds after that.
+    # `reload bar`: reload-stack.ps1 -BarOnly right here stops the bar (no rule compile, no
+    # Reload()), then 710.ahk starts it again -- only 710.ahk starts the bar (config\ahk\710.ahk,
+    # "The apps 710.ahk starts"), asked through '710sRice.StartApps' (Start-AhkStartedApps,
+    # which starts 710.ahk itself through its task first if it isn't running). Any window will
+    # do. "Restarted" only once yasb.exe is back: YASB takes a few seconds after the ask.
     $offset = if (Test-Path -LiteralPath $RiceReloadLog) { (Get-Item -LiteralPath $RiceReloadLog).Length } else { 0 }
     Step-Info 'Restarting the bar...'
     Invoke-RiceScript 'tools\reload-stack.ps1' -BarOnly
     switch ($script:RiceExit) {
         0 {
-            $deadline = (Get-Date).AddSeconds(15)
-            while (-not (Get-Process yasb -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
-            if (Get-Process yasb -ErrorAction SilentlyContinue) { Step-Ok 'Bar restarted' }
-            else { Step-Warn "Bar's task fired, but YASB isn't up after 15s -- it may still be starting (see yasb-autostart.log)." }
+            $apps = Start-AhkStartedApps -Keys 'yasb' -WaitSeconds 15
+            if ($apps.NoAhk) {
+                Step-Warn "The bar is stopped, and 710.ahk -- the only thing that starts it -- isn't running and couldn't be started through its task. Run 710sRice start."
+                $script:RiceExit = 2
+            } elseif ($apps.Missing.Count) {
+                Step-Warn "Asked 710.ahk to start the bar, but YASB isn't up after 15s -- it may still be starting (see yasb-autostart.log)."
+            } else {
+                Step-Ok "Bar restarted$(if ($apps.AhkStarted) { ' (710.ahk wasn''t running -- started it too)' })"
+            }
             Step-Info 'Chrome, the Claude app and other Chromium apps can pick up an extra title bar when the bar restarts -- focus the app and press SUPER+Ctrl+C to redraw it.'
         }
         3 { Step-Warn 'komorebi is paused -- unpause it first (SUPER+P). A bar started during a pause never connects to komorebi.' }
@@ -563,7 +581,10 @@ function Set-RiceTilingMode {
 #     and running it again finishes it -- from the same saved copy of your Windows settings, which
 #     goes only once the way back is done.
 #   - No Windows setting changes under a running stack: deactivate stops it first and leaves it
-#     stopped; activate stops it, switches, and starts everything through the tasks.
+#     stopped; activate stops it, switches, and starts everything through the tasks (komorebi's
+#     and 710.ahk's -- 710.ahk starts the bar, Flow and ShareX).
+#   - Either way the tasks step also retires the bar's, Flow's and ShareX's old tasks
+#     (Remove-RetiredStartTasks), and the dry run says so when there are any.
 #   - activate saves your Windows settings before changing them (Save-FullTimeSettings), only
 #     when the machine isn't full-time yet; deactivate puts them back
 #     (Restore-FullTimeWindowsSettings: the saved copy, else Windows' defaults -- uninstall's
@@ -597,6 +618,13 @@ function Get-RiceSwitchTaskNames {
     }) -join ', '
 }
 
+function Write-RiceRetiredTasksDryRun {
+    # The dry run's line for the old tasks the switch's tasks step removes (Remove-RetiredStartTasks),
+    # when any are still here.
+    $old = @(Get-RetiredStartTasks | Where-Object { Test-Task -TaskName $_.TaskName } | ForEach-Object Name)
+    if ($old.Count) { Write-Host "  [ ] Remove the old start-up tasks of $($old -join ', ') -- 710.ahk starts them now" }
+}
+
 function Stop-RiceStackForSwitch {
     # The stack goes down before any Windows setting changes (Stop-RunningComponents, uninstall's
     # and `710sRice stop`'s own). -Then finishes the line. $true when something was running.
@@ -619,7 +647,7 @@ function Test-RiceSwitchInstalled {
     # error line, exit 1) when nothing is.
     param([object[]]$Components)
     if ($Components.Count) { return $true }
-    Write-RiceError "Nothing of 710sRice's is installed here (no komorebi, YASB, AutoHotkey, ShareX or Flow Launcher) -- run 710sRice install first. Nothing was changed."
+    Write-RiceError "Nothing of 710sRice's that starts through a task is installed here (no komorebi, no AutoHotkey) -- run 710sRice install first. Nothing was changed."
     $script:RiceExit = 1
     $false
 }
@@ -648,6 +676,7 @@ function Invoke-RiceActivate {
         Write-Host "`n-- Tasks --" -ForegroundColor Cyan
         if ($DryRun) {
             Write-Host "  [ ] Re-register the sign-in tasks as they are (puts back a trigger one has lost): $(Get-RiceSwitchTaskNames $components)"
+            Write-RiceRetiredTasksDryRun
             Write-Host ''
             Step-Info 'DRY RUN complete: nothing was changed.'
             return
@@ -686,7 +715,8 @@ function Invoke-RiceActivate {
     Write-Host "`n-- Tasks --" -ForegroundColor Cyan
     if ($DryRun) {
         Write-Host "  [ ] Every task gets its sign-in trigger: $(Get-RiceSwitchTaskNames $components)"
-        Write-Host '  [ ] Start the stack through its tasks'
+        Write-RiceRetiredTasksDryRun
+        Write-Host '  [ ] Start the stack through its tasks (710.ahk starts the bar, Flow and ShareX)'
         Write-Host ''
         Step-Info 'DRY RUN complete: nothing was changed. 710sRice activate does it.'
         return
@@ -730,6 +760,7 @@ function Invoke-RiceDeactivate {
         Write-Host "`n-- Tasks --" -ForegroundColor Cyan
         if ($DryRun) {
             Write-Host "  [ ] Re-register the tasks with no sign-in trigger, as they are: $(Get-RiceSwitchTaskNames $components)"
+            Write-RiceRetiredTasksDryRun
             Write-Host ''
             Step-Info 'DRY RUN complete: nothing was changed.'
             return
@@ -754,6 +785,7 @@ function Invoke-RiceDeactivate {
     $lnks = @(if ($startup) { Get-ChildItem -LiteralPath $startup -Filter '710.DesktopRice *.lnk' -File -ErrorAction SilentlyContinue })
     if ($DryRun) {
         Write-Host "  [ ] Every task loses its sign-in trigger (710sRice start still starts them all): $(Get-RiceSwitchTaskNames $components)"
+        Write-RiceRetiredTasksDryRun
         if ($lnks.Count) { Write-Host "  [ ] Remove 710.DesktopRice's Startup-folder shortcut$(if ($lnks.Count -gt 1) { 's' }) ($($lnks.Count))" }
         Write-Host ''
         Step-Info 'DRY RUN complete: nothing was changed. 710sRice deactivate does it.'

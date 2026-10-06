@@ -295,7 +295,9 @@ EndGpuHelpers(exe) {
 ; ============================================================================
 ; ShareX
 ; ============================================================================
-; Direct, bypasses winarchy's CLI/module entirely.
+; Direct, bypasses winarchy's CLI/module entirely. A running ShareX takes the action from this
+; second start and the second start exits; with none running, this start IS ShareX -- this
+; script's own, so it's refused as admin like StartShareX (see "The apps 710.ahk starts").
 ShareXExe := FileExist(A_ProgramFiles "\ShareX\ShareX.exe")
     ? A_ProgramFiles "\ShareX\ShareX.exe"
     : (FileExist(EnvGet('ProgramFiles(x86)') "\ShareX\ShareX.exe") ? EnvGet('ProgramFiles(x86)') "\ShareX\ShareX.exe" : "")
@@ -306,6 +308,8 @@ Sharex(action) {
         TrayTip('ShareX is not installed (winget install ShareX.ShareX)', '710sRice')
         return
     }
+    if !ProcessExist('ShareX.exe') && !AppStartAllowed('ShareX')
+        return
     Run('"' ShareXExe '" -' action, , 'Hide')
 }
 
@@ -990,8 +994,9 @@ SysMenuItems := [
 ; a naive relaunch. A Flow that's up and ready gets its own native Alt+Space (show / hide), as
 ; always. One that isn't -- not running (quit, crashed, an on-demand machine before `710sRice
 ; start`) or still starting -- is waited for, then shown through Flow's own second-instance
-; signal. Normally Flow is already up and ready: its task starts it at sign-in, or `710sRice
-; start` does (tools/components/flow.ps1).
+; signal. Normally Flow is already up and ready: this script starts it when it comes up (at
+; sign-in, or `710sRice start`) -- see "The apps 710.ahk starts". The cold start below is
+; StartFlow too, so it's never as admin either.
 ; Why the wait (Flow 2.1.3's source -- claude/group1-plan.md #4; the old "Flow's indexing delay"
 ; note here was wrong): Flow starts hidden (HideOnStartup) and registers Alt+Space only at the end
 ; of its startup (App.xaml.cs:237, after a plugin-manifest download at :221). A second start of
@@ -1074,8 +1079,8 @@ ToggleFlow() {
             return hwnd ? hwnd : 0
         }
         ; Still starting (sign-in, or a start a moment ago): the wait below.
-    } else
-        Run('"' flow '"')      ; cold start: Flow starts hidden, so the wait below shows it
+    } else if !StartFlow('a Flow key')   ; cold start: Flow starts hidden, so the wait below shows it
+        return 0
     hwnd := WaitFlowShown(flow, 20000)
     if !hwnd
         return 0
@@ -1247,15 +1252,208 @@ SetGameMode(on) {
 }
 
 ; ============================================================================
+; The apps 710.ahk starts: the bar (YASB), Flow Launcher, ShareX
+; ============================================================================
+; Only this script starts these three: when it comes up, and every time one has to come back
+; -- the bar's watchdog (below), a display-scale change, SUPER+Shift+R (whose Reload() is how
+; a bar the reload stopped comes back), and the scripts: `710sRice start`, `reload bar`,
+; repair, update, install's Flow and ShareX steps and a theme change all ask here, through the
+; '710sRice.StartApps' message (further down).
+; Why (2026-10-06): until then each had its own Scheduled Task, and whatever a task starts runs
+; inside a job that refuses a child's request to start apart from it (CREATE_BREAKAWAY_FROM_JOB)
+; -- and everything those apps start inherits the job. Mod Organizer 2 starts every tool that
+; way, with no fallback, so an MO2 opened from the bar's taskbar drawer, from Flow or by a ShareX
+; action couldn't start LOOT, xEdit or the game: "Error 5 ERROR_ACCESS_DENIED". Proven both ways
+; on both machines: the bar and Flow on Godzilla (10-05), Flow and ShareX on the Dell (10-06 --
+; ShareX started by its task: Error 5; the same action from a ShareX this script started: the
+; file's own error 193, so Windows got as far as the file). What this script starts is clean --
+; proven, not explained: it runs as AutoHotkey's UI Access build, which Start-Ahk.ps1 has to
+; start through ShellExecute (the likely reason: Windows' AppInfo service creates a UI Access
+; process on the caller's behalf). komorebi keeps its task: it has to run elevated, and it
+; starts nothing for you.
+; Running as admin (A_IsAdmin: someone started this script from an admin window) it starts none
+; of them -- they'd run as admin, and so would everything opened from them. One toast says so;
+; doctor flags an admin 710.ahk too, and `710sRice restart` from a normal window fixes it.
+; Each one starts only if it isn't running. The bar: Start-Yasb.ps1 through Windows PowerShell
+; (System32's, never the Store's pwsh, which runs inside a job of its own) -- it waits for the
+; desktop, retries, logs to yasb-autostart.log and reads the environment fresh from the
+; registry, so a restarted bar sees a changed YASB_WALLPAPER_PATH as the task's start did.
+; Flow: its root Flow.Launcher.exe (it starts hidden). ShareX: -silent, into the tray, as at
+; sign-in. Each start (or refusal) gets a line in ahk-autostart.log.
+; ============================================================================
+AhkAutostartLog := EnvGet('LOCALAPPDATA') '\710.DesktopRice\ahk-autostart.log'
+FlowExe := EnvGet('LOCALAPPDATA') '\FlowLauncher\Flow.Launcher.exe'
+
+; which: 1 the bar, 2 Flow, 4 ShareX (added up) -- the '710sRice.StartApps' message's wParam too.
+StartApps(which, why) {
+    if (which & 1)
+        StartBar(why)
+    if (which & 2)
+        StartFlow(why)
+    if (which & 4)
+        StartShareX(why)
+}
+
+; True when the bar is up or on its way (a Start-Yasb.ps1 still at work), or this just started
+; it; false when it couldn't (or wouldn't: admin).
+StartBar(why) {
+    global RepoRoot
+    if ProcessExist('yasb.exe') || YasbLauncherRunning()
+        return true
+    if !AppStartAllowed('the bar')
+        return false
+    ps := A_WinDir '\System32\WindowsPowerShell\v1.0\powershell.exe'
+    try Run('"' ps '" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' RepoRoot '\scripts\Start-Yasb.ps1" -Reason "' why '"', , 'Hide')
+    catch as e {
+        AppsLog("couldn't start the bar (" why "): " e.Message)
+        return false
+    }
+    AppsLog('started the bar (' why ')')
+    return true
+}
+
+StartFlow(why) {
+    global FlowExe
+    if !FileExist(FlowExe) || ProcessExist('Flow.Launcher.exe')
+        return true
+    if !AppStartAllowed('Flow Launcher')
+        return false
+    try Run('"' FlowExe '"')
+    catch as e {
+        AppsLog("couldn't start Flow Launcher (" why "): " e.Message)
+        return false
+    }
+    AppsLog('started Flow Launcher (' why ')')
+    return true
+}
+
+StartShareX(why) {
+    global ShareXExe
+    if !ShareXExe || ProcessExist('ShareX.exe')
+        return true
+    if !AppStartAllowed('ShareX')
+        return false
+    try Run('"' ShareXExe '" -silent')
+    catch as e {
+        AppsLog("couldn't start ShareX (" why "): " e.Message)
+        return false
+    }
+    AppsLog('started ShareX (' why ')')
+    return true
+}
+
+; False -- with one toast, the first time -- while this script runs as admin.
+AppStartAllowed(what) {
+    static told := false
+    if !A_IsAdmin
+        return true
+    AppsLog('not starting ' what ': 710.ahk is running as admin')
+    if !told {
+        told := true
+        TrayTip("710.ahk is running as admin, so it won't start the bar, Flow or ShareX -- they'd run as admin too.`nRun 710sRice restart from a normal window.", '710sRice')
+    }
+    return false
+}
+
+; Same line format as Start-Ahk.ps1's own Write-Log -- it's that file. UTF-8-RAW: it already
+; has its BOM (PS 5.1 Out-File), so no BOM mid-file.
+AppsLog(m) {
+    global AhkAutostartLog
+    try FileAppend(FormatTime(, 'yyyy-MM-dd HH:mm:ss') '  710.ahk: ' m '`n', AhkAutostartLog, 'UTF-8-RAW')
+}
+
+; Once, after install's tasks step removed the old start-up tasks (Remove-RetiredStartTasks,
+; tools\lib\activation.ps1): a bar, Flow or ShareX still running may be the copy its task started,
+; still inside the task's job -- MO2 opened from it would keep failing until it restarts. The step
+; writes which ones were running (the StartApps bits) to restart-after-retire.txt and asks here
+; ('710sRice.RestartRetired', further down). The file is read as this script starts too: a 710.ahk
+; from before this has no ear for the ask, so the step restarts it through its task, and the new
+; one does it as it starts. Each one still running is closed and started again from here. The file
+; goes first, so this happens once whatever happens next. Not as admin: nothing could start again,
+; so the file waits for a normal 710.ahk.
+RetiredRestartFile := EnvGet('LOCALAPPDATA') '\710.DesktopRice\restart-after-retire.txt'
+
+RestartRetired(*) {
+    global RetiredRestartFile
+    if A_IsAdmin || !FileExist(RetiredRestartFile)
+        return
+    ; " `t`r`n": PowerShell's Set-Content ends the file with a line break, and Trim's default
+    ; (spaces and tabs) leaves it on -- "7`r`n" isn't a number (the Dell, 2026-10-06).
+    which := 0
+    try which := Integer(Trim(FileRead(RetiredRestartFile), " `t`r`n"))
+    catch as e
+        AppsLog("couldn't read restart-after-retire.txt (" e.Message ") -- nothing restarted")
+    try FileDelete(RetiredRestartFile)
+    restarted := [], stuck := []
+    for bit, app in Map(1, ['yasb.exe', 'the bar'], 2, ['Flow.Launcher.exe', 'Flow Launcher'], 4, ['ShareX.exe', 'ShareX']) {
+        if !(which & bit)
+            continue
+        if !ProcessExist(app[1]) {
+            which &= ~bit           ; not running: StartApps at load starts it anyway
+            continue
+        }
+        if CloseAllNamed(app[1])
+            restarted.Push(app[2])
+        else
+            stuck.Push(app[2]), which &= ~bit
+    }
+    many := restarted.Length > 1
+    if restarted.Length {
+        AppsLog('restarting ' JoinNames(restarted) ': the old start-up task' (many ? 's that may have started them are' : ' that may have started it is') ' gone')
+        StartApps(which, 'restarted: its old task is gone')
+    }
+    if stuck.Length
+        AppsLog("couldn't close " JoinNames(stuck) ' to restart it (running as admin?)')
+    if !(restarted.Length || stuck.Length)
+        return
+    msg := ''
+    if restarted.Length
+        msg := 'Restarted ' JoinNames(restarted) ' -- ' (many ? 'their old start-up tasks may have started them.' : 'its old start-up task may have started it.')
+    if stuck.Length
+        msg .= (msg != '' ? '`n' : '') "Couldn't restart " JoinNames(stuck) ' -- 710sRice restart, or sign out and in.'
+    if (which & 1)
+        msg .= '`nAn app with an extra title bar: SUPER+Ctrl+C.'
+    TrayTip(msg, '710sRice')
+}
+
+; Every process called exe closed (TerminateProcess -- the way Stop-All ends the bar and ShareX,
+; and install's Flow step ends Flow), each one waited for; false when one is still there after
+; 5 s (one running as admin: this script can't end it).
+CloseAllNamed(exe) {
+    deadline := A_TickCount + 5000
+    while (pid := ProcessExist(exe)) {
+        if (A_TickCount > deadline)
+            return false
+        try ProcessClose(pid)
+        ProcessWaitClose(pid, 1)
+    }
+    return true
+}
+
+; 'a', 'a and b', 'a, b and c'.
+JoinNames(names) {
+    out := ''
+    for i, n in names
+        out .= (i = 1 ? '' : i = names.Length ? ' and ' : ', ') n
+    return out
+}
+
+; At start: a restart left for us (above), then whichever of the three isn't running -- at sign-in,
+; after `710sRice start` and `restart`, and after SUPER+Shift+R's Reload(). On a timer, so it runs
+; once this script has finished loading.
+StartAppsAtLoad() {
+    RestartRetired()
+    StartApps(7, 'at start')
+}
+SetTimer(StartAppsAtLoad, -1)
+
+; ============================================================================
 ; YASB watchdog
 ; ============================================================================
 ; Ported from winarchy bb72240 (v1.5.0), with three changes agreed 2026-09-23:
-;  - The relaunch goes through YASB's own task (schtasks /Run) -- the same door
-;    boot and SUPER+Shift+R use; on-demand installs have it too, just with no
-;    sign-in trigger (since 2026-09-26). That buys Start-Yasb.ps1's
-;    wait-for-desktop + retry loop, a hidden launch, and LeastPrivilege every
-;    time: the bar never comes back elevated even if AHK somehow is (the
-;    elevated-Terminal trap from the SUPER+Shift+R testing).
+;  - The relaunch is StartBar() (above): Start-Yasb.ps1's wait-for-desktop + retry
+;    loop, a hidden launch, and never as admin. Until 2026-10-06 it went through
+;    YASB's own task (schtasks /Run), which put the bar in the task's job.
 ;  - Armed only once yasb.exe has actually been seen running. Getting YASB up at
 ;    boot is Start-Yasb.ps1's job (it retries for a full minute); this is the
 ;    crash net for afterwards.
@@ -1271,7 +1469,9 @@ SetGameMode(on) {
 ; ============================================================================
 YasbSeen := false, YasbMisses := 0, YasbRelaunches := []
 YasbAutostartLog := EnvGet('LOCALAPPDATA') '\710.DesktopRice\yasb-autostart.log'
-SetTimer(YasbWatch, 5000)
+; Not as admin: it couldn't relaunch the bar anyway (AppStartAllowed, above, has said so).
+if !A_IsAdmin
+    SetTimer(YasbWatch, 5000)
 
 YasbWatch() {
     global YasbSeen, YasbMisses, YasbRelaunches
@@ -1295,15 +1495,12 @@ YasbWatch() {
         return
     }
     YasbRelaunches.Push(A_TickCount)
-    YasbLog('watchdog: yasb.exe gone for 2 checks -- relaunching via the autostart task (' YasbRelaunches.Length ' of 3 in 5 min).')
-    try code := RunWait('schtasks.exe /Run /TN "\710.DesktopRice\yasb"', , 'Hide')
-    catch
-        code := -1
-    if (code != 0) {
-        ; No task = an install from before on-demand installs got one (or it was
-        ; removed) -- nothing sane to relaunch with.
+    YasbLog('watchdog: yasb.exe gone for 2 checks -- relaunching it (' YasbRelaunches.Length ' of 3 in 5 min).')
+    if !StartBar('watchdog') {
+        ; Windows PowerShell wouldn't start (ahk-autostart.log has the error) -- nothing sane
+        ; to relaunch with.
         SetTimer(YasbWatch, 0)
-        YasbLog('watchdog: schtasks /Run failed (' code ') -- is the \710.DesktopRice\yasb task registered? Re-run 710sRice install. Watchdog off.')
+        YasbLog("watchdog: couldn't start Start-Yasb.ps1 (ahk-autostart.log says why) -- watchdog off.")
         TrayTip("Couldn't relaunch the bar -- watchdog off.`nRun 710sRice doctor.", '710sRice')
     }
 }
@@ -1426,8 +1623,9 @@ RefreshScreens()
 ; so windows ran under a bigger bar or stopped short of a smaller one; `710sRice reload bar` fixed
 ; it, SUPER+Shift+R didn't). Whether the change came from this menu or from Settings > Display, it
 ; arrives as a display change, so it's caught here: a screen that's on in this snapshot and the
-; last one with a different scale -> tools\reload-stack.ps1 -BarOnly (what `reload bar` runs: it
-; leaves the bar alone while komorebi is paused). YASB 2.0.7 does re-register its strip when a
+; last one with a different scale -> tools\reload-stack.ps1 -BarOnly stops the bar (what `reload
+; bar` runs too: it leaves the bar alone while komorebi is paused), then BarRestarted starts it
+; again (StartBar: only this script starts the bar). YASB 2.0.7 does re-register its strip when a
 ; screen's geometry changes (bar.py, on_geometry_changed), but evidently before the new scale has
 ; reached it, and nothing outside YASB can ask it to do that again -- so, the restart. The first
 ; snapshot after this script starts has nothing to compare with. Only a change at the same
@@ -1460,13 +1658,17 @@ CheckScreenScales() {
 }
 
 ; reload-stack.ps1 -BarOnly's answer: 3 = komorebi is paused, so it left the bar alone (a bar
-; started then never connects to komorebi).
+; started then never connects to komorebi). Otherwise the bar is started again here, whatever
+; the stop said: StartBar does nothing when one is still up.
 BarRestarted(code) {
     if (code = 3) {
         DisplayLogLine('bar left alone: komorebi is paused')
         TrayTip('komorebi is paused, so the bar was left alone -- unpause (SUPER+P), then: 710sRice reload bar', '710sRice')
-    } else if (code != 0)
+        return
+    }
+    if (code != 0)
         TrayTip("The bar didn't restart cleanly -- reload-stack.log says why; 710sRice reload bar tries again", '710sRice')
+    StartBar('scale change')
 }
 
 ; The snapshot as {screens: [{id, name, path, res, on, main, scale, steps}], error, waiting}; the file's
@@ -2316,6 +2518,19 @@ OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710s
 ; reads reload-stack.log, not us).
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.ReloadStack', 'UInt')), (*) => SetTimer(ReloadStack, -1))
 
+; The scripts that need the bar, Flow or ShareX (back) up ask here -- `710sRice start` and
+; `reload bar`, repair, update, install's Flow and ShareX steps, a theme change -- since only this
+; script starts them ("The apps 710.ahk starts"). wParam says which, added up: 1 the bar, 2 Flow,
+; 4 ShareX; each starts only if it isn't running. Fire-and-forget: the sender waits for the
+; process itself (Start-AhkStartedApps in tools\lib\activation.ps1; the theme pipeline's Flow
+; restart posts it with Send-PaletteAhkMessage, tools\lib\palette.ps1).
+OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.StartApps', 'UInt')), (wParam, *) => SetTimer(() => StartApps(wParam & 7, 'asked by 710sRice'), -1))
+
+; Install's tasks step, right after it removed the old start-up tasks: restart-after-retire.txt is
+; waiting (RestartRetired, "The apps 710.ahk starts"). The sender watches the file go, then the
+; apps come back as new processes (Request-RetiredAppsRestart, tools\lib\activation.ps1).
+OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.RestartRetired', 'UInt')), (*) => SetTimer(RestartRetired, -1))
+
 ; The wallpaper pipeline, when wallust couldn't make a palette (PaletteFailedToast).
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.PaletteFailed', 'UInt')), (*) => SetTimer(PaletteFailedToast, -1))
 
@@ -2386,10 +2601,11 @@ SetupTray()
 #!Space::OpenMainMenu()             ; main menu (Apps/Capture/Tiling/Game mode/...)
 
 ; SUPER+Shift+R. tools\reload-stack.ps1 does the actual stack work (compile
-; rules, keep live layouts across komorebi's reload, wallust borders -> YASB kill and
-; restart); this just runs it, says how it went,
+; rules, keep live layouts across komorebi's reload, wallust borders -> YASB stopped
+; when it has to restart); this just runs it, says how it went,
 ; and then restarts THIS script -- the one step the PS script can't do itself
-; without killing its own caller, and the reason AHK goes last. RunWait only
+; without killing its own caller, and the reason AHK goes last. The restarted script
+; starts the bar again as it loads (StartApps, "The apps 710.ahk starts"). RunWait only
 ; parks this hotkey's thread, so every other hotkey stays live meanwhile.
 ; Exit codes are reload-stack.ps1's: 0 ok, 1 rules didn't compile (nothing
 ; was touched, so AHK isn't restarted either), 2 partial (see the log).
@@ -2421,8 +2637,8 @@ ReloadStack(note := '', *) {
 QuitStack() {
     ; Ordered, non-elevated stop -- the same set as scripts\Stop-All.ps1
     ; (Stop-RunningComponents in tools\lib\activation.ps1): komorebi, the
-    ; bar/capture tools, AHK last. Flow Launcher isn't touched -- its task only
-    ; starts it; it's an ordinary app you can keep using without the stack.
+    ; bar/capture tools, AHK last. Flow Launcher isn't touched -- this script
+    ; only starts it; it's an ordinary app you can keep using without the stack.
     try Komorebic('stop')
     try RunWait('taskkill /IM yasb.exe /F', , 'Hide')
     try RunWait('taskkill /IM ShareX.exe /F', , 'Hide')

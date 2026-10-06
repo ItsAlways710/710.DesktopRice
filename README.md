@@ -133,9 +133,9 @@ On top of the above, this:
 
 - Saves your taskbar and Windows settings as they are, so `710sRice deactivate` and uninstall
   can put them back.
-- Starts komorebi, YASB, AutoHotkey, ShareX and Flow Launcher at every sign-in, through
-  Scheduled Tasks. Only komorebi's runs elevated (unless you opted out); the rest run as you.
-  Flow starts hidden, and the first SUPER+Space after sign-in opens it.
+- Starts komorebi and AutoHotkey at every sign-in, through Scheduled Tasks, and AutoHotkey
+  starts the bar, ShareX and Flow Launcher. Only komorebi runs elevated (unless you opted out);
+  the rest run as you. Flow starts hidden, and the first SUPER+Space after sign-in opens it.
 - Sets the Windows taskbar to auto-hide (the bar replaces it).
 - Turns off, for your user only: Bing results and ad suggestions in Start search, the
   Copilot, Widgets and Task View taskbar buttons, Start menu recommendations and account
@@ -164,9 +164,10 @@ Run the installer without `-Activate`, from a PowerShell 7 window in the repo fo
 .\710sRice.ps1 install
 ```
 
-Nothing starts at sign-in and none of the Windows changes above are made. Each part still
-gets a Scheduled Task, just with no sign-in trigger, so `710sRice start` starts everything
-the way sign-in would (komorebi elevated, with no UAC prompt). See
+Nothing starts at sign-in and none of the Windows changes above are made. komorebi and
+AutoHotkey still get their Scheduled Tasks, just with no sign-in trigger, so `710sRice start`
+starts everything the way sign-in would (komorebi elevated, with no UAC prompt; AutoHotkey then
+starts the bar, ShareX and Flow). See
 [Run on demand](#run-on-demand). Already full-time? `710sRice deactivate` switches back.
 
 ### Switching: `activate` / `deactivate`
@@ -275,7 +276,7 @@ only runs with `-Activate`).
 | `commands` | Adds the 710sRice commands to the Start menu, for Flow Launcher |
 | `path` | Puts the `710sRice` command on your PATH |
 | `wallust` | Installs wallust at its pinned version |
-| `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran): keywords, fonts, fullscreen; switches its own startup off and registers its task |
+| `flow` | Sets up Flow Launcher (its first start, on a machine where it never ran): keywords, fonts, fullscreen; switches its own startup off (AutoHotkey starts it) |
 | `everything` | Turns Everything's tray icon and update check off, and starts it if it isn't running |
 | `sharex` | Turns ShareX's update check and its own startup off (and its tray icon on, which its hidden start needs) |
 | `theme` | Sets the default wallpaper and themes everything from it |
@@ -285,7 +286,7 @@ only runs with `-Activate`).
 | `profile` | Hooks the PowerShell profile in |
 | `terminal` | Makes PowerShell 7 Windows Terminal's default and sets its font, for every profile, to the Nerd Font |
 | `compile` | Rebuilds `komorebi.json` from the rules |
-| `tasks` | Registers the scheduled tasks, for whichever way this machine runs |
+| `tasks` | Registers komorebi's and AutoHotkey's scheduled tasks, for whichever way this machine runs (and removes the old ones the bar, Flow and ShareX had) |
 | `windows` | The Windows settings of a full-time install (taskbar, hardening, Startup delay) |
 
 `bluetooth`, `commands`, `flow`, `everything` and `sharex` are components: each app's install, uninstall and doctor
@@ -312,10 +313,10 @@ From a PowerShell 7 window:
 710sRice start
 ```
 
-Everything starts through its own Scheduled Task, so it doesn't matter which window you run
-it from: komorebi starts elevated (unless you switched that off), and YASB, AutoHotkey,
-ShareX and Flow Launcher (if it isn't running already) start as you. It checks what came up
-and says so.
+komorebi and AutoHotkey start through their own Scheduled Tasks, and AutoHotkey starts the bar,
+ShareX and Flow Launcher (if it isn't running already), so it doesn't matter which window you
+run it from: komorebi starts elevated (unless you switched that off), everything else as you. It
+checks what came up and says so.
 
 To stop, use `710sRice stop` or **Quit 710sRice** in the tray icon's menu. Flow Launcher and
 Everything keep running either way; they're ordinary apps you can use on their own.
@@ -715,6 +716,12 @@ tested", so if something odd shows up around admin windows, that's the first thi
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.
 - **Changed a wallpaper variable?** Restart the bar: `710sRice reload bar`.
+- **Mod Organizer 2 can't start its tools (Error 5) when it was opened from the bar, Flow or
+  a ShareX action?** Those three have to be started by AutoHotkey (710.ahk), which is how the
+  rice starts them: whatever a Scheduled Task starts runs inside a job that won't let a program
+  opened from it start programs of its own. An install from before October 2026 started them
+  through tasks of their own; `710sRice doctor` says when one of those is still there, and
+  `710sRice doctor -repair` removes it and has AutoHotkey restart any of the three that's running.
 - **Terminal says JetBrainsMono NF is missing right after an install?** Terminal reads the
   font list when it starts: close every Terminal window and open one again.
 - **Something not right?** `710sRice doctor` (or **Doctor** in the main menu, SUPER+Alt+Space)

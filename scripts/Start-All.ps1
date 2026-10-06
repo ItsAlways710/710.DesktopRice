@@ -1,9 +1,9 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Starts 710.DesktopRice's whole stack now (komorebi, YASB, ShareX, AHK, Flow Launcher) --
-  the "on demand" way to run it, for a machine that's on demand (installed without -Activate,
-  or switched back with `710sRice deactivate`).
+  Starts 710.DesktopRice's whole stack now (komorebi and 710.ahk, which starts the bar, Flow
+  Launcher and ShareX) -- the "on demand" way to run it, for a machine that's on demand
+  (installed without -Activate, or switched back with `710sRice deactivate`).
 
 .DESCRIPTION
   Two ways to use this repo (`710sRice activate` / `deactivate` switch between them):
@@ -16,13 +16,17 @@
       only make sense for a full-time shell.
 
   Uses the exact launch commands the sign-in tasks use (tools\lib\activation.ps1's
-  Get-AutostartComponents), so on-demand and -Activate start things the same way.
+  Get-AutostartComponents: komorebi and 710.ahk), so on-demand and -Activate start things the
+  same way. The bar (YASB), Flow Launcher and ShareX have no task: 710.ahk starts them as it
+  loads, and when it's already running this asks it to (Start-AhkStartedApps) -- a task's job
+  would keep what you open from them from starting programs of their own (config\ahk\710.ahk,
+  "The apps 710.ahk starts").
 
   Never starts anything elevated by accident. Anything started from an admin shell runs
   as admin -- AHK, and every Terminal it opens after it (the trap install -Activate itself
   had, fixed 2026-09-24). So, per component:
     - If it has a task, it fires the task, which starts it at the task's own registered
-      level whatever shell this is: non-elevated for everything, except komorebi in
+      level whatever shell this is: non-elevated for 710.ahk, and for komorebi too except in
       elevated tiling mode (install.ps1's default), which is elevated on purpose so it can
       tile admin windows. Every install has a task per component -- an on-demand install
       (no -Activate) registers them with no sign-in trigger just for this -- so this is
@@ -36,18 +40,13 @@
   to turn it on (the stack is built around a hidden taskbar). Stop-All.ps1 reminds you to
   turn it back off. Neither script changes it.
 
-  Then it checks what came up, for up to 20 seconds. A [!!] isn't necessarily a
+  Then it checks what came up, for up to 30 seconds. A [!!] isn't necessarily a
   failure -- the launchers (scripts\Start-Komorebi.ps1 etc.) keep retrying for their own
   budget (up to 5 minutes for komorebi) and log to %LOCALAPPDATA%\710.DesktopRice\. Re-run
   this, or check those logs, if something's still settling. A component that's already
-  running is left alone (each launcher checks first; Flow Launcher, which has no launcher, is
-  skipped here when it's running -- a second start of Flow shows its window, and
-  Stop-All.ps1 leaves it running on purpose).
-
-.NOTES
-  The AHK check is a plain `Get-Process AutoHotkey64, AutoHotkey64_UIA` (the UI Access
-  build is what the sign-in task runs) -- it can't tell 710.ahk apart from another AHK v2
-  script you might run. Fine for "did something come up".
+  running is left alone: each launcher checks first, and 710.ahk starts only what isn't
+  running (a second start of Flow would show its window; Stop-All.ps1 leaves Flow running on
+  purpose).
 
 .EXAMPLE
   .\scripts\Start-All.ps1
@@ -68,20 +67,18 @@ function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -Foreg
 Write-Host "`n== 710.DesktopRice: start all ==" -ForegroundColor Cyan
 
 $components = @(Get-AutostartComponents)
-if ($components.Count -eq 0) {
-    Step-Warn "No components found installed (komorebi/YASB/ShareX/AHK all missing?) -- run ``.\710sRice.ps1 install`` from the repo folder first."
+$apps = @(Get-AhkStartedApps | Where-Object Installed)
+if ($components.Count -eq 0 -and $apps.Count -eq 0) {
+    Step-Warn "No components found installed (komorebi/AutoHotkey/YASB/Flow Launcher/ShareX all missing?) -- run ``.\710sRice.ps1 install`` from the repo folder first."
     exit 1
 }
-
-# Already running and it says how to tell (Flow): nothing to start.
-$already = @($components | Where-Object { $_.Process -and (Get-Process -Name $_.Process -ErrorAction SilentlyContinue) })
-foreach ($c in $already) { Step-Ok "$($c.Key): already running" }
-$components = @($components | Where-Object { $already.Key -notcontains $_.Key })
+$ahkScript = Join-Path $Root 'config\ahk\710.ahk'
+$ahkWasUp = (Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero
 
 $withTask = @($components | Where-Object { Test-Task -TaskName $_.TaskName })
 $direct   = @($components | Where-Object { $withTask.Key -notcontains $_.Key })
-# Only SUPER+Shift+R's komorebi/YASB restarts and the bar watchdog need the task, but
-# "everything through its task" is the simple rule, and it's what makes an admin window OK.
+# Only SUPER+Shift+R's komorebi restart needs the task, but "everything through its task" is
+# the simple rule, and it's what makes an admin window OK.
 $reRun = "No task for $($direct.Key -join ', ') -- re-run ``710sRice install`` to register $(if ($direct.Count -eq 1) { 'it' } else { 'them' }), so everything starts (and restarts) through its task."
 if ($direct.Count -gt 0 -and (Test-IsAdmin)) {
     Step-Warn "This is an admin shell -- $($direct.Key -join ', ') would have to be started directly from it and would run as admin. Run this from a normal PowerShell window instead. Nothing was started."
@@ -105,36 +102,56 @@ foreach ($c in $direct) {
     }
 }
 if ($direct.Count -gt 0) { Step-Info $reRun }
+# The bar, Flow and ShareX: a 710.ahk that was already running is asked for the ones that are
+# down; one that's starting now starts all three as it loads.
+if ($apps.Count) {
+    if ($ahkWasUp) {
+        $asked = Start-AhkStartedApps -NoAhkStart -WaitSeconds 0
+        if ($asked.Missing.Count -and -not $asked.NoAhk) { Step-Ok "Asked 710.ahk to start $(@($asked.Missing | ForEach-Object Name) -join ', ')" }
+    } elseif ($components.Key -notcontains 'ahk') {
+        Step-Warn "$(@($apps | ForEach-Object Name) -join ', ') only start through 710.ahk, and AutoHotkey isn't installed -- run ``710sRice install``."
+    }
+}
 
-Write-Host "`n-- Checking what came up (up to 20s; see the header if something's still settling) --" -ForegroundColor Cyan
-# One check per component, polled once a second until all pass or 20s is up --
+Write-Host "`n-- Checking what came up (up to 30s; see the header if something's still settling) --" -ForegroundColor Cyan
+# One check per component, polled once a second until all pass or 30s is up --
 # komorebi's launcher alone takes ~10s (it waits for the desktop, then checks komorebi
-# survives 8s), so a single fixed wait either wastes time or reports too early.
+# survives 8s), and the bar waits for 710.ahk, which waits for the desktop too, so a single
+# fixed wait either wastes time or reports too early.
 $checks = [ordered]@{
-    'komorebi'     = @{ Name = 'komorebi';     Test = { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) };     Log = 'komorebi-autostart.log' }
-    'yasb'         = @{ Name = 'YASB';         Test = { [bool](Get-Process yasb -ErrorAction SilentlyContinue) };         Log = 'yasb-autostart.log' }
-    'sharex'       = @{ Name = 'ShareX';       Test = { [bool](Get-Process ShareX -ErrorAction SilentlyContinue) };       Log = $null }
-    'ahk'          = @{ Name = '710.ahk';      Test = { [bool](Get-Process AutoHotkey64, AutoHotkey64_UIA -ErrorAction SilentlyContinue) }; Log = 'ahk-autostart.log' }
+    'komorebi' = @{ Name = 'komorebi'; Test = { [bool](Get-Process komorebi -ErrorAction SilentlyContinue) }; Log = 'komorebi-autostart.log' }
+    'ahk'      = @{ Name = '710.ahk';  Test = { (Find-AhkWindow -ScriptPath $ahkScript) -ne [IntPtr]::Zero }; Log = 'ahk-autostart.log' }
 }
-# The components that declare their process (Flow): up when it's running.
-foreach ($c in @($components | Where-Object { $_.Process })) {
-    $proc = $c.Process
-    $checks[$c.Key] = @{ Name = (Get-RiceComponent -Id $c.Key).Label; Test = { [bool](Get-Process -Name $proc -ErrorAction SilentlyContinue) }.GetNewClosure(); Log = $null }
+foreach ($a in $apps) {
+    $proc = $a.Process
+    # The bar's own launcher logs to yasb-autostart.log; 710.ahk logs each start (or why not)
+    # to ahk-autostart.log.
+    $checks[$a.Key] = @{ Name = $a.Name; Test = { [bool](Get-Process -Name $proc -ErrorAction SilentlyContinue) }.GetNewClosure()
+                         Log = if ($a.Key -eq 'yasb') { 'yasb-autostart.log' } else { 'ahk-autostart.log' } }
 }
+$expected = @($components.Key) + @($apps.Key)
 $pending = [System.Collections.Generic.List[string]]::new()
-foreach ($k in $checks.Keys) { if ($components.Key -contains $k) { $pending.Add($k) } }
-$deadline = (Get-Date).AddSeconds(20)
+foreach ($k in $checks.Keys) { if ($expected -contains $k) { $pending.Add($k) } }
+$deadline = (Get-Date).AddSeconds(30)
 while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 1
     foreach ($k in @($pending)) { if (& $checks[$k].Test) { [void]$pending.Remove($k) } }
 }
+# 710.ahk running as admin starts none of the three (it says so in a toast, once).
+$ahkAdmin = $false
+if (@($pending | Where-Object { $apps.Key -contains $_ }).Count) {
+    $ahkPid = try { Get-AhkWindowProcessId -ScriptPath $ahkScript } catch { $null }
+    if ($ahkPid) { $ahkAdmin = (Get-ProcessElevation -Id $ahkPid) -eq 'elevated' }
+}
 foreach ($k in $checks.Keys) {
-    if ($components.Key -notcontains $k) { continue }
+    if ($expected -notcontains $k) { continue }
     $c = $checks[$k]
     if ($pending -notcontains $k) {
-        Step-Ok ("$($c.Name) running" + $(if ($k -eq 'ahk') { ' (an AutoHotkey process -- see NOTES)' }))
+        Step-Ok "$($c.Name) running"
+    } elseif ($ahkAdmin -and $apps.Key -contains $k) {
+        Step-Warn "$($c.Name) not running -- 710.ahk is running as admin, so it won't start it. Run 710sRice restart from a normal window."
     } else {
-        Step-Warn ("$($c.Name) not running after 20s" + $(if ($c.Log) { " -- check %LOCALAPPDATA%\710.DesktopRice\$($c.Log)" } else { '' }))
+        Step-Warn "$($c.Name) not running after 30s -- check %LOCALAPPDATA%\710.DesktopRice\$($c.Log)"
     }
 }
 

@@ -335,8 +335,8 @@ widgets:
       # 2026-10-01), volume is in the control center.
       show_network: false
       use_hook: false # Whether to use the new systray hook instead of the legacy systray monitor
-      # ShareX's icon: ShareX keeps its own tray icon ON -- it honours -silent (the sign-in
-      # task's "no window") only with it -- so the bar hides it instead (Group 1 W4; YASB
+      # ShareX's icon: ShareX keeps its own tray icon ON -- it honours -silent (710.ahk's
+      # start: "no window") only with it -- so the bar hides it instead (Group 1 W4; YASB
       # matches an icon's exe name up to its first dot, case-insensitively).
       hide_icons: ["ShareX"] # process names to hide
       popup:

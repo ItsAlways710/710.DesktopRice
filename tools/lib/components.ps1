@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
   The component loader (Group 1 #12): one file per app in tools\components\<id>.ps1, each
-  returning one hashtable -- its install step, what uninstall puts back, its doctor checks and
-  (optionally) its sign-in task. Dot-sourced by tools\lib\steps.ps1 and tools\lib\activation.ps1
+  returning one hashtable -- its install step, what uninstall puts back and its doctor checks.
+  Dot-sourced by tools\lib\steps.ps1 and tools\lib\activation.ps1
   -- never run directly. Only functions here: nothing is loaded until something asks.
 
 .DESCRIPTION
@@ -33,8 +33,9 @@ function Get-RiceComponentGroups {
     @('Repo and command', 'Packages and pins', 'Stack', 'Tasks and tiling mode',
       'Generated configs', 'Integrations', 'Conflicts and leftovers')
 }
-function Get-RiceComponentFields { @('Id', 'Label', 'After', 'Install', 'Uninstall', 'Check', 'Group', 'NamedOnly', 'Autostart', 'Functions') }
-function Get-RiceAutostartFields { @('Exe', 'Arguments', 'Delay', 'Process') }
+# (Autostart -- a component's own sign-in task -- went 2026-10-06: Flow, the only one, is started
+# by 710.ahk now, and a task's job is what broke it. A file that still has one is told so.)
+function Get-RiceComponentFields { @('Id', 'Label', 'After', 'Install', 'Uninstall', 'Check', 'Group', 'NamedOnly', 'Functions') }
 
 function Get-RiceComponentsDir { Join-Path (Get-RiceComponentsRoot) 'tools\components' }
 
@@ -63,6 +64,7 @@ function Get-RiceComponents {
         $def = & $f.FullName
         if ($def -isnot [System.Collections.IDictionary]) { throw "$where doesn't return a component definition (a hashtable)" }
         foreach ($k in @($def.Keys)) {
+            if ("$k" -eq 'Autostart') { throw "$where : Autostart is gone (2026-10-06) -- an app gets no sign-in task of its own; 710.ahk starts the ones you open programs from (config\ahk\710.ahk, ""The apps 710.ahk starts"")" }
             if ("$k" -notin (Get-RiceComponentFields)) { throw "$where has a field this loader doesn't know: '$k' (the fields: $((Get-RiceComponentFields) -join ', '))" }
         }
         if ("$($def.Id)" -ne $f.BaseName) { throw "$where says its Id is '$($def.Id)' -- it has to be the file's own name, '$($f.BaseName)'" }
@@ -72,14 +74,6 @@ function Get-RiceComponents {
         foreach ($k in 'Install', 'Uninstall', 'Check', 'Functions') { if ($def.Contains($k) -and $def[$k] -isnot [scriptblock]) { throw "$where : $k has to be a scriptblock" } }
         if ($def.Contains('Group') -and "$($def.Group)" -notin (Get-RiceComponentGroups)) { throw "$where : Group '$($def.Group)' isn't one of doctor's groups ($((Get-RiceComponentGroups) -join ', '))" }
         if ($def.Contains('NamedOnly') -and $def.NamedOnly -isnot [bool]) { throw "$where : NamedOnly is `$true or `$false" }
-        if ($def.Contains('Autostart')) {
-            $a = $def.Autostart
-            if ($a -isnot [System.Collections.IDictionary]) { throw "$where : Autostart has to be a hashtable" }
-            foreach ($k in @($a.Keys)) { if ("$k" -notin (Get-RiceAutostartFields)) { throw "$where : Autostart has a field this loader doesn't know: '$k' (the fields: $((Get-RiceAutostartFields) -join ', '))" } }
-            if ($a.Exe -isnot [scriptblock]) { throw "$where : Autostart.Exe has to be a scriptblock returning the exe's path (nothing = not installed)" }
-            if (-not ($a.Process -is [string]) -or -not $a.Process.Trim()) { throw "$where : Autostart.Process (the process name that means 'already running') is needed" }
-            if ($a.Contains('Delay') -and "$($a.Delay)" -notmatch '^PT\d+[SM]$') { throw "$where : Autostart.Delay is a task delay like 'PT2S'" }
-        }
         if (-not $def.Contains('Group')) { $def.Group = 'Integrations' }
         if (-not $def.Contains('NamedOnly')) { $def.NamedOnly = $false }
         $def.File = $f.FullName

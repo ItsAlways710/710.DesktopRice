@@ -27,9 +27,10 @@
     time komorebi starts (see tools/compile-komorebi-rules.ps1 for why it can never be a
     tracked file).
   - Sets up Flow Launcher (tools/components/flow.ps1): its search keywords and identity
-    toggles, its own "start on system startup" switched off, and its task (it starts at sign-in
-    on a full-time machine, with `710sRice start` on an on-demand one). A Flow that has never
-    run is started once first, as you, so it creates its settings -- one install sets it up.
+    toggles, and its own "start on system startup" switched off -- 710.ahk starts it (at
+    sign-in on a full-time machine, with `710sRice start` on an on-demand one). A Flow that has
+    never run is started once first, as you, so it creates its settings -- one install sets it
+    up.
   - Regenerates config/komorebi/komorebi.json (tools/compile-komorebi-rules.ps1) so a
     fresh clone or a pin bump lands in a ready-to-use compiled config.
   - Safe to re-run: only touches what's missing or behind its pin. `git pull` then
@@ -61,15 +62,15 @@
   applied unconditionally on every run (matching winarchy's own install.ps1 @
   4574fc7, tag v1.4.0 -- none of these are gated behind -Activate upstream either).
 
-  -Activate registers autostart (Scheduled Tasks At-LogOn: komorebi, YASB, ShareX, AHK,
-  Flow Launcher),
+  -Activate registers autostart (Scheduled Tasks At-LogOn: komorebi and AHK -- 710.ahk starts
+  YASB, Flow Launcher and ShareX as it loads; their own tasks, until 2026-10-06, are removed),
   hides the native taskbar, applies HKCU-only Windows hardening (no Bing
   search / ad suggestions / Copilot-Widgets-TaskView buttons / Start recommendations),
   zeroes Explorer's Startup app-launch delay, and starts everything right away. Without
   -Activate, none of that happens -- packages, config, theming, Defender exclusions, the
   profile hook and Flow's setup are still applied, but nothing autostarts and the
-  taskbar/hardening/Startup-delay registry settings are left alone. Each component still
-  gets its Scheduled Task, just with no sign-in trigger, so `710sRice start` (the closing
+  taskbar/hardening/Startup-delay registry settings are left alone. komorebi and AHK still
+  get their Scheduled Tasks, just with no sign-in trigger, so `710sRice start` (the closing
   lines of a run say so) starts the stack on demand the same way sign-in would.
 
   Switching an installed machine, without this whole run (its theme step puts the default
@@ -194,7 +195,7 @@ if ($OnlyRun) { Step-Info "Running only: $($RunSteps -join ', ')" }
 $wallustExe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
 
 # The machine's mode before this run changes anything -- read here, before the steps, since
-# the flow step registers Flow's own sign-in task early in a -Activate run. A -Activate run on a
+# the tasks step registers the sign-in tasks part-way through a -Activate run. A -Activate run on a
 # machine that isn't full-time yet switches it, by the same rules as `710sRice activate`: the
 # tasks step saves the Windows settings first (Save-FullTimeSettings), and the windows step
 # stops a running stack before it changes them; the start-now block below starts it again.
@@ -368,8 +369,8 @@ $Steps['upgrade'] = {
     # Installed versions come from the local probes in tools\lib\packages.ps1 (doctor reads
     # the same ones). Newer than the pin = left alone (the user's call -- e.g. a hand upgrade
     # being tried before versions.md is bumped); older = stop the app, pin remove -> winget
-    # upgrade --version <pin> -> pin add, check, restart it through its task if it was
-    # running (Stop-PinnedApp / Invoke-PinnedUpgrade).
+    # upgrade --version <pin> -> pin add, check, start it again if it was running -- komorebi
+    # and 710.ahk through their tasks, the bar and Flow by asking 710.ahk (Invoke-MoveToPin).
     Write-Host "`n-- Upgrade pinned packages --" -ForegroundColor Cyan
     $pinnedRows = @(@(Get-VersionsTable -Path (Join-Path $Root 'versions.md')) | Where-Object { (Test-WingetRow $_) -and (Test-PinnedRow $_) })
     if ($pinnedRows.Count -eq 0) {
@@ -681,7 +682,10 @@ $Steps['tasks'] = {
         Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run `710sRice restart`.'
     }
 
-    # --- 11a. Tasks: every component's, in the machine's mode ------------------------------
+    # --- 11a. Tasks: komorebi's and 710.ahk's, in the machine's mode -------------------------
+    # (The bar's, Flow's and ShareX's old tasks go here too, whichever branch runs:
+    # Register-Autostart / Register-OnDemandTasks call Remove-RetiredStartTasks. 710.ahk starts
+    # those three now -- see config\ahk\710.ahk, "The apps 710.ahk starts".)
     if ($Activate) {
         Write-Host "`n-- Activate --" -ForegroundColor Cyan
         # Going full-time now: your Windows settings as they are, saved before anything changes
@@ -704,9 +708,9 @@ $Steps['tasks'] = {
         Step-Info 'Autostart is active: re-registering to pick up any startup changes...'
         Register-Autostart
     } else {
-        # On-demand: every component still gets its task (no trigger), so Start-All.ps1,
-        # SUPER+Shift+R and the bar watchdog start each one at its task's own level -- the
-        # same as -Activate, from any window (Register-OnDemandTasks).
+        # On-demand: komorebi and 710.ahk still get their tasks (no trigger), so Start-All.ps1
+        # and SUPER+Shift+R start each one at its task's own level -- the same as -Activate,
+        # from any window (Register-OnDemandTasks).
         # The closing lines say how to switch to full-time (`710sRice activate`).
         if (-not $OnlyRun) {
             Step-Info 'On demand: packages, config, theming, Defender, the profile hook and Flow are applied; nothing starts at sign-in, and the taskbar, hardening and Startup delay are left as they are.'
@@ -781,8 +785,9 @@ foreach ($step in $RunSteps) {
 }
 
 # --- Start now (a full install -Activate only) -------------------------------------------
-# Through each component's own task, never from this elevated shell (Start-StackFromTasks in
-# tools\lib\activation.ps1 -- `710sRice activate` starts the stack the same way).
+# Through komorebi's and 710.ahk's own tasks, never from this elevated shell -- 710.ahk starts the
+# bar, Flow and ShareX (Start-StackFromTasks in tools\lib\activation.ps1 -- `710sRice activate`
+# starts the stack the same way).
 if ($Activate -and -not $OnlyRun) {
     Start-StackFromTasks
     if ($StackRestarted) {
