@@ -33,3 +33,14 @@ exe = "Flow.Launcher.exe"
 
 [[ignore]]
 exe = "ShareX.exe"
+
+# AutoHotkey's own main window -- class AutoHotkey, one per running script, normally hidden.
+# (Script GUIs, 710.ahk's palette and dialogs among them, are AutoHotkeyGUI and stay as they are.)
+# SUPER+Shift+R ends in 710.ahk's Reload(): AutoHotkey starts the new copy shown normally and
+# hides its main window a moment later. komorebi sees that moment as a new window, and on an
+# EMPTY workspace it focuses a new window -- which shows it again after AutoHotkey's hide, so
+# a blank AutoHotkey window got tiled into a slot and sat on the taskbar (found 2026-10-06 on
+# the Dell and Godzilla; Esc in it cleared it). Ignored, komorebi never touches it and the hide
+# sticks: nothing tiled, nothing on the taskbar. The split-second flash of the reload stays.
+[[ignore]]
+class = "AutoHotkey"
