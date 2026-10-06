@@ -212,7 +212,7 @@ EndGpuHelpers(exe) {
 #^Enter::Komorebic('promote-focus')              ; focus top of the tree
 #+h::Komorebic('flip-layout horizontal')         ; mirror the layout left/right
 #+j::Komorebic('flip-layout vertical')           ; mirror the layout up/down
-#+z::Komorebic('toggle-tiling')                  ; stop tiling this workspace
+#+z::Komorebic('toggle-tiling')                  ; toggle tiling this workspace
 #!Home::Komorebic('quick-save-resize')           ; save current tile sizes
 #Home::Komorebic('quick-load-resize')            ; restore them
 #+d::Komorebic('toggle-transparency')            ; dim unfocused windows
@@ -2058,7 +2058,7 @@ TilingItems := [
     {text: 'Edit my rules...',                           action: (*) => EditMyRules()},
     {text: 'Manage this window',                         action: (*) => Komorebic('manage')},
     {text: 'Unmanage this window',                        action: (*) => Komorebic('unmanage')},
-    {text: 'Stop tiling this workspace', hint: 'SUPER+Shift+Z', action: (*) => Komorebic('toggle-tiling')},
+    {text: 'Toggle tiling this workspace', hint: 'SUPER+Shift+Z', action: (*) => Komorebic('toggle-tiling')},
     {text: 'New windows: stack / tile',                   action: (*) => Komorebic('toggle-window-container-behaviour')},
     {text: 'Title bars',                                  action: (*) => Komorebic('toggle-title-bars')},
     {text: 'Mouse follows focus',                         action: (*) => Komorebic('toggle-mouse-follows-focus')},

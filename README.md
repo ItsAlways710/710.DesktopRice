@@ -407,6 +407,7 @@ Delete the folder yourself if you're done with it.
 | SUPER+Shift+1…9 | Move the window to workspace 1–9 of its screen |
 | SUPER+F / SUPER+T | Monocle (fill the screen) / float or tile the window |
 | SUPER+Ctrl+T / SUPER+P | Retile / pause tiling |
+| SUPER+Shift+Z | Toggle tiling this workspace (workspace 9 of the first screen starts with it off) |
 | SUPER+, / SUPER+. | Focus the previous / next monitor |
 
 **Capture (ShareX):**
@@ -434,6 +435,13 @@ keys, Esc to go back.
 Up to four screens, each with workspaces 1–9. Workspace 1 of the first screen uses
 komorebi's Scrolling layout (Columns while more than one screen is connected); the others
 use BSP.
+
+Workspace 9 of the first screen starts with tiling off: windows stay where they open. It
+suits apps with lots of windows of their own (Wabbajack, Mod Organizer 2), and it's the
+place to check whether tiling is what bothers an app. SUPER+Shift+Z toggles tiling on the
+workspace you're on. komorebi keeps that through SUPER+Ctrl+R; signing out, restarting
+Windows or a config reload (adding or removing a rule or pin does one) puts tiling back
+the way each workspace starts.
 
 Each screen gets a number the first time 710sRice sees it, and keeps it: a screen you plug
 in later takes the next free number, and one you unplug keeps its own for when it's back.
