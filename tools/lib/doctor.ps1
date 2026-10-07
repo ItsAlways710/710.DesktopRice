@@ -1070,33 +1070,6 @@ function Test-DoctorProfileHook {
     }
 }
 
-function Test-DoctorWindowsSettings {
-    # What -Activate applies on a full-time machine: taskbar auto-hide, the hardening values
-    # (Get-HardeningSettings), no Startup delay. Worth knowing when it drifts, but the fix
-    # restarts Explorer and a change may be deliberate -- so [!!]. TaskbarDa (the Widgets
-    # button) is left out: Windows refuses a script's write to it, so no fix could clear it
-    # (install already points at Settings for that one).
-    if (-not (Test-FullTimeMachine)) { return }
-    $drift = @()
-    try { if (-not (Test-TaskbarAutoHide)) { $drift += "taskbar doesn't auto-hide" } } catch { }
-    $hard = @(foreach ($s in Get-HardeningSettings) {
-        $path, $name, $value = $s
-        if ($name -eq 'TaskbarDa') { continue }
-        $item = Get-ItemProperty -Path $path -Name $name -ErrorAction Ignore
-        if ($null -eq $item -or $item.$name -ne $value) { $name }
-    })
-    if ($hard.Count) {
-        $shown = @($hard | Select-Object -First 4) -join ', '
-        $drift += "hardening: $shown$(if ($hard.Count -gt 4) { " and $($hard.Count - 4) more" })"
-    }
-    $delay = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' -Name StartupDelayInMSec -ErrorAction Ignore
-    if ($null -eq $delay -or $delay.StartupDelayInMSec -ne 0) { $drift += 'the Startup delay is back' }
-    if ($drift.Count) {
-        return New-DoctorResult -Id 'windows' -Status '!!' -Text "Windows settings drifted: $($drift -join '; ')" -Fix '710sRice install -Only windows' -Step 'windows'
-    }
-    New-DoctorResult -Id 'windows' -Status 'OK' -Text 'Windows settings (-Activate): taskbar auto-hides, hardening applied, no Startup delay'
-}
-
 # --- g. Conflicts and leftovers --------------------------------------------------------------------
 
 function Test-DoctorConflicts {

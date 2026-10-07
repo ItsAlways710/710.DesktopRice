@@ -172,7 +172,7 @@ Invoke-ActivationRevert 'Remove the retired lock-screen sync task and its policy
 # did). No copy on an on-demand machine: left alone -- 710sRice never changed them there, so
 # they're yours or Windows' (the mode is the one read at the top, before the tasks went). One
 # Explorer restart if anything changed, the tray icons' choices kept around it
-# (Restore-FullTimeWindowsSettings in tools\lib\activation.ps1, shared with `710sRice
+# (Restore-FullTimeWindowsSettings in tools\lib\fulltime.ps1, shared with `710sRice
 # deactivate`). It prints its own lines, its -DryRun ones included; section 10 deletes the copy.
 try { Restore-FullTimeWindowsSettings -DryRun:$DryRun -FullTime $ComponentCtx.FullTime }
 catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_.Exception.Message)" }

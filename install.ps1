@@ -499,7 +499,7 @@ $Steps['theme'] = {
             # One-time snapshot of whatever wallpaper was here before -- Set-DesktopWallpaper
             # below is about to overwrite it, and uninstall.ps1's Restore-OriginalWallpaper
             # needs this to put the real original back, not just delete our own value (both in
-            # tools\lib\activation.ps1).
+            # tools\lib\wallpaper.ps1).
             Save-OriginalWallpaper
             Set-DesktopWallpaper -Path $defaultWallpaper
             Step-Ok "Desktop wallpaper set to $(ConvertTo-SafePath $defaultWallpaper)"
@@ -604,17 +604,8 @@ $Steps['tasks'] = {
     # those three now -- see config\ahk\710.ahk, "The apps 710.ahk starts".)
     if ($Activate) {
         Write-Host "`n-- Activate --" -ForegroundColor Cyan
-        # Going full-time now: your Windows settings as they are, saved before anything changes
-        # them -- `710sRice deactivate` and uninstall put them back. Never on a machine that's
-        # already full-time (the "before" would be full time's own values).
-        if (-not $WasFullTime) {
-            try {
-                if (Save-FullTimeSettings) { Step-Ok 'Saved your Windows settings as they are now (taskbar auto-hide, the hardening values, the Startup delay) -- 710sRice deactivate and uninstall put them back' }
-                else { Step-Info "Kept the copy of your Windows settings saved $(Get-SavedFullTimeSettingsWhen (Get-SavedFullTimeSettings)) -- it's how they were before" }
-            } catch {
-                Step-Warn "Couldn't save your Windows settings ($($_.Exception.Message)) -- 710sRice deactivate and uninstall will hand them to Windows' own defaults instead."
-            }
-        }
+        # Going full-time now: your Windows settings saved first (tools\lib\fulltime.ps1).
+        if (-not $WasFullTime) { Save-FullTimeSettingsOnActivate }
         Register-Autostart
     } elseif (Test-FullTimeMachine) {
         # Already full-time from an earlier -Activate: re-register so the tasks pick up any
@@ -641,27 +632,9 @@ $Steps['tasks'] = {
 
 $Steps['windows'] = {
     # --- 11b. Windows settings: taskbar, hardening, Startup delay (full-time machines) ---
-    # A plain run only gets here with -Activate. -Only windows gets here on any machine, and
-    # these settings only belong to a full-time one.
-    Write-Host "`n-- Windows settings --" -ForegroundColor Cyan
-    if ($OnlyRun -and -not (Test-FullTimeMachine)) {
-        Step-Info 'Nothing to do (on-demand machine) -- these settings are only for a full-time install (710sRice activate).'
-    } else {
-        # -Activate switching this machine to full-time: the stack goes down before its Windows
-        # settings change -- the switch never changes them under a running stack -- and the
-        # start-now block below starts it again (the same rule as `710sRice activate`).
-        if ($Activate -and -not $WasFullTime) {
-            $running = @(Get-RunningStackNames)
-            if ($running.Count) {
-                Step-Info "Stopping the stack first ($($running -join ', ')) -- it starts again at the end of this run."
-                Stop-RunningComponents
-                $StackRestarted = $true
-            }
-        }
-        # Auto-hide, the hardening, the Startup delay: one Explorer restart, the tray icons kept
-        # (tools\lib\activation.ps1).
-        Set-FullTimeWindowsSettings
-    }
+    # (tools\lib\fulltime.ps1). It says when it stopped the stack: the start-now block below
+    # starts it again.
+    if (Install-FullTimeWindowsSettings -OnlyRun $OnlyRun -Activate $Activate -WasFullTime $WasFullTime) { $StackRestarted = $true }
 }
 
 function Invoke-ComponentStep {

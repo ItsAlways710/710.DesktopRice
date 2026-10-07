@@ -26,7 +26,7 @@ adds a module or adds a check updates this file in the same commit.
 
 | Entry point | What it is | Loads |
 |---|---|---|
-| `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` always; per verb: `activation.ps1`, `packages.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1` |
+| `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` always; per verb: `activation.ps1`, `packages.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1` |
 | `install.ps1` | Install: its switches, the step order, every fixed step's body, the closing lines | `steps.ps1` (and with it `components.ps1`), `activation.ps1`, `packages.ps1` |
 | `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1`, `packages.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |
@@ -67,13 +67,13 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | terminal | `tools\components\terminal.ps1` (default shell, font; font helpers in `tools\lib\terminal.ps1`) | same file (`Restore-WindowsTerminalSettings`: default shell, font, the palette's colour scheme) | `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` (`terminal`: `Step=palette`) |
 | compile | `install.ps1` → `tools\compile-komorebi-rules.ps1` | `uninstall.ps1` section 9 (`komorebi.json`) | `doctor.ps1` `komorebi-json`, `komorebi-json-warnings`, `asc` | `Step=compile`, `Repair=reload` |
 | tasks | `install.ps1` (tiling mode, the tasks; then the lock screen's part, `Install-LockScreen` in `tools\lib\lockscreen.ps1`); registering them in `activation.ps1`, task plumbing in `tools\lib\tasks.ps1` | `uninstall.ps1` section 2 (`Unregister-Autostart`; `Undo-LockScreenSync`), section 9 (`tiling-mode.txt`) | `doctor.ps1` `mode`, `task:*`, `task:retired`, `tiling`; `lock-screen:old` (`lockscreen.ps1`) | `Step=tasks`, `Repair=tiling:<mode>` |
-| windows (-Activate) | `install.ps1` → `Set-FullTimeWindowsSettings` in `activation.ps1` | `uninstall.ps1` section 2 → `Restore-FullTimeWindowsSettings` | `doctor.ps1` `windows` | `Step=windows` |
+| windows (-Activate) | `install.ps1` → `Install-FullTimeWindowsSettings` in `tools\lib\fulltime.ps1` | `uninstall.ps1` section 2 → `Restore-FullTimeWindowsSettings` (`fulltime.ps1`) | `windows` (`fulltime.ps1`) | `Step=windows` |
 
 ## Pieces without a step of their own
 
 | Piece | Where |
 |---|---|
-| The full-time switch | `710sRice activate` / `deactivate` in `710sRice.ps1` (`Invoke-RiceSwitch` and the `Invoke-Rice(De)Activate` functions); the mode is read from the tasks (`Test-FullTimeMachine`, `activation.ps1`); saving and putting back Windows settings: `Save-FullTimeSettings`, `Restore-FullTimeWindowsSettings` (`activation.ps1`); install -Activate's switch: the tasks and windows steps in `install.ps1` |
+| The full-time switch | `710sRice activate` / `deactivate`: `tools\lib\switch.ps1` (`Invoke-RiceSwitch`, `Invoke-Rice(De)Activate`; loaded by their rows in `710sRice.ps1`); full time's Windows settings -- saved, applied, put back (`Save-FullTimeSettings`, `Set-` / `Restore-FullTimeWindowsSettings`), install -Activate's save (`Save-FullTimeSettingsOnActivate`, from the tasks step) and its windows step (`Install-FullTimeWindowsSettings`), doctor's `windows`: `tools\lib\fulltime.ps1`; the mode is read from the tasks (`Test-FullTimeMachine`, `activation.ps1`) |
 | The stack: start, stop, restart, reload | `scripts\Start-All.ps1`, `Stop-All.ps1`; `restart` / `reload` / `reload bar` in `710sRice.ps1`; in `activation.ps1`: `Start-StackFromTasks`, `Stop-RunningComponents`, `Get-RunningStackNames`, `Start-AhkFromTask`, `Restart-AhkFromTask`, `Start-AhkStartedApps` (asks 710.ahk), the retired start tasks (`Remove-RetiredStartTasks`, `Request-RetiredAppsRestart`); doctor's `stack:*`, `stack`, `paused`; repair's starts (`Start-RepairComponents`, `tools\lib\repair.ps1`) |
 | The lock screen | `scripts\Set-LockScreen.ps1` (sets it, takes its snapshots); everything else in `tools\lib\lockscreen.ps1`: running the setter and its record (the pipeline's), install's part (`Install-LockScreen`, from the tasks step), uninstall's (`Undo-LockScreenSync` in section 2, `Undo-LockScreenPicture` in section 3), the restores (`Restore-LockScreenPolicy`, `Restore-LockScreenPicture`), `Set-LockScreenToWallpaper`, doctor's `lock-screen*` lines (`Test-DoctorLockScreen`); `deactivate` sets it again (`Set-RiceSwitchLockScreen`, `710sRice.ps1`) |
 | Tiling mode (elevated komorebi) | `Get-TilingMode`, `Resolve-TilingMode`, `Get-KomorebiRunLevel` (`activation.ps1`); `710sRice tiling` (`710sRice.ps1`); doctor's `tiling` |
@@ -86,7 +86,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | File | What's in it |
 |---|---|
-| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: hardening, taskbar auto-hide, the Startup delay and full time's Windows settings (saved, applied, put back); registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; the accent and Flow-theme restores |
+| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; the accent and Flow-theme restores |
 | `tools\lib\text.ps1` | Printing paths and names safely: `ConvertTo-SafePath`, `ConvertTo-SafeText` (never a user name), `Join-RiceNameList` |
 | `tools\lib\snapshots.ps1` | The original-state snapshots uninstall puts back (`Save-` / `Get-` / `Remove-OriginalState`), one registry value as a snapshot (`Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`), `Backup-RegistryKey` (reg.exe export to `backups\`) |
 | `tools\lib\userenv.ps1` | User environment variables (`Get-` / `Set-` / `Remove-UserEnvVar`), the user PATH read and written raw (`Add-` / `Remove-UserPathEntry`, `Get-UserPathRaw`, `Test-SamePathEntry`), `Send-SettingChangeBroadcast` |
@@ -98,6 +98,8 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | `tools\lib\shortcuts.ps1` | `Save-RiceShortcut`, `Read-RiceShortcut`, `Get-StartMenuProgramsDir` |
 | `tools\lib\explorer.ps1` | Explorer's one restart (`Restart-Explorer`, `Wait-ExplorerRunning`, `Test-ExplorerShell`) and the tray icons kept around it (`Backup-` / `Restore-TrayIconPromotions`) |
 | `tools\lib\fonts.ps1` | `Get-NerdFontFace`: the JetBrainsMono Nerd Font's face name, as Windows has it registered |
+| `tools\lib\fulltime.ps1` | Full time's Windows settings (taskbar auto-hide, the hardening, the Startup delay): saved, applied, put back; install -Activate's save and windows step; doctor's `windows` line |
+| `tools\lib\switch.ps1` | `710sRice activate` / `deactivate` (dispatcher-only: loaded by their rows) |
 | `tools\lib\terminal.ps1` | Windows Terminal's font faces (`Get-TerminalFontFaces`, `Set-TerminalFontFace`) and `Clear-TerminalNerdFontFaces` (uninstall, before the Nerd Font goes) |
 | `tools\lib\packages.ps1` | `versions.md`'s table, winget's sources and exit codes, `Invoke-WingetAsUser`, the MSI uninstall, the installed-version probes, `Compare-PinVersion`, moving a package to its pin |
 | `tools\lib\components.ps1` | The component loader and the step order (`Get-RiceComponents`, `Get-RiceStepOrder`, `Invoke-RiceComponentPart`, `New-RiceComponentContext`) |
@@ -121,7 +123,7 @@ Component checks come at the end of their group, in install's order.
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
 | Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml`, `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
-| Integrations | `flow-theme`, `profile`, `windows`; then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
+| Integrations | `flow-theme`, `profile`, `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 
 ## 710.ahk
