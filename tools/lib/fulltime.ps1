@@ -461,20 +461,32 @@ function Restore-FullTimeWindowsSettings {
     } catch { Step-Warn "Could not put back the Startup app-launch delay: $($_.Exception.Message)" }
 }
 
-# --- install's parts: -Activate's save (its tasks step), the windows step --------------------
+# --- install's parts: -Activate's save (before any step), the windows step ----------------------
 
 function Save-FullTimeSettingsOnActivate {
-    <# install -Activate's tasks step, on a machine going full-time now (install asks only then:
-       never on a machine that's already full-time -- the "before" would be full time's own
+    <# install -Activate, before any step, on a machine going full-time now (install asks only
+       then: never on a machine that's already full-time -- the "before" would be full time's own
        values): your Windows settings as they are, saved before anything changes them --
-       `710sRice deactivate` and uninstall put them back. One line; a copy that can't be saved
-       is a warning, and the run goes on. #>
+       `710sRice deactivate` and uninstall put them back. $true: saved, or a copy already there
+       (it's the real "before"), and the switch goes ahead. $false: no copy, so no switch -- the
+       same rule as `710sRice activate` -- and install runs as a plain install, on demand, and
+       fails at its end (Write-FullTimeNotSwitched). Until 2026-10-07 install warned and switched
+       anyway, changing settings it had no copy of (review item 6). #>
+    Write-Host "`n-- Save your Windows settings --" -ForegroundColor Cyan
     try {
         if (Save-FullTimeSettings) { Step-Ok 'Saved your Windows settings as they are now (taskbar auto-hide, the hardening values, the Startup delay) -- 710sRice deactivate and uninstall put them back' }
         else { Step-Info "Kept the copy of your Windows settings saved $(Get-SavedFullTimeSettingsWhen (Get-SavedFullTimeSettings)) -- it's how they were before" }
+        $true
     } catch {
-        Step-Warn "Couldn't save your Windows settings ($($_.Exception.Message)) -- 710sRice deactivate and uninstall will hand them to Windows' own defaults instead."
+        Write-Host "  [XX] Couldn't save your Windows settings ($($_.Exception.Message)) -- so this run doesn't switch to full-time: it installs on demand, and nothing of full time's is changed" -ForegroundColor Red
+        $false
     }
+}
+
+function Write-FullTimeNotSwitched {
+    # The closing line of an install -Activate whose save failed (Save-FullTimeSettingsOnActivate).
+    Write-Host ''
+    Write-Host "  [XX] Not switched to full-time: your Windows settings couldn't be saved (see the top) -- 710sRice activate tries again" -ForegroundColor Red
 }
 
 function Install-FullTimeWindowsSettings {

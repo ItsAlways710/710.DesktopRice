@@ -131,8 +131,9 @@ From a PowerShell 7 window in the repo folder:
 
 On top of the above, this:
 
-- Saves your taskbar and Windows settings as they are, so `710sRice deactivate` and uninstall
-  can put them back.
+- Saves your taskbar and Windows settings as they are, first, so `710sRice deactivate` and
+  uninstall can put them back. If they can't be saved, nothing of the rest below is changed: the
+  run installs on demand and ends with an error, and `710sRice activate` tries again.
 - Starts komorebi and AutoHotkey at every sign-in, through Scheduled Tasks, and AutoHotkey
   starts the bar, ShareX and Flow Launcher. Only komorebi runs elevated (unless you opted out);
   the rest run as you. Flow starts hidden, and the first SUPER+Space after sign-in opens it.

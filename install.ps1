@@ -196,11 +196,12 @@ $wallustExe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
 
 # The machine's mode before this run changes anything -- read here, before the steps, since
 # the tasks step registers the sign-in tasks part-way through a -Activate run. A -Activate run on a
-# machine that isn't full-time yet switches it, by the same rules as `710sRice activate`: the
-# tasks step saves the Windows settings first (Save-FullTimeSettings), and the windows step
-# stops a running stack before it changes them; the start-now block below starts it again.
+# machine that isn't full-time yet switches it, by `710sRice activate`'s rules: your Windows
+# settings saved first, right here, before any step (no copy, no switch: a plain run, failed at
+# its end); the stack stopped before the windows step changes them, started again at the end.
 $WasFullTime = try { [bool](Test-FullTimeMachine) } catch { $false }
-$StackRestarted = $false
+$StackRestarted = $NotSwitched = $false
+if ($Activate -and -not $WasFullTime -and -not (Save-FullTimeSettingsOnActivate)) { $NotSwitched = $true; $Activate = $false; $RunSteps = @($RunSteps | Where-Object { $_ -ne 'windows' }) }
 
 $Steps = [ordered]@{}
 
@@ -604,8 +605,6 @@ $Steps['tasks'] = {
     # those three now -- see config\ahk\710.ahk, "The apps 710.ahk starts".)
     if ($Activate) {
         Write-Host "`n-- Activate --" -ForegroundColor Cyan
-        # Going full-time now: your Windows settings saved first (tools\lib\fulltime.ps1).
-        if (-not $WasFullTime) { Save-FullTimeSettingsOnActivate }
         Register-Autostart
     } elseif (Test-FullTimeMachine) {
         # Already full-time from an earlier -Activate: re-register so the tasks pick up any
@@ -683,7 +682,8 @@ if ($OnlyRun) {
     # `710sRice activate` / `deactivate` end with.
     Write-RiceModeLines
 }
-# Something didn't install (W2): every step still ran; say what, and fail the run.
+# A -Activate that couldn't switch, or something that didn't install (W2): say what, fail the run.
+if ($NotSwitched) { Write-FullTimeNotSwitched; if (-not $NotInstalled.Count) { exit 1 } }
 if ($NotInstalled.Count) {
     Write-Host ''
     Write-Host "  [XX] Not installed: $($NotInstalled -join ', ') -- 710sRice doctor shows what's missing; 710sRice doctor -repair tries again" -ForegroundColor Red
