@@ -17,7 +17,7 @@
     own paths are built from ($env:DESKTOPRICE_HOME), so the repo can live anywhere.
   - Puts <repo>\bin on the user PATH (bin\710sRice.cmd, the `710sRice` command) --
     written raw as REG_EXPAND_SZ so the user's other %VAR% PATH entries keep expanding
-    (Add-UserPathEntry in tools\lib\activation.ps1). Works in this window at once, and in
+    (Add-UserPathEntry in tools\lib\userenv.ps1). Works in this window at once, and in
     any PS7 window opened after the run.
   - Installs wallust (tools/install-wallust.ps1) if it's missing or behind its pin.
   - Refreshes this machine's real monitor identity in

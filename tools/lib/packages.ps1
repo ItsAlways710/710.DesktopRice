@@ -8,10 +8,10 @@
   (claude/cli-plan.md, Stage 2 -- "pins in one place"). Everything here reads that table;
   nothing keeps a second copy of a pin. A pin bump is one line in versions.md.
 
-  Dot-source AFTER tools\lib\activation.ps1: Invoke-WingetAsUser uses its Get-TaskFullName
-  and $script:TaskFolder, Stop-PinnedApp its Find-AhkWindow / Send-AhkQuit / Get-KomorebicExe
-  and the caller's $Root, Invoke-MoveToPin its Start-AhkStartedApps, the ShareX probe its
-  Get-ShareXExe. (install-wallust.ps1 only needs
+  Dot-source AFTER tools\lib\activation.ps1, which loads what these use: Invoke-WingetAsUser
+  Get-TaskFullName and $script:TaskFolder (tasks.ps1), Stop-PinnedApp Find-AhkWindow /
+  Send-AhkQuit (ahk.ps1), Get-KomorebicExe (apps.ps1) and the caller's $Root, Invoke-MoveToPin
+  Start-AhkStartedApps, the ShareX probe Get-ShareXExe (apps.ps1). (install-wallust.ps1 only needs
   Get-VersionsTable, which stands alone.)
 #>
 

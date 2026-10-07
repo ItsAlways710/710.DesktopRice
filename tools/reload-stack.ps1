@@ -93,7 +93,7 @@ function Write-Log([string]$m) {
     "{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m | Out-File -FilePath $log -Append -Encoding utf8
 }
 
-$TaskFolder = '\710.DesktopRice'   # keep in sync with tools\lib\activation.ps1's $script:TaskFolder
+$TaskFolder = '\710.DesktopRice'   # keep in sync with tools\lib\tasks.ps1's $script:TaskFolder
 
 function Test-AutostartTask([string]$Name) {
     # Capture-and-discard, not `*> $null` -- schtasks.exe's "cannot find the file" text

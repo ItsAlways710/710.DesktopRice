@@ -237,7 +237,7 @@ function Get-DoctorLocalChangesResult {
 
 # --- a. Repo and command ------------------------------------------------------------------------
 # Registry reads sit behind these small functions (the Linux sandbox has no HKCU:, and they
-# are what a test stubs). Get-UserPathRaw and Test-SamePathEntry come from activation.ps1 --
+# are what a test stubs). Get-UserPathRaw and Test-SamePathEntry come from userenv.ps1 --
 # install's own PATH helpers, so "on your PATH" means exactly what install means by it.
 
 function Get-DoctorMachinePathRaw {

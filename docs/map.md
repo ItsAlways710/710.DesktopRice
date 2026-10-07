@@ -36,9 +36,9 @@ adds a module or adds a check updates this file in the same commit.
 | `tools\apply-wallust-outputs.ps1` | The wallpaper pipeline: wallust, then every palette target | `tools\lib\lockscreen.ps1`, `tools\lib\palette.ps1` |
 | `config\ahk\710.ahk` | The hotkeys, menus, and the apps it starts | `config\ahk\user.ahk` (last, optional) |
 
-`tools\lib\activation.ps1` is the shared library every install-side script loads; it loads
-`tools\lib\lockscreen.ps1` and `tools\lib\components.ps1` itself. Callers define `Step-Ok`,
-`Step-Info` and `Step-Warn` before loading it.
+`tools\lib\activation.ps1` is what every install-side script loads: it loads the shared libraries
+(below), `tools\lib\lockscreen.ps1` and `tools\lib\components.ps1`, and holds the pieces that haven't
+moved into modules yet. Callers define `Step-Ok`, `Step-Info` and `Step-Warn` before loading it.
 
 ## Install steps
 
@@ -54,19 +54,19 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | envvars | `install.ps1` (also removes the old weather variables) | `uninstall.ps1` section 4 | `doctor.ps1` `envvars`, `weather-vars`, `weather` | `Step=envvars` |
 | bluetooth | `tools\components\bluetooth.ps1` (+ `tools\lib\bluetooth.ps1`) | same file | `bluetooth` | `Step=bluetooth` |
 | commands | `tools\components\commands.ps1` | same file | `commands` | `Step=commands` |
-| path | `install.ps1`; PATH helpers in `activation.ps1` | `uninstall.ps1` section 4 | `doctor.ps1` `path` | `Step=path` |
+| path | `install.ps1`; PATH helpers in `tools\lib\userenv.ps1` | `uninstall.ps1` section 4 | `doctor.ps1` `path` | `Step=path` |
 | wallust | `install.ps1`; `tools\install-wallust.ps1`, `tools\write-wallust-config.ps1` | `uninstall.ps1` sections 7 (binary), 9 (`wallust.toml`) | `doctor.ps1` `wallust`, `wallust-toml` | `Step=wallust` |
 | flow | `tools\components\flow.ps1` | same file | `flow`, `flow-startup`, `flow-prefs`, `flow-font`, `flow-fullscreen` | `Step=flow` |
 | everything | `tools\components\everything.ps1` | same file | `everything`, `everything-settings` | `Step=everything` |
 | sharex | `tools\components\sharex.ps1` | same file | `sharex`, `sharex-startup` | `Step=sharex` |
-| theme | `install.ps1`; the pipeline `tools\apply-wallust-outputs.ps1`; wallpaper helpers in `activation.ps1` | `uninstall.ps1` section 3 (wallpaper, accent, Terminal colours, Flow theme), section 9 (generated palette files) — restore functions in `activation.ps1` | (see palette) | never run by repair |
+| theme | `install.ps1`; the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | `uninstall.ps1` section 3 (wallpaper: `Restore-OriginalWallpaper`; accent, Terminal colours, Flow theme: restore functions in `activation.ps1`), section 9 (generated palette files) | (see palette) | never run by repair |
 | palette (named only) | `install.ps1` (the pipeline on the current wallpaper) | — | `doctor.ps1` `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `flow-theme`, `terminal`, `lock-screen` | `Step=palette` |
 | monitors | `install.ps1`; `tools\write-display-index.ps1`, `tools\lib\monitors.ps1` | `uninstall.ps1` section 9 (`display-index.local.json`) | `doctor.ps1` `display-index`, `display-index-more` | `Step=monitors`, `Repair=reload` |
 | defender | `install.ps1` → `Set-DefenderExclusions` in `activation.ps1` | `uninstall.ps1` section 3 → `Remove-DefenderExclusions` | `doctor.ps1` `defender` | `Step=defender` |
 | profile | `install.ps1` → `Install-ShellProfile` in `activation.ps1` | `uninstall.ps1` section 3 → `Remove-ShellProfile` | `doctor.ps1` `profile` | `Step=profile` |
 | terminal | `install.ps1` (default shell, font) | `uninstall.ps1` section 3 → `Restore-WindowsTerminalSettings` in `activation.ps1` | `doctor.ps1` `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` |
 | compile | `install.ps1` → `tools\compile-komorebi-rules.ps1` | `uninstall.ps1` section 9 (`komorebi.json`) | `doctor.ps1` `komorebi-json`, `komorebi-json-warnings`, `asc` | `Step=compile`, `Repair=reload` |
-| tasks | `install.ps1` (tiling mode, the tasks, the retired lock-screen sync); task code in `activation.ps1` | `uninstall.ps1` section 2 (`Unregister-Autostart`, `Remove-RetiredLockScreenSync`), section 9 (`tiling-mode.txt`) | `doctor.ps1` `mode`, `task:*`, `task:retired`, `tiling`, `lock-screen:old` | `Step=tasks`, `Repair=tiling:<mode>` |
+| tasks | `install.ps1` (tiling mode, the tasks, the retired lock-screen sync); registering them in `activation.ps1`, task plumbing in `tools\lib\tasks.ps1` | `uninstall.ps1` section 2 (`Unregister-Autostart`, `Remove-RetiredLockScreenSync`), section 9 (`tiling-mode.txt`) | `doctor.ps1` `mode`, `task:*`, `task:retired`, `tiling`, `lock-screen:old` | `Step=tasks`, `Repair=tiling:<mode>` |
 | windows (-Activate) | `install.ps1` → `Set-FullTimeWindowsSettings` in `activation.ps1` | `uninstall.ps1` section 2 → `Restore-FullTimeWindowsSettings` | `doctor.ps1` `windows` | `Step=windows` |
 
 ## Pieces without a step of their own
@@ -86,7 +86,18 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | File | What's in it |
 |---|---|
-| `tools\lib\activation.ps1` | Everything below, until it's moved out: printing paths safely (`ConvertTo-SafePath`, `ConvertTo-SafeText`); original-state snapshots (`Save-` / `Get-` / `Remove-OriginalState`, `Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`); `Send-SettingChangeBroadcast`; user env vars (`Get-` / `Set-` / `Remove-UserEnvVar`) and the user PATH (`Add-` / `Remove-UserPathEntry` and their text helpers); the wallpaper (`Set-DesktopWallpaper`, `Get-CurrentWallpaper`, `Save-` / `Restore-OriginalWallpaper`); where the apps are (`Get-KomorebiExe`, `Get-KomorebicExe`, `Get-YasbcExe`, `Get-AhkExe`, `Get-ShareXExe`); Defender; hardening, taskbar auto-hide, the Startup delay and Explorer's restart (with the tray icons kept); full time's Windows settings; scheduled tasks (`New-TaskXml`, `Test-Task`, `Get-TaskFullName`, `Get-ComponentTaskInfo`, `ConvertTo-HiddenLaunch`, `Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`); `Start-AsUser`; shortcuts (`Save-` / `Read-RiceShortcut`); elevation (`Test-IsAdmin`, `Get-ProcessElevation`); the tiling mode; the lock screen's restores; the stack's starts and stops; talking to 710.ahk (`Find-AhkWindow`, `Send-AhkMessage`, `Get-AhkWindowProcessId`); the shell profile hook; Terminal's font helpers and restore; the accent and Flow-theme restores |
+| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: Defender; hardening, taskbar auto-hide, the Startup delay and full time's Windows settings (saved, applied, put back); registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the lock screen's set and restores; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; Terminal's font helpers and restore; the accent and Flow-theme restores |
+| `tools\lib\text.ps1` | Printing paths and names safely: `ConvertTo-SafePath`, `ConvertTo-SafeText` (never a user name), `Join-RiceNameList` |
+| `tools\lib\snapshots.ps1` | The original-state snapshots uninstall puts back (`Save-` / `Get-` / `Remove-OriginalState`), one registry value as a snapshot (`Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`), `Backup-RegistryKey` (reg.exe export to `backups\`) |
+| `tools\lib\userenv.ps1` | User environment variables (`Get-` / `Set-` / `Remove-UserEnvVar`), the user PATH read and written raw (`Add-` / `Remove-UserPathEntry`, `Get-UserPathRaw`, `Test-SamePathEntry`), `Send-SettingChangeBroadcast` |
+| `tools\lib\wallpaper.ps1` | `Set-DesktopWallpaper`, `Get-CurrentWallpaper`, and the wallpaper's own snapshot (`Save-` / `Restore-OriginalWallpaper`) |
+| `tools\lib\apps.ps1` | Where the stack's apps are: `Get-KomorebiExe`, `Get-KomorebicExe`, `Get-YasbcExe`, `Get-AhkExe` (UI Access first), `Get-ShareXExe` |
+| `tools\lib\tasks.ps1` | The task folder (`$script:TaskFolder`), `Get-TaskFullName`, `Test-Task`, `New-TaskXml`, `ConvertTo-HiddenLaunch` (run-hidden.vbs and its launch file), `Get-ComponentTaskInfo`, `Start-AsUser` |
+| `tools\lib\elevation.ps1` | `Test-IsAdmin`, `Get-ProcessElevation` |
+| `tools\lib\ahk.ps1` | Talking to the running 710.ahk: `Find-AhkWindow`, `Send-AhkMessage`, `Send-AhkQuit`, `Get-AhkWindowProcessId` |
+| `tools\lib\shortcuts.ps1` | `Save-RiceShortcut`, `Read-RiceShortcut`, `Get-StartMenuProgramsDir` |
+| `tools\lib\explorer.ps1` | Explorer's one restart (`Restart-Explorer`, `Wait-ExplorerRunning`, `Test-ExplorerShell`) and the tray icons kept around it (`Backup-` / `Restore-TrayIconPromotions`) |
+| `tools\lib\fonts.ps1` | `Get-NerdFontFace`: the JetBrainsMono Nerd Font's face name, as Windows has it registered |
 | `tools\lib\packages.ps1` | `versions.md`'s table, winget's sources and exit codes, `Invoke-WingetAsUser`, the MSI uninstall, the installed-version probes, `Compare-PinVersion`, moving a package to its pin |
 | `tools\lib\components.ps1` | The component loader and the step order (`Get-RiceComponents`, `Get-RiceStepOrder`, `Invoke-RiceComponentPart`, `New-RiceComponentContext`) |
 | `tools\lib\steps.ps1` | install's fixed steps and the named-only ones |

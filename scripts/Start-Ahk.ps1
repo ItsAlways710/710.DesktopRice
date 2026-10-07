@@ -33,7 +33,7 @@ function Write-Log([string]$m) {
 
 # 710.ahk's own window, found by its title: AutoHotkey titles a script's hidden main window
 # "<full script path> - AutoHotkey v2.x" -- the lookup 710sRice uses (Find-AhkWindow,
-# tools\lib\activation.ps1). Until 2026-10-06 any AutoHotkey64 / AutoHotkey64_UIA process
+# tools\lib\ahk.ps1). Until 2026-10-06 any AutoHotkey64 / AutoHotkey64_UIA process
 # counted, so another AutoHotkey v2 script you run kept 710.ahk from starting at all: at
 # sign-in, `710sRice start` and `restart`, and an update's restart of an older 710.ahk. The
 # title finds either build (AutoHotkey64_UIA.exe is what the tasks start, UI Access -- plan doc

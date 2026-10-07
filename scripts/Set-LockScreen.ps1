@@ -45,7 +45,7 @@
   (original-state\lockscreen-signin.json); uninstall puts it back.
 
   Before the FIRST set ever, the original is saved once: the picture Windows reports and the
-  Spotlight / Slideshow settings, in original-state\lockscreen-picture.json (activation.ps1's
+  Spotlight / Slideshow settings, in original-state\lockscreen-picture.json (snapshots.ps1's
   Save-OriginalState path and shape). Every run then writes lockscreen.json -- when, which file
   (its name only), and how it went -- for `710sRice doctor`.
 
@@ -86,7 +86,7 @@ function Write-Utf8File([string]$Path, [string]$Text) {
 }
 
 function Get-RegSnapshot([string]$Path, [string]$Name) {
-    # activation.ps1's Get-RegValueSnapshot, same shape -- Set-RegValueFromSnapshot restores it.
+    # snapshots.ps1's Get-RegValueSnapshot, same shape -- Set-RegValueFromSnapshot restores it.
     $item = Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction SilentlyContinue
     if (-not $item) { return [ordered]@{ Existed = $false; Value = $null; Type = $null } }
     $kind = 'String'

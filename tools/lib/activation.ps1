@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-  Shared functions for install.ps1's unconditional steps and its -Activate block, for
-  uninstall.ps1's matching revert steps, and for `710sRice activate` / `deactivate` (the
-  switch between full time and on demand, 710sRice.ps1). Dot-sourced by all three -- never
-  run directly.
+  The library install.ps1, uninstall.ps1, the 710sRice command's install-side commands and
+  Start-All / Stop-All load: it loads the shared helpers (one small library each, just below)
+  and holds the pieces that haven't moved into modules of their own yet -- docs\map.md says
+  which. Dot-sourced -- never run directly.
 
 .DESCRIPTION
   Ported from winarchy (module/Winarchy/Private/Identity.ps1, Hardening.ps1, Taskbar.ps1,
@@ -37,401 +37,18 @@
 # until something asks.
 if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Join-Path $PSScriptRoot 'components.ps1') }
 
-# --- Paths as they get printed ------------------------------------------------------------
-function ConvertTo-SafePath {
-    # A path as it can be shown on screen: the user's own profile folders as %LOCALAPPDATA% /
-    # %APPDATA% / %USERPROFILE%, never the Windows user name. The repo is public and output
-    # gets pasted into issues -- install's and uninstall's lines, doctor's report, repair's
-    # (which shows install's). Anything outside those folders comes back as it was.
-    param([string]$Path)
-    $out = "$Path"
-    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
-        $dir = [Environment]::GetEnvironmentVariable($v)
-        if ($dir -and $out.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase)) { return "%$v%$($out.Substring($dir.Length))" }
-    }
-    $out
-}
-
-function ConvertTo-SafeText {
-    # ConvertTo-SafePath for a whole message rather than one path: the user's profile folders
-    # ANYWHERE in $Text become %LOCALAPPDATA% / %APPDATA% / %USERPROFILE%, written with either
-    # slash -- git's messages use C:/Users/<name>/... ("detected dubious ownership in repository
-    # at '...'"). The longer folders go first, so %LOCALAPPDATA% wins over %USERPROFILE%; a folder
-    # only matches as a whole (C:\Users\bob never eats part of C:\Users\bobby).
-    param([string]$Text)
-    $out = "$Text"
-    foreach ($v in 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
-        $dir = [Environment]::GetEnvironmentVariable($v)
-        if (-not $dir) { continue }
-        $dir = $dir.TrimEnd('\', '/')
-        foreach ($form in @($dir, ($dir -replace '\\', '/')) | Select-Object -Unique) {
-            $out = [regex]::Replace($out, "$([regex]::Escape($form))(?=[\\/'`"\s:;,)]|$)", "%$v%",
-                                    [Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        }
-    }
-    $out
-}
-
-# --- Registry backup (reg.exe export) -----------------------------------------------
-function Backup-RegistryKey {
-    <# Exports one registry key (reg.exe export format) to backups/<timestamp>-<label>/.
-       Ported from winarchy's Backup-WinarchyRegistryKey (module/Winarchy/Private/Util.ps1
-       @ 4574fc7). Returns the backup dir, or $null if the export failed (key didn't exist,
-       reg.exe not on PATH, etc.) -- callers proceed either way, this is best-effort. #>
-    param([Parameter(Mandatory)][string]$Key, [string]$Label = 'registry')
-    $backupsDir = Join-Path $Root 'backups'
-    if (-not (Test-Path $backupsDir)) { New-Item -ItemType Directory -Path $backupsDir -Force | Out-Null }
-    $dest = Join-Path $backupsDir "$(Get-Date -Format 'yyyyMMdd-HHmmss')-$Label"
-    New-Item -ItemType Directory -Path $dest -Force | Out-Null
-    $file = Join-Path $dest (($Key -replace '[\\:]', '_') + '.reg')
-    $null = reg.exe export $Key $file /y 2>&1
-    if ($LASTEXITCODE -ne 0) { Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue; return $null }
-    $dest
-}
-
-# --- Tray-icon-promotion snapshot (around the Set-TaskbarAutoHide/Set-WindowsHardening
-# double Explorer restart) --------------------------------------------------------------
-function Backup-TrayIconPromotions {
-    <# Snapshots HKCU\Control Panel\NotifyIconSettings -- Windows' own per-app "always
-       show this tray icon" preference store -- via the same reg.exe export mechanism
-       Backup-RegistryKey already uses elsewhere in this file. Set-TaskbarAutoHide and
-       Set-WindowsHardening both force-restart Explorer, and -- confirmed live on Dell,
-       including from a genuinely clean, freshly-rebooted state, not just mid-session
-       churn -- Explorer coming back from a forced kill can reset every app's
-       icon-promotion preference to hidden, not just this repo's own AHK icon. Call this
-       once before either kill; Restore-TrayIconPromotions puts the snapshot back
-       afterward. Returns the backup .reg file's path (for Restore-TrayIconPromotions), or
-       $null if the key doesn't exist yet or the export failed -- best-effort, never
-       blocks the caller. #>
-    $key = 'HKCU\Control Panel\NotifyIconSettings'
-    if (-not (Test-Path 'HKCU:\Control Panel\NotifyIconSettings')) { return $null }
-    $dir = Backup-RegistryKey -Key $key -Label 'tray-icons'
-    if (-not $dir) { return $null }
-    Join-Path $dir (($key -replace '[\\:]', '_') + '.reg')
-}
-
-function Restore-TrayIconPromotions {
-    <# Counterpart to Backup-TrayIconPromotions -- reg.exe import of the file that
-       function returned, putting back whatever Explorer's own restart(s) reset in every
-       app's tray-icon-promotion preference. Call after Explorer is confirmed back up from
-       the LAST of the two kills (Wait-ExplorerRunning), not right after the second
-       Stop-Process call -- reg.exe import needs Explorer actually running to pick the
-       change up live. Best-effort: a missing/null backup path (Backup-TrayIconPromotions
-       returned $null, or was never called) is a silent no-op. #>
-    param([string]$BackupFile)
-    if (-not $BackupFile -or -not (Test-Path $BackupFile)) { return }
-    $null = & reg.exe import $BackupFile 2>&1
-}
-
-# --- Original-state snapshots (true "restore to before 710.DesktopRice" on uninstall) --
-# Different problem from Backup-RegistryKey above and from the hardening/taskbar revert
-# pattern further down: those settings don't exist on a stock Windows install, so
-# reverting them just means deleting the value. Wallpaper, accent color, the lock screen,
-# and Windows Terminal's default shell/colorScheme are NOT like that -- something was
-# already there before 710.DesktopRice ever touched it, and a real uninstall needs to put
-# that exact something back, not just remove what we added. These functions snapshot
-# whatever's about to change, exactly ONCE (gated on the snapshot not already existing --
-# a second, third, Nth install.ps1/wallpaper-change run never overwrites an earlier
-# snapshot with what is by then already OUR OWN state), into
-# %LOCALAPPDATA%\710.DesktopRice\original-state\<label>.json -- machine-local, outside the
-# repo entirely, same convention as this repo's autostart logs
-# (%LOCALAPPDATA%\710.DesktopRice\*-autostart.log). uninstall.ps1 restores from these and
-# deletes each snapshot file once it's been used, so a future re-install starts clean and
-# snapshots fresh again rather than restoring an increasingly stale state.
-#
-# tools\apply-wallust-outputs.ps1 needs this SAME path convention and JSON shape but
-# deliberately doesn't dot-source this file (stays dependency-free -- see its own header),
-# so it carries a small duplicated copy of Save-OriginalState/Get-RegValueSnapshot rather
-# than calling these. Keep both copies in sync if this shape ever changes.
-function Get-OriginalStateDir {
-    $dir = Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state'
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $dir
-}
-
-function Save-OriginalState {
-    <# One-time snapshot: writes <label>.json only if it doesn't already exist. $Data is
-       whatever the caller wants restored later -- typically a small hashtable of exactly
-       the field(s) about to change, not the whole surrounding file/key. #>
-    param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)]$Data)
-    $file = Join-Path (Get-OriginalStateDir) "$Label.json"
-    if (Test-Path $file) { return }
-    $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $file -Encoding UTF8
-}
-
-function Get-OriginalState {
-    <# Returns the snapshotted hashtable for $Label, or $null if it was never taken --
-       callers treat $null as "nothing to restore" (this machine's install never actually
-       reached the point of changing this setting), a safe no-op, not a warning. #>
-    param([Parameter(Mandatory)][string]$Label)
-    $file = Join-Path (Get-OriginalStateDir) "$Label.json"
-    if (-not (Test-Path $file)) { return $null }
-    Get-Content $file -Raw | ConvertFrom-Json -AsHashtable
-}
-
-function Remove-OriginalState {
-    param([Parameter(Mandatory)][string]$Label)
-    Remove-Item (Join-Path (Get-OriginalStateDir) "$Label.json") -Force -ErrorAction SilentlyContinue
-}
-
-function Get-RegValueSnapshot {
-    <# One registry value's current Existed/Value/Type (Value/Type both $null if absent) --
-       the unit Save-OriginalState snapshots and Set-RegValueFromSnapshot restores, for a
-       SINGLE named value, never a whole key -- so restoring never clobbers an unrelated
-       sibling value under the same key that changed for some other reason in between
-       (e.g. HKCU\Control Panel\Desktop holds a lot more than just WallPaper). #>
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Name)
-    $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
-    if (-not $item) { return [ordered]@{ Existed = $false; Value = $null; Type = $null } }
-    $kind = 'String'
-    try { $kind = (Get-Item -Path $Path).GetValueKind($Name).ToString() } catch { }
-    [ordered]@{ Existed = $true; Value = $item.$Name; Type = $kind }
-}
-
-function Set-RegValueFromSnapshot {
-    <# Restores one value from a Get-RegValueSnapshot-shaped hashtable: sets it back if it
-       existed before, removes it entirely if it didn't (matching how the hardening revert
-       already treats "never existed" -- hand it back to Windows' own default). #>
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)]$Snapshot)
-    if (-not $Snapshot.Existed) {
-        Remove-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
-    } else {
-        if (-not (Test-Path $Path)) { $null = New-Item -Path $Path -Force }
-        Set-ItemProperty -Path $Path -Name $Name -Value $Snapshot.Value -Type $Snapshot.Type -ErrorAction SilentlyContinue
-    }
-}
-
-function Send-SettingChangeBroadcast {
-    <# HWND_BROADCAST + WM_SETTINGCHANGE(<Area>), SMTO_ABORTIFHUNG. The default area,
-       "ImmersiveColorSet", makes an accent-color change apply live, no logoff/restart.
-       "Environment" tells Explorer to rebuild its environment block from the registry, so
-       whatever it launches next (a new Terminal from Start, the Run dialog) sees a changed
-       user PATH -- the user-PATH helpers below send that one. Ported inline from
-       tools\apply-wallust-outputs.ps1's own copy of this P/Invoke (that script keeps its
-       own -- see this file's header note above -- this copy is for Restore-WindowsAccent,
-       called from uninstall.ps1, which already dot-sources this file). #>
-    param([string]$Area = 'ImmersiveColorSet')
-    if (-not ('TenSeven.Native.SettingChange' -as [type])) {
-        Add-Type -Namespace TenSeven.Native -Name SettingChange -MemberDefinition @'
-[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
-'@
-    }
-    $result = [UIntPtr]::Zero
-    [TenSeven.Native.SettingChange]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, $Area, 2, 1000, [ref]$result) | Out-Null
-}
-
-# --- User environment variables ---------------------------------------------------------------
-# (Not PATH: that one is read and written raw -- see below.)
-function Get-UserEnvVar {
-    # A variable as registered for the user (what a new window gets).
-    param([Parameter(Mandatory)][string]$Name)
-    [Environment]::GetEnvironmentVariable($Name, 'User')
-}
-
-function Remove-UserEnvVar {
-    # Gone from the user's registered variables and from this process.
-    param([Parameter(Mandatory)][string]$Name)
-    [Environment]::SetEnvironmentVariable($Name, $null, 'User')
-    Remove-Item -Path "env:$Name" -ErrorAction SilentlyContinue
-}
-
-function Set-UserEnvVar {
-    # Registered for the user (new windows and tasks get it; .NET tells Explorer) and set in this
-    # process too.
-    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Value)
-    [Environment]::SetEnvironmentVariable($Name, $Value, 'User')
-    Set-Item -Path "env:$Name" -Value $Value
-}
-
-# --- User PATH: the 710sRice command -------------------------------------------------------
-# install.ps1 puts <repo>\bin on the user PATH (bin\ holds exactly one file, 710sRice.cmd);
-# uninstall.ps1 takes it off again. Doctor can use the same helpers later.
-#
-# The user Path is read and written RAW. GetValue(..., DoNotExpandEnvironmentNames) hands back
-# entries like %USERPROFILE%\AppData\Local\Microsoft\WindowsApps exactly as stored, and the
-# write goes back as REG_EXPAND_SZ, so they keep expanding. The obvious one-liner --
-# [Environment]::Get/SetEnvironmentVariable('Path', ..., 'User') -- returns the values
-# already expanded and writes REG_SZ, freezing every %VAR% entry into a fixed path for good.
-# winarchy's install.ps1 (section 3) and uninstall.ps1 do exactly that. Not here.
-#
-# The text work is split out as plain string functions (Add-PathEntryToText,
-# Remove-PathEntryFromText) so it can be tested anywhere; only Get-/Set-UserPathRaw touch the
-# registry.
-
-function Test-SamePathEntry {
-    <# $Entry (a raw PATH entry, %VARS% and all) names the same folder as $Dir: both expanded,
-       surrounding quotes/blanks and a trailing \ dropped, case ignored. Deliberately NOT a
-       substring match -- C:\710.DesktopRice\bin-old is not C:\710.DesktopRice\bin. #>
-    param([string]$Entry, [Parameter(Mandatory)][string]$Dir)
-    if ([string]::IsNullOrWhiteSpace($Entry)) { return $false }
-    $a = [Environment]::ExpandEnvironmentVariables($Entry.Trim().Trim('"')).TrimEnd('\')
-    $b = [Environment]::ExpandEnvironmentVariables($Dir.Trim().Trim('"')).TrimEnd('\')
-    [string]::Equals($a, $b, [StringComparison]::OrdinalIgnoreCase)
-}
-
-function Add-PathEntryToText {
-    <# $Raw with $Dir appended, or $null when $Dir is already in it. Every existing entry --
-       order, %VARS%, empty slots, a trailing ; -- stays exactly as written, so removing $Dir
-       again gives back the original text byte for byte. #>
-    param([AllowEmptyString()][AllowNull()][string]$Raw, [Parameter(Mandatory)][string]$Dir)
-    foreach ($entry in ("$Raw" -split ';')) { if (Test-SamePathEntry $entry $Dir) { return $null } }
-    if ([string]::IsNullOrEmpty($Raw)) { return $Dir }
-    if ($Raw.EndsWith(';')) { return "$Raw$Dir;" }
-    "$Raw;$Dir"
-}
-
-function Remove-PathEntryFromText {
-    <# $Raw minus every entry naming $Dir (a duplicate goes too), or $null when none did.
-       Everything else -- order, %VARS%, empty slots, a trailing ; -- stays exactly as
-       written. Returns '' when $Dir was the only entry. #>
-    param([AllowEmptyString()][AllowNull()][string]$Raw, [Parameter(Mandatory)][string]$Dir)
-    $parts = "$Raw" -split ';'
-    $kept = @($parts | Where-Object { -not (Test-SamePathEntry $_ $Dir) })
-    if ($kept.Count -eq $parts.Count) { return $null }
-    $kept -join ';'
-}
-
-function Get-UserPathRaw {
-    <# The user Path exactly as stored (%VARS% unexpanded); '' when there isn't one. #>
-    (Get-Item -Path 'HKCU:\Environment').GetValue('Path', '', 'DoNotExpandEnvironmentNames')
-}
-
-function Set-UserPathRaw {
-    <# Writes the user Path back as REG_EXPAND_SZ (Windows' own type for it) -- or removes the
-       value when nothing is left -- then tells Explorer. #>
-    param([AllowEmptyString()][string]$Raw)
-    if ($Raw) {
-        Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value $Raw -Type ExpandString
-    } else {
-        Remove-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -ErrorAction SilentlyContinue
-    }
-    Send-SettingChangeBroadcast -Area 'Environment'
-}
-
-function Add-UserPathEntry {
-    <# Puts $Dir on the user PATH if it isn't there yet (appended last) and on this process's
-       PATH too, so it works in the window that ran install. $true if the registry changed. #>
-    param([Parameter(Mandatory)][string]$Dir)
-    if (-not @(("$env:Path" -split ';') | Where-Object { Test-SamePathEntry $_ $Dir })) {
-        $env:Path = "$("$env:Path".TrimEnd(';'));$Dir"
-    }
-    $new = Add-PathEntryToText -Raw (Get-UserPathRaw) -Dir $Dir
-    if ($null -eq $new) { return $false }
-    Set-UserPathRaw -Raw $new
-    $true
-}
-
-function Remove-UserPathEntry {
-    <# Takes every entry naming $Dir off the user PATH, and off this process's PATH. Nothing
-       matched = no write at all (the value and its type stay untouched). $true if the
-       registry changed. #>
-    param([Parameter(Mandatory)][string]$Dir)
-    $env:Path = @(("$env:Path" -split ';') | Where-Object { -not (Test-SamePathEntry $_ $Dir) }) -join ';'
-    $new = Remove-PathEntryFromText -Raw (Get-UserPathRaw) -Dir $Dir
-    if ($null -eq $new) { return $false }
-    Set-UserPathRaw -Raw $new
-    $true
-}
-
-function Set-DesktopWallpaper {
-    <# SPI_SETDESKWALLPAPER=0x0014, SPIF_UPDATEINIFILE|SPIF_SENDCHANGE=0x03 -- writes
-       HKCU\Control Panel\Desktop\WallPaper and applies live, no logoff/restart needed.
-       Shared by install.ps1 Section 4 (sets the first-run default) and
-       Restore-OriginalWallpaper below (sets it back to whatever was there before). #>
-    param([Parameter(Mandatory)][string]$Path)
-    if (-not ('TenSeven.Native.Wallpaper' -as [type])) {
-        Add-Type -Namespace TenSeven.Native -Name Wallpaper -MemberDefinition @'
-[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, string pvParam, uint fWinIni);
-'@
-    }
-    $ok = [TenSeven.Native.Wallpaper]::SystemParametersInfo(0x0014, 0, $Path, 0x03)
-    if (-not $ok) { throw "SystemParametersInfo returned false (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
-}
-
-function Get-CurrentWallpaper {
-    <# The desktop wallpaper that's up now: HKCU\Control Panel\Desktop\WallPaper -- the value
-       both SystemParametersInfo (Set-DesktopWallpaper) and the IDesktopWallpaper COM API
-       that YASB's wallpaper widget uses keep current. scripts\Set-LockScreen.ps1 reads the
-       same value when it isn't handed a picture. $null when none is set. Used by install's
-       palette and tasks steps. #>
-    (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue).WallPaper
-}
-
-function Save-OriginalWallpaper {
-    <# One-time snapshot of the wallpaper as it stood before install.ps1 Section 4 ever
-       set the repo's default -- called from there, right before the first Set-
-       DesktopWallpaper call. #>
-    Save-OriginalState -Label 'wallpaper' -Data (Get-RegValueSnapshot -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper')
-}
-
-function Restore-OriginalWallpaper {
-    <# Reverts Save-OriginalWallpaper -- called from uninstall.ps1. $null from Get-
-       OriginalState means install.ps1 never actually reached Section 4's wallpaper-setting
-       branch on this machine (already using one of the repo's own wallpapers, or the
-       default image was missing) -- safe no-op, not a warning. #>
-    $snap = Get-OriginalState -Label 'wallpaper'
-    if (-not $snap) { return $false }
-    if ($snap.Existed -and $snap.Value) {
-        Set-DesktopWallpaper -Path $snap.Value
-    }
-    Remove-OriginalState -Label 'wallpaper'
-    return $true
-}
-
-# --- Component discovery (shared by Defender exclusions + autostart) ----------------
-function Get-KomorebiExe {
-    $found = (Get-Command komorebi.exe -ErrorAction SilentlyContinue)?.Source
-    if (-not $found) {
-        $found = @("$env:ProgramFiles\komorebi\bin\komorebi.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
-    }
-    $found
-}
-
-function Get-KomorebicExe {
-    <# komorebic.exe: next to the installed komorebi.exe first, then PATH; $null when neither.
-       A window opened before the install doesn't have komorebi on its PATH, and uninstall never
-       re-read it -- so `komorebic stop` was skipped and komorebi only force-killed, which leaves
-       the windows it had cloaked on other workspaces invisible (base.json's
-       window_hiding_behaviour Cloak; its own stop is what restores them). winarchy ca66652,
-       Group 1 W6. Used by Stop-RunningComponents and Stop-PinnedApp. #>
-    $komorebi = Get-KomorebiExe
-    if ($komorebi) {
-        $next = Join-Path (Split-Path -Parent $komorebi) 'komorebic.exe'
-        if (Test-Path -LiteralPath $next) { return $next }
-    }
-    (Get-Command komorebic.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
-}
-
-function Get-YasbcExe {
-    <# yasbc.exe (YASB's CLI): next to the installed yasb.exe first (winget puts both in
-       Program Files\YASB), then PATH; $null when neither. Same reason as Get-KomorebicExe. #>
-    $next = Join-Path "$env:ProgramFiles" 'YASB\yasbc.exe'
-    if ($env:ProgramFiles -and (Test-Path -LiteralPath $next)) { return $next }
-    (Get-Command yasbc.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
-}
-
-function Get-AhkExe {
-    <# AutoHotkey v2, per-machine or per-user; $null if not installed. Prefers the UI Access
-       build (AutoHotkey64_UIA.exe) so 710.ahk's hotkeys still reach an admin window that has
-       focus -- without running AHK itself elevated, which would make everything it launches
-       elevated too (plan doc, Open item 36). The UIA exe only exists (and only works) in a
-       Program Files install -- AutoHotkey's installer creates and signs it there -- so a
-       per-user install falls through to the plain exe, same as before. #>
-    $found = @(
-        "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64_UIA.exe",
-        "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
-        "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
-    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if (-not $found) { $found = (Get-Command AutoHotkey64.exe -ErrorAction SilentlyContinue)?.Source }
-    $found
-}
-
-function Get-ShareXExe {
-    @("$env:ProgramFiles\ShareX\ShareX.exe", "${env:ProgramFiles(x86)}\ShareX\ShareX.exe") |
-        Where-Object { Test-Path $_ } | Select-Object -First 1
-}
+# The shared helpers, one small library each (docs\map.md says what's in each).
+. (Join-Path $PSScriptRoot 'text.ps1')
+. (Join-Path $PSScriptRoot 'snapshots.ps1')
+. (Join-Path $PSScriptRoot 'userenv.ps1')
+. (Join-Path $PSScriptRoot 'wallpaper.ps1')
+. (Join-Path $PSScriptRoot 'apps.ps1')
+. (Join-Path $PSScriptRoot 'tasks.ps1')
+. (Join-Path $PSScriptRoot 'elevation.ps1')
+. (Join-Path $PSScriptRoot 'ahk.ps1')
+. (Join-Path $PSScriptRoot 'shortcuts.ps1')
+. (Join-Path $PSScriptRoot 'explorer.ps1')
+. (Join-Path $PSScriptRoot 'fonts.ps1')
 
 # --- Windows Defender exclusions (unconditional -- not gated behind -Activate) ------
 function Get-DefenderExclusionPaths {
@@ -608,129 +225,6 @@ function Get-HardeningSettings {
         $settings += , @($cdm, $name, 0)
     }
     $settings
-}
-
-function Wait-ExplorerRunning {
-    <# Waits for Explorer's real shell (the taskbar) to actually be back up before some
-       other step force-kills it a second time. Exists because Set-TaskbarAutoHide and
-       Set-WindowsHardening both restart Explorer when they change something, and both
-       install.ps1 -Activate and uninstall.ps1 call them back-to-back (taskbar, then
-       hardening) with no gap in between -- confirmed live on Dell to leave the desktop,
-       taskbar and icons completely blank until a manual Explorer restart or a full
-       reboot, because the second kill lands while Windows is still bringing the first
-       kill's replacement process back up.
-       FIRST version of this fix (commit 3b6d3f0) only checked Get-Process explorer --
-       NOT enough, confirmed live on Dell a second time (uninstall-run-2, 2026-09-23): a
-       process named explorer.exe shows up in the process table almost immediately after
-       Windows respawns it, well before Explorer has actually finished initializing and
-       created its shell windows. The second kill still landed in that gap and reproduced
-       the identical blank-desktop symptom this function exists to prevent. Now checks for
-       the real taskbar window (class Shell_TrayWnd, via FindWindow) instead of just the
-       process -- that handle only exists once Explorer has genuinely finished standing
-       the shell back up, not merely once a process object exists.
-       Polls rather than a fixed sleep, same reasoning as scripts\Start-Komorebi.ps1's own
-       wait-with-time-budget: however long Explorer actually takes to come back (which
-       varies), never longer, never less. Falls through after the timeout even if the
-       taskbar never reappears -- best-effort, same posture as every other step in this
-       file; the caller's own kill still happens either way, just no longer guaranteed to
-       land on an already-healthy shell. #>
-    param([int]$TimeoutSeconds = 10)
-    if (-not ('Win32Shell.NativeMethods' -as [type])) {
-        Add-Type -Namespace Win32Shell -Name NativeMethods -MemberDefinition @'
-            [DllImport("user32.dll", CharSet = CharSet.Auto)]
-            public static extern System.IntPtr FindWindow(string lpClassName, string lpWindowName);
-'@
-    }
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ([Win32Shell.NativeMethods]::FindWindow('Shell_TrayWnd', $null) -eq [IntPtr]::Zero) {
-        if ((Get-Date) -ge $deadline) { return }
-        Start-Sleep -Milliseconds 200
-    }
-}
-
-function Test-ExplorerShell {
-    # True once Explorer's real shell (the taskbar window) exists -- see Wait-ExplorerRunning.
-    if (-not ('Win32Shell.NativeMethods' -as [type])) {
-        Add-Type -Namespace Win32Shell -Name NativeMethods -MemberDefinition @'
-            [DllImport("user32.dll", CharSet = CharSet.Auto)]
-            public static extern System.IntPtr FindWindow(string lpClassName, string lpWindowName);
-'@
-    }
-    [Win32Shell.NativeMethods]::FindWindow('Shell_TrayWnd', $null) -ne [IntPtr]::Zero
-}
-
-function Restart-Explorer {
-    <# The ONE Explorer restart for install -Activate / uninstall / `710sRice activate` /
-       `deactivate` (taskbar auto-hide + hardening both need it; Set-FullTimeWindowsSettings
-       and Restore-FullTimeWindowsSettings run this once if either changed something). Kills
-       Explorer, then waits for Windows (Winlogon's AutoRestartShell) to bring the shell
-       back. If it hasn't within the wait, starts it -- through a one-shot LeastPrivilege
-       scheduled task, never straight from this shell: install/uninstall run elevated, and
-       an Explorer started from an elevated process can come up elevated, which would make
-       everything launched from Start/the taskbar elevated (same trap as the admin-AHK
-       incident). Returns $true if the shell is back. Added 2026-09-24 after the full
-       reinstall test left the desktop blank: Winlogon had restarted the shell after the
-       first of two back-to-back kills and didn't after the second. #>
-    param([int]$WaitSeconds = 15)
-    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 500
-    Wait-ExplorerRunning -TimeoutSeconds $WaitSeconds
-    if (Test-ExplorerShell) { return $true }
-
-    $task = Get-TaskFullName -TaskName 'restart-explorer'
-    $null = & schtasks.exe /Create /TN $task /TR "$env:WINDIR\explorer.exe" /SC ONCE /ST 23:59 /RL LIMITED /F 2>&1
-    $null = & schtasks.exe /Run /TN $task 2>&1
-    Wait-ExplorerRunning -TimeoutSeconds $WaitSeconds
-    $null = & schtasks.exe /Delete /TN $task /F 2>&1
-    Test-ExplorerShell
-}
-
-function Start-AsUser {
-    <# Starts an app as the signed-in user, NOT elevated, from an elevated install / uninstall /
-       repair (Group 1 #12's rule: a component never starts an app from there itself -- it
-       would run as admin, like the "ShareX running as admin" doctor already flags). The same
-       trick as Restart-Explorer and Invoke-WingetAsUser: a one-shot task, here written with
-       New-TaskXml (LeastPrivilege, interactive, Normal priority -- a plain `schtasks /SC ONCE`
-       task starts its process BelowNormal, and the app would keep that), fired, then deleted
-       once the app has started (deleting a task leaves the process it started running).
-       -Process: the process name to wait for -- a NEW one (a copy already running doesn't
-       count); without it, it waits for Task Scheduler to report the task started.
-       Returns $true once the app has started, $false if it didn't within -TimeoutSeconds
-       (or the task couldn't be made). Never throws for a start that didn't happen. #>
-    param([Parameter(Mandatory)][string]$Exe, [string]$Arguments = '', [string]$Process,
-          [string]$Name, [int]$TimeoutSeconds = 15)
-    if (-not $Name) { $Name = if ($Process) { $Process } else { [System.IO.Path]::GetFileNameWithoutExtension($Exe) } }
-    $taskName = 'as-user-' + (($Name.ToLowerInvariant() -replace '[^a-z0-9-]+', '-').Trim('-'))
-    $task = Get-TaskFullName -TaskName $taskName
-    $before = if ($Process) { @(Get-Process -Name $Process -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }) } else { @() }
-    $xmlPath = Join-Path ([System.IO.Path]::GetTempPath()) "710-task-$taskName.xml"
-    try {
-        $spec = [pscustomobject]@{ Key = $taskName; Exe = $Exe; Arguments = $Arguments; Delay = 'PT0S' }
-        Set-Content -Path $xmlPath -Value (New-TaskXml -Component $spec -User "$env:USERDOMAIN\$env:USERNAME" -NoTrigger) -Encoding Unicode
-        $null = & schtasks.exe /Create /TN $task /XML $xmlPath /F 2>&1
-        if ($LASTEXITCODE -ne 0) { return $false }
-        $null = & schtasks.exe /Run /TN $task 2>&1
-        if ($LASTEXITCODE -ne 0) { return $false }
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        while ($true) {
-            if ($Process) {
-                if (@(Get-Process -Name $Process -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id }).Count) { return $true }
-            } else {
-                # LastTaskResult reads 0x41303 ("has not yet run") until Task Scheduler starts it
-                # (see Invoke-WingetAsUser). Where the ScheduledTasks module can't be read, a
-                # short wait stands in.
-                $result = $null
-                try { $result = (Get-ScheduledTaskInfo -TaskPath "\$script:TaskFolder\" -TaskName $taskName -ErrorAction Stop).LastTaskResult } catch { }
-                if ($null -eq $result) { Start-Sleep -Seconds 2; return $true }
-                if ($result -ne 0x41303) { return $true }
-            }
-            if ((Get-Date) -ge $deadline) { return $false }
-            Start-Sleep -Milliseconds 250
-        }
-    } finally {
-        $null = & schtasks.exe /Delete /TN $task /F 2>&1
-        Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
-    }
 }
 
 function Set-WindowsHardening {
@@ -1144,85 +638,6 @@ function Restore-FullTimeWindowsSettings {
 }
 
 # --- Autostart: Scheduled Tasks At-LogOn (-Activate-gated) ---------------------------
-# schtasks.exe (native), not the ScheduledTasks module: that module's CIM/MI subsystem is
-# broken on some machines ("type initializer for 'Microsoft.Management.Infrastructure.
-# Native...'"). schtasks.exe never touches that layer. Ported from winarchy's Autostart.ps1
-# @ 4574fc7.
-$script:TaskFolder = '710.DesktopRice'
-
-function ConvertTo-HiddenLaunch {
-    <# Rewraps an Exe/Arguments pair so the Scheduled Task launches it via
-       tools\lib\run-hidden.vbs (WScript.Shell.Run, windowStyle 0) instead of directly. Used
-       by the component tasks (Get-AutostartComponents). (The elevated lock-screen-sync task
-       started this way too, 2026-09-27 until it was retired on 09-28: Remove-RetiredLockScreenSync.)
-
-       Why: Task Scheduler launching a console-subsystem host (powershell.exe) directly
-       with -WindowStyle Hidden still briefly flashes a console at every logon -- confirmed
-       live on Dell, 3-4 flashes at boot (one per powershell-hosted autostart component
-       below). Windows allocates the console as part of process creation, before
-       PowerShell's own startup code has run far enough to read -WindowStyle and hide
-       itself -- a well-documented Task Scheduler + PowerShell race, not specific to this
-       repo. wscript.exe (unlike cscript.exe) never allocates a console at all, so there's
-       nothing to flash; its WScript.Shell.Run requests the hidden window style up front,
-       as part of creating the process, not as a hide-after-the-fact race. See
-       run-hidden.vbs's own header for the full writeup, including why this is NOT the same
-       technique winarchy tried and reverted for komorebi (`conhost --headless`, git log
-       d52e515/f088211 -- that killed the child process outright when its detached host
-       exited; this script doesn't host/attach the child's console at all).
-
-       Real bug found and fixed 2026-09-23: the original version tried to carry Exe/
-       Arguments on run-hidden.vbs's own command line, backslash-escaping embedded double
-       quotes ("same convention Win32 command-line parsing already uses"). That assumption
-       was never actually verified against WSH's real parser and was wrong -- confirmed
-       live via a real run-hidden.log entry plus a byte-exact `od -c` dump: WSH's
-       command-line parser does NOT support backslash-escaped quotes; `\"` comes through as
-       a literal backslash plus an ORDINARY (unescaped) quote-toggle, not a literal `"`. A
-       quoted -File path arrived at powershell.exe mangled
-       (`\C:\710.DesktopRice\...\Start-Komorebi.ps1\` -- stray leading/trailing backslashes,
-       no quotes at all), which powershell.exe can't resolve as a path -- it failed
-       silently, every time this ran for real, including the very scheduled runs this
-       feature was supposedly validated against. Task Scheduler still reported Last Result
-       0 (that's wscript.exe's own exit code, unaffected -- see run-hidden.vbs's header) and
-       the launched script never got far enough to write even its first log line, so this
-       had no visible symptom other than "komorebi just isn't running" after logon.
-
-       Fixed by not putting Exe/Arguments on run-hidden.vbs's command line at all: they're
-       written to a small two-line plain-text spec file instead (line 1 = Exe, line 2 =
-       Arguments, exactly as originally composed, no escaping needed), and only that file's
-       own path -- a plain, quote-free, backslash-free-at-the-end Windows path -- is passed
-       as run-hidden.vbs's one argument. This sidesteps WSH's command-line parsing for the
-       payload entirely; nothing about it needs to be "quoted correctly" for WSH anymore.
-       Written once here, at registration/-Activate time; read fresh by run-hidden.vbs on
-       every actual fire, including ones long after this PowerShell process has exited (a
-       reboot days later, etc.), so it has to be static/persistent, not a live variable --
-       same %LOCALAPPDATA%\710.DesktopRice\ folder every other autostart log/state file
-       already lives in. #>
-    # -NoWrite: work out the same answer without writing the spec file -- `710sRice doctor`
-    # compares it with the registered task and the file on disk, and writes nothing.
-    param(
-        [Parameter(Mandatory)][string]$Key,
-        [Parameter(Mandatory)][string]$Exe,
-        [Parameter(Mandatory)][string]$Arguments,
-        [switch]$NoWrite
-    )
-    $wscript = Join-Path $env:WINDIR 'System32\wscript.exe'
-    $vbs = Join-Path $Root 'tools\lib\run-hidden.vbs'
-    $specDir = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
-    $spec = Join-Path $specDir "launch-$Key.txt"
-    if (-not $NoWrite) {
-        New-Item -ItemType Directory -Path $specDir -Force | Out-Null
-        # ASCII, no BOM -- every value written here is a plain Windows path or powershell.exe
-        # flag, so there's nothing here that needs Unicode; a BOM would otherwise land as a
-        # stray leading character on run-hidden.vbs's own ForReading (ASCII/ANSI) ReadLine.
-        Set-Content -LiteralPath $spec -Value @($Exe, $Arguments) -Encoding ASCII
-    }
-    [pscustomobject]@{
-        Exe       = $wscript
-        Arguments = "//B `"$vbs`" `"$spec`""
-        Spec      = $spec
-        SpecLines = @($Exe, $Arguments)
-    }
-}
 
 function Get-AutostartComponents {
     <# The parts of the stack that start through a Scheduled Task of their own: komorebi and
@@ -1400,14 +815,6 @@ function Get-RetiredStartTasks {
     )
 }
 
-function Join-RiceNameList {
-    # 'a', 'a and b', 'a, b and c'.
-    param([string[]]$Names)
-    $n = @($Names | Where-Object { $_ })
-    if ($n.Count -le 1) { return "$($n -join '')" }
-    "$(@($n | Select-Object -SkipLast 1) -join ', ') and $($n[-1])"
-}
-
 function Remove-RetiredStartTasks {
     <# Retires the bar's, Flow's and ShareX's old tasks (Get-RetiredStartTasks), their Startup
        shortcuts and the bar's launch-yasb.txt, wherever they're still here. Called by install's
@@ -1535,34 +942,6 @@ function Request-RetiredAppsRestart {
     }
 }
 
-function Get-TaskFullName {
-    param([Parameter(Mandatory)][string]$TaskName)
-    "\$script:TaskFolder\$TaskName"
-}
-
-function Test-Task {
-    <# -AtLogOn: only a task that actually starts at sign-in counts. That's what "this
-       machine is -Activate'd" means -- an on-demand install has a task for every
-       component too (Register-OnDemandTasks, no trigger), and without this check a later
-       plain install.ps1 would read them as "autostart is active" and quietly register
-       everything to start at sign-in (plan doc Open item 37). #>
-    param([Parameter(Mandatory)][string]$TaskName, [switch]$AtLogOn)
-    # $null = ... 2>&1 (capture-and-discard), not *> $null (redirect-and-discard): the
-    # latter doesn't fully suppress schtasks.exe's own "ERROR: ..." text for a genuinely
-    # missing task -- found live tonight when toolspply-wallust-outputs.ps1's own copy
-    # of this exact check (same *> $null) leaked that text to the console the first time
-    # all night it ever queried a task that truly didn't exist yet. Every earlier call to
-    # this function happened to query a task that already existed, so the leak was never
-    # actually exercised here until now.
-    $full = Get-TaskFullName -TaskName $TaskName
-    if ($AtLogOn) {
-        $xml = & schtasks.exe /Query /TN $full /XML 2>&1
-        return ($LASTEXITCODE -eq 0) -and (($xml -join "`n") -match '<LogonTrigger>')
-    }
-    $null = & schtasks.exe /Query /TN $full 2>&1
-    $LASTEXITCODE -eq 0
-}
-
 function Remove-StartupShortcuts {
     $startup = [Environment]::GetFolderPath('Startup')
     Remove-Item (Join-Path $startup '710.DesktopRice *.lnk') -Force -ErrorAction SilentlyContinue
@@ -1577,102 +956,6 @@ function New-StartupShortcut {
     $lnk.TargetPath = $Component.Exe
     $lnk.Arguments = $Component.Arguments
     $lnk.Save()
-}
-
-function Get-StartMenuProgramsDir {
-    # Your Start menu's Programs folder (what Flow Launcher's Program plugin indexes). The
-    # shell's answer, or its usual place when it has none.
-    $sm = [Environment]::GetFolderPath('StartMenu')
-    if (-not $sm) { $sm = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu' }
-    Join-Path $sm 'Programs'
-}
-
-function Save-RiceShortcut {
-    <# Writes a .lnk (WScript.Shell): target, arguments, working folder, icon, description. #>
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Target, [string]$Arguments = '',
-          [string]$WorkingDirectory = '', [string]$Icon = '', [string]$Description = '')
-    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($Path)
-    $lnk.TargetPath = $Target
-    $lnk.Arguments = $Arguments
-    $lnk.WorkingDirectory = $WorkingDirectory
-    if ($Icon) { $lnk.IconLocation = $Icon }
-    $lnk.Description = $Description
-    $lnk.Save()
-}
-
-function Read-RiceShortcut {
-    <# A .lnk's target, arguments, working folder, icon and description; $null if it isn't there
-       or can't be read. #>
-    param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    try {
-        $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($Path)
-        [pscustomobject]@{ Target = $lnk.TargetPath; Arguments = $lnk.Arguments; WorkingDirectory = $lnk.WorkingDirectory; Icon = $lnk.IconLocation; Description = $lnk.Description }
-    } catch { $null }
-}
-
-function New-TaskXml {
-    <# At-LogOn trigger (per-component Delay), InteractiveToken + LeastPrivilege principal
-       (no elevation, interactive session only), IgnoreNew multiple-instances policy, no
-       execution time limit, Normal priority. Ported from New-WinarchyTaskXml.
-       <Priority>4</Priority> ported from winarchy 2d8c910 (v1.5.0): Task Scheduler's
-       default is 7, which starts the task's process at BelowNormal -- and Windows hands
-       BelowNormal down to child processes that don't ask for a class, so through our
-       wscript -> powershell -> launcher chain komorebi/YASB/AHK all came up BelowNormal
-       (winarchy saw delayed retiles under load from exactly this). 4 = Normal. #>
-    # -RunLevel HighestAvailable: komorebi in elevated tiling mode (Get-KomorebiRunLevel).
-    # -NoTrigger: an on-demand task that never fires on its own -- Start-All.ps1 and
-    # reload-stack.ps1 fire it (Register-OnDemandTasks), Start-AsUser runs its one-shot.
-    # Labelled "on demand" rather than "autostart" in Task Scheduler, so the list doesn't lie.
-    param([Parameter(Mandatory)][object]$Component, [Parameter(Mandatory)][string]$User,
-          [ValidateSet('LeastPrivilege', 'HighestAvailable')][string]$RunLevel = 'LeastPrivilege',
-          [switch]$NoTrigger)
-    $u = [System.Security.SecurityElement]::Escape($User)
-    $cmd = [System.Security.SecurityElement]::Escape($Component.Exe)
-    # No arguments = no <Arguments> element (a GUI exe may take none -- Start-AsUser's Flow).
-    $argLine = if ("$($Component.Arguments)") { "`n      <Arguments>$([System.Security.SecurityElement]::Escape($Component.Arguments))</Arguments>" } else { '' }
-    $delay = if ($Component.Delay) { $Component.Delay } else { 'PT0S' }
-    $label = if ($NoTrigger) { 'on demand' } else { 'autostart' }
-    $triggers = if ($NoTrigger) { '  <Triggers />' } else { @"
-  <Triggers>
-    <LogonTrigger>
-      <Enabled>true</Enabled>
-      <UserId>$u</UserId>
-      <Delay>$delay</Delay>
-    </LogonTrigger>
-  </Triggers>
-"@ }
-    @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Description>710.DesktopRice ${label}: $($Component.Key)</Description>
-  </RegistrationInfo>
-$triggers
-  <Principals>
-    <Principal id="Author">
-      <UserId>$u</UserId>
-      <LogonType>InteractiveToken</LogonType>
-      <RunLevel>$RunLevel</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>false</AllowHardTerminate>
-    <StartWhenAvailable>false</StartWhenAvailable>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <Priority>4</Priority>
-    <Enabled>true</Enabled>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>$cmd</Command>$argLine
-    </Exec>
-  </Actions>
-</Task>
-"@
 }
 
 function Register-Autostart {
@@ -1743,79 +1026,6 @@ function Unregister-Autostart {
     # -- even when the app itself is already gone.
     [void](Remove-RetiredStartTasks -Uninstall)
     Remove-StartupShortcuts
-}
-
-function Get-ComponentTaskInfo {
-    <# A component's task as registered: $null when there is none, else AtLogOn (it has a
-       sign-in trigger -- an -Activate'd machine; an on-demand install's tasks have none),
-       RunLevel ('HighestAvailable' = runs elevated, 'LeastPrivilege'), Enabled (not switched
-       off in Task Scheduler), and the Command / Arguments it runs (`710sRice doctor` compares
-       them with what install would register now). Read from `schtasks /Query /XML`, like
-       Test-Task -AtLogOn, so it works from a normal window too. #>
-    param([Parameter(Mandatory)][string]$TaskName)
-    $xml = & schtasks.exe /Query /TN (Get-TaskFullName -TaskName $TaskName) /XML 2>&1
-    if ($LASTEXITCODE -ne 0) { return $null }
-    $text = $xml -join "`n"
-    $runLevel = if ($text -match '<RunLevel>(\w+)</RunLevel>') { $Matches[1] } else { 'LeastPrivilege' }
-    # The XML's own UTF-16 declaration means nothing to an already-decoded string -- dropped
-    # before parsing. Element access by name ignores the task namespace.
-    $doc = $null
-    try { $doc = [xml]($text -replace '^\s*<\?xml[^>]*\?>', '') } catch { }
-    $exec = if ($doc) { @($doc.Task.Actions.Exec)[0] } else { $null }
-    [pscustomobject]@{
-        AtLogOn   = ($text -match '<LogonTrigger>')
-        RunLevel  = $runLevel
-        Enabled   = -not ($doc -and "$($doc.Task.Settings.Enabled)".Trim() -eq 'false')
-        Command   = if ($exec) { "$($exec.Command)" } else { $null }
-        Arguments = if ($exec) { "$($exec.Arguments)" } else { $null }
-    }
-}
-
-function Initialize-ProcessTokenNative {
-    if (-not ('Win710.ProcessToken' -as [type])) {
-        Add-Type -Namespace Win710 -Name ProcessToken -MemberDefinition @'
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, int processId);
-[DllImport("advapi32.dll", SetLastError = true)]
-public static extern bool OpenProcessToken(IntPtr process, uint desiredAccess, out IntPtr token);
-[DllImport("advapi32.dll", SetLastError = true)]
-public static extern bool GetTokenInformation(IntPtr token, int infoClass, out int info, int length, out int returnLength);
-[DllImport("kernel32.dll")]
-public static extern bool CloseHandle(IntPtr handle);
-'@
-    }
-}
-
-function Get-ProcessElevation {
-    <# 'elevated', 'normal', 'not running' or 'unknown', for the first process called -Name
-       (`710sRice tiling status` asks about komorebi) or the process -Id (doctor asks about
-       710.ahk's). Reads the process token's
-       TokenElevation. From a NORMAL window Windows won't hand over an elevated process's
-       token at all -- while a same-user normal process's token always opens -- so that
-       refusal is itself the answer. From an admin window the token opens either way. #>
-    [CmdletBinding(DefaultParameterSetName = 'Name')]
-    param([Parameter(Mandatory, ParameterSetName = 'Name', Position = 0)][string]$Name,
-          [Parameter(Mandatory, ParameterSetName = 'Id')][int]$Id)
-    $p = if ($PSCmdlet.ParameterSetName -eq 'Id') { Get-Process -Id $Id -ErrorAction SilentlyContinue }
-         else { Get-Process -Name $Name -ErrorAction SilentlyContinue | Select-Object -First 1 }
-    if (-not $p) { return 'not running' }
-    try { Initialize-ProcessTokenNative } catch { return 'unknown' }
-    # PROCESS_QUERY_LIMITED_INFORMATION (0x1000): allowed across elevation levels.
-    $h = [Win710.ProcessToken]::OpenProcess(0x1000, $false, $p.Id)
-    if ($h -eq [IntPtr]::Zero) { return 'unknown' }
-    try {
-        $token = [IntPtr]::Zero
-        if (-not [Win710.ProcessToken]::OpenProcessToken($h, 0x0008, [ref]$token)) {   # TOKEN_QUERY
-            if (Test-IsAdmin) { return 'unknown' }
-            return 'elevated'
-        }
-        try {
-            $elevated = 0; $len = 0
-            # 20 = TokenElevation: one DWORD, non-zero when the token is elevated.
-            if (-not [Win710.ProcessToken]::GetTokenInformation($token, 20, [ref]$elevated, 4, [ref]$len)) { return 'unknown' }
-            if ($elevated -ne 0) { 'elevated' } else { 'normal' }
-        } finally { [void][Win710.ProcessToken]::CloseHandle($token) }
-    } finally { [void][Win710.ProcessToken]::CloseHandle($h) }
 }
 
 function Get-AutostartStatus {
@@ -1964,10 +1174,6 @@ function Resolve-TilingMode {
     New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
     Set-Content -Path $path -Value $mode -Encoding ascii
     [pscustomobject]@{ Mode = $mode; Source = $source; Changed = ($null -ne $before -and $before -ne $mode) }
-}
-
-function Test-IsAdmin {
-    ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 # --- Lock screen: your own lock-screen picture -----------------------------------------
@@ -2227,78 +1433,6 @@ function Start-StackFromTasks {
     Step-Ok 'Services starting in the background (see %LOCALAPPDATA%\710.DesktopRice\*-autostart.log if one seems to not have come up).'
 }
 
-function Find-AhkWindow {
-    <# The hidden main window of the AHK process running -ScriptPath, or [IntPtr]::Zero.
-       AHK titles that window "<full script path> - AutoHotkey v2.x", so the title is how we
-       tell 710.ahk apart from any other AHK script. Found by window rather than by
-       Win32_Process because a normal shell can't read a UI Access process's command line;
-       window titles, on the other hand, are readable across that boundary (open-main-menu.ahk
-       finds 710.ahk the same way). #>
-    param([Parameter(Mandatory)][string]$ScriptPath)
-    Initialize-AhkWindowNative
-    $hwnd = [IntPtr]::Zero
-    while ($true) {
-        # [NullString]::Value, NOT $null: PowerShell hands $null to a .NET string parameter
-        # as "" -- and FindWindowEx(..., "") only matches windows with an EMPTY title, so
-        # the first build of this never found 710.ahk (Stop-All left it running, 2026-09-25).
-        $hwnd = [Win710.AhkWindow]::FindWindowEx([IntPtr]::Zero, $hwnd, 'AutoHotkey', [NullString]::Value)
-        if ($hwnd -eq [IntPtr]::Zero) { return [IntPtr]::Zero }
-        $sb = [System.Text.StringBuilder]::new(1024)
-        [void][Win710.AhkWindow]::GetWindowText($hwnd, $sb, $sb.Capacity)
-        if ($sb.ToString().IndexOf($ScriptPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $hwnd }
-    }
-}
-
-function Send-AhkMessage {
-    <# Posts the registered window message -Name ('710sRice.Quit', '710sRice.ReloadStack',
-       '710sRice.StartApps' with -WParam) to 710.ahk -- see the OnMessage hooks next to
-       OpenMainMenu in config\ahk\710.ahk, each let through UIPI there because AHK runs with UI
-       Access. $true if a 710.ahk window was found and the post went through, $false otherwise
-       (AHK not running, as far as the caller cares). Fire-and-forget: a post doesn't wait for
-       AHK to act on it. #>
-    param([Parameter(Mandatory)][string]$ScriptPath, [Parameter(Mandatory)][string]$Name, [int]$WParam = 0)
-    $hwnd = Find-AhkWindow -ScriptPath $ScriptPath
-    if ($hwnd -eq [IntPtr]::Zero) { return $false }
-    $msg = [Win710.AhkWindow]::RegisterWindowMessage($Name)
-    return [Win710.AhkWindow]::PostMessage($hwnd, $msg, [IntPtr]$WParam, [IntPtr]::Zero)
-}
-
-function Send-AhkQuit {
-    <# Asks 710.ahk to quit ('710sRice.Quit'). $false = no 710.ahk window found; the caller's
-       kill fallback covers the rest. #>
-    param([Parameter(Mandatory)][string]$ScriptPath)
-    Send-AhkMessage -ScriptPath $ScriptPath -Name '710sRice.Quit'
-}
-
-function Initialize-AhkWindowNative {
-    if (-not ('Win710.AhkWindow' -as [type])) {
-        Add-Type -Namespace Win710 -Name AhkWindow -MemberDefinition @'
-[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
-[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
-[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-public static extern uint RegisterWindowMessage(string lpString);
-[DllImport("user32.dll", SetLastError = true)]
-public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-[DllImport("user32.dll")]
-public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-'@
-    }
-}
-
-function Get-AhkWindowProcessId {
-    <# The process id behind 710.ahk's window (Find-AhkWindow), or $null when it isn't running.
-       How `710sRice doctor` tells which exe runs 710.ahk (UI Access or not) and reads its
-       elevation -- by the window, not by process name, so another AHK script can't pass for it. #>
-    param([Parameter(Mandatory)][string]$ScriptPath)
-    $hwnd = Find-AhkWindow -ScriptPath $ScriptPath
-    if ($hwnd -eq [IntPtr]::Zero) { return $null }
-    $procId = [uint32]0
-    [void][Win710.AhkWindow]::GetWindowThreadProcessId($hwnd, [ref]$procId)
-    if ($procId) { [int]$procId } else { $null }
-}
-
 # --- Shell profile hook ($PROFILE -> config\pwsh\profile.ps1) ------------------------
 # Ported from winarchy's ShellProfile.ps1 @ 4574fc7: a marker-delimited block inserted (or
 # updated) in pwsh's CurrentUserAllHosts $PROFILE, idempotent, snapshotting the profile
@@ -2386,9 +1520,9 @@ function Remove-ShellProfile {
 }
 
 # --- Restoring theming side effects (wallpaper/accent/Terminal/Flow) -- uninstall-only --
-# The wallpaper/lock-screen restore functions live next to what they revert, above
-# (Restore-OriginalWallpaper near Set-DesktopWallpaper, Restore-LockScreenPicture in the lock
-# screen's own section). These three cover the rest of what install.ps1 Section 4
+# The wallpaper/lock-screen restore functions live next to what they revert
+# (Restore-OriginalWallpaper in tools\lib\wallpaper.ps1, Restore-LockScreenPicture in the lock
+# screen's own section above). These three cover the rest of what install.ps1 Section 4
 # and tools\apply-wallust-outputs.ps1 change on a real wallpaper/theme apply, plus Flow
 # Launcher's theme -- all called from uninstall.ps1. (Flow's own settings are its component's:
 # tools\components\flow.ps1.)
@@ -2411,17 +1545,6 @@ function Restore-WindowsAccent {
     Send-SettingChangeBroadcast
     Remove-OriginalState -Label 'windows-accent'
     return $true
-}
-
-function Get-NerdFontFace {
-    <# The face name Windows Terminal should use for the JetBrainsMono Nerd Font the packages step
-       installs (DEVCOM.JetBrainsMonoNerdFont, Nerd Fonts v3: "JetBrainsMono NF"; v2 called it
-       "JetBrainsMono Nerd Font"), from the fonts Windows has registered -- $null when it isn't
-       installed. Install's terminal step and doctor's check both ask here. #>
-    $names = @(Get-InstalledFontNames)
-    if (@($names | Where-Object { $_ -match '^JetBrainsMono NF[ (]' }).Count) { return 'JetBrainsMono NF' }
-    if (@($names | Where-Object { $_ -match '^JetBrainsMono Nerd Font[ (]' }).Count) { return 'JetBrainsMono Nerd Font' }
-    $null
 }
 
 function Get-TerminalFontFaces {
