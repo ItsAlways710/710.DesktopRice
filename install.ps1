@@ -665,7 +665,7 @@ foreach ($step in $RunSteps) {
 
 # --- Start now (a full install -Activate only) -------------------------------------------
 # Through komorebi's and 710.ahk's own tasks, never from this elevated shell -- 710.ahk starts the
-# bar, Flow and ShareX (Start-StackFromTasks in tools\lib\activation.ps1 -- `710sRice activate`
+# bar, Flow and ShareX (Start-StackFromTasks in tools\lib\stack.ps1 -- `710sRice activate`
 # starts the stack the same way).
 if ($Activate -and -not $OnlyRun) {
     Start-StackFromTasks

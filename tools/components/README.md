@@ -73,7 +73,7 @@ overridden by repair).
 - **An app you open programs from is started by 710.ahk, never by a task.** Whatever a
   Scheduled Task starts runs inside the task's job, and so does everything it opens: a program
   that starts its own programs apart from itself (Mod Organizer 2's tools) fails with Error 5.
-  The bar, Flow and ShareX: `Start-AhkStartedApps` (`tools\lib\activation.ps1`) asks 710.ahk,
+  The bar, Flow and ShareX: `Start-AhkStartedApps` (`tools\lib\stack.ps1`) asks 710.ahk,
   which starts them as you (config\ahk\710.ahk, "The apps 710.ahk starts"). `Start-AsUser`
   (`tools\lib\tasks.ps1`) starts an app as you through a one-shot task -- so in that task's job: fine
   for a start that's stopped again seconds later (Flow's first start). Everything's start goes

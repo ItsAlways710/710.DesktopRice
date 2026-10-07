@@ -5,7 +5,7 @@
   AHK) -- the other half of Start-All.ps1's "on demand" use.
 
 .DESCRIPTION
-  A thin wrapper around tools\lib\activation.ps1's Stop-RunningComponents -- the same
+  A thin wrapper around tools\lib\stack.ps1's Stop-RunningComponents -- the same
   function uninstall.ps1 calls, so there's one place this logic lives. Safe to run any
   time or repeatedly: each component's stop is independent and best-effort, so one that's
   already stopped is a silent no-op. The tray's "Quit 710sRice" stops the same set.

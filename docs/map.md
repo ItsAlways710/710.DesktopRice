@@ -74,7 +74,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | Piece | Where |
 |---|---|
 | The full-time switch | `710sRice activate` / `deactivate`: `tools\lib\switch.ps1` (`Invoke-RiceSwitch`, `Invoke-Rice(De)Activate`; loaded by their rows in `710sRice.ps1`); full time's Windows settings -- saved, applied, put back (`Save-FullTimeSettings`, `Set-` / `Restore-FullTimeWindowsSettings`), install -Activate's save (`Save-FullTimeSettingsOnActivate`, from the tasks step) and its windows step (`Install-FullTimeWindowsSettings`), doctor's `windows`: `tools\lib\fulltime.ps1`; the mode is read from the tasks (`Test-FullTimeMachine`, `activation.ps1`) |
-| The stack: start, stop, restart, reload | `scripts\Start-All.ps1`, `Stop-All.ps1`; `restart` / `reload` / `reload bar` in `710sRice.ps1`; in `activation.ps1`: `Start-StackFromTasks`, `Stop-RunningComponents`, `Get-RunningStackNames`, `Start-AhkFromTask`, `Restart-AhkFromTask`, `Start-AhkStartedApps` (asks 710.ahk), the retired start tasks (`Remove-RetiredStartTasks`, `Request-RetiredAppsRestart`); doctor's `stack:*`, `stack`, `paused`; repair's starts (`Start-RepairComponents`, `tools\lib\repair.ps1`) |
+| The stack: start, stop, restart, reload | `scripts\Start-All.ps1`, `Stop-All.ps1`; `restart` / `reload` / `reload bar` in `710sRice.ps1`; in `tools\lib\stack.ps1`: `Start-StackFromTasks`, `Stop-RunningComponents`, `Get-RunningStackNames`, `Start-AhkFromTask`, `Restart-AhkFromTask`, `Get-AhkStartedApps` / `Start-AhkStartedApps` (asks 710.ahk), the retired start tasks (`Remove-RetiredStartTasks`, `Request-RetiredAppsRestart`), doctor's `stack:*`, `stack`, `paused` (`Test-DoctorStack`, `Test-DoctorPaused`); repair's starts (`Start-RepairComponents`, `tools\lib\repair.ps1`) |
 | The lock screen | `scripts\Set-LockScreen.ps1` (sets it, takes its snapshots); everything else in `tools\lib\lockscreen.ps1`: running the setter and its record (the pipeline's), install's part (`Install-LockScreen`, from the tasks step), uninstall's (`Undo-LockScreenSync` in section 2, `Undo-LockScreenPicture` in section 3), the restores (`Restore-LockScreenPolicy`, `Restore-LockScreenPicture`), `Set-LockScreenToWallpaper`, doctor's `lock-screen*` lines (`Test-DoctorLockScreen`); `deactivate` sets it again (`Set-RiceSwitchLockScreen`, `710sRice.ps1`) |
 | Tiling mode (elevated komorebi) | `Get-TilingMode`, `Resolve-TilingMode`, `Get-KomorebiRunLevel` (`activation.ps1`); `710sRice tiling` (`710sRice.ps1`); doctor's `tiling` |
 | Palette profiles and the theme | `tools\lib\palette.ps1`, `palette-edit.ps1`, `tools\palette-editor.ps1` / `.xaml`, `tools\palette\targets\*` (one file per themed app; README there), `tools\apply-wallust-outputs.ps1`; `710sRice palette ...` in `710sRice.ps1` |
@@ -86,7 +86,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | File | What's in it |
 |---|---|
-| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; the accent and Flow-theme restores |
+| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the shell profile hook; the accent and Flow-theme restores |
 | `tools\lib\text.ps1` | Printing paths and names safely: `ConvertTo-SafePath`, `ConvertTo-SafeText` (never a user name), `Join-RiceNameList` |
 | `tools\lib\snapshots.ps1` | The original-state snapshots uninstall puts back (`Save-` / `Get-` / `Remove-OriginalState`), one registry value as a snapshot (`Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`), `Backup-RegistryKey` (reg.exe export to `backups\`) |
 | `tools\lib\userenv.ps1` | User environment variables (`Get-` / `Set-` / `Remove-UserEnvVar`), the user PATH read and written raw (`Add-` / `Remove-UserPathEntry`, `Get-UserPathRaw`, `Test-SamePathEntry`), `Send-SettingChangeBroadcast` |
@@ -99,6 +99,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | `tools\lib\explorer.ps1` | Explorer's one restart (`Restart-Explorer`, `Wait-ExplorerRunning`, `Test-ExplorerShell`) and the tray icons kept around it (`Backup-` / `Restore-TrayIconPromotions`) |
 | `tools\lib\fonts.ps1` | `Get-NerdFontFace`: the JetBrainsMono Nerd Font's face name, as Windows has it registered |
 | `tools\lib\fulltime.ps1` | Full time's Windows settings (taskbar auto-hide, the hardening, the Startup delay): saved, applied, put back; install -Activate's save and windows step; doctor's `windows` line |
+| `tools\lib\stack.ps1` | The stack's starts and stops (see Pieces) and doctor's Stack group |
 | `tools\lib\switch.ps1` | `710sRice activate` / `deactivate` (dispatcher-only: loaded by their rows) |
 | `tools\lib\terminal.ps1` | Windows Terminal's font faces (`Get-TerminalFontFaces`, `Set-TerminalFontFace`) and `Clear-TerminalNerdFontFaces` (uninstall, before the Nerd Font goes) |
 | `tools\lib\packages.ps1` | `versions.md`'s table, winget's sources and exit codes, `Invoke-WingetAsUser`, the MSI uninstall, the installed-version probes, `Compare-PinVersion`, moving a package to its pin |
@@ -120,7 +121,7 @@ Component checks come at the end of their group, in install's order.
 | (header) | `update` (`Get-DoctorUpdateResult`), `local-changes` |
 | Repo and command | `path`, `envvars`, `weather` |
 | Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust`, other packages (`Test-DoctorOtherPackages`) |
-| Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` |
+| Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
 | Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml`, `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
 | Integrations | `flow-theme`, `profile`, `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
