@@ -59,12 +59,12 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | flow | `tools\components\flow.ps1` | same file | `flow`, `flow-startup`, `flow-prefs`, `flow-font`, `flow-fullscreen` | `Step=flow` |
 | everything | `tools\components\everything.ps1` | same file | `everything`, `everything-settings` | `Step=everything` |
 | sharex | `tools\components\sharex.ps1` | same file | `sharex`, `sharex-startup` | `Step=sharex` |
-| theme | `install.ps1`; the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | `uninstall.ps1` section 3 (wallpaper: `Restore-OriginalWallpaper`; accent, Terminal colours, Flow theme: restore functions in `activation.ps1`), section 9 (generated palette files) | (see palette) | never run by repair |
+| theme | `install.ps1`; the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | `uninstall.ps1` section 3 (wallpaper: `Restore-OriginalWallpaper`; accent, Flow theme: restore functions in `activation.ps1`), section 9 (generated palette files); Terminal's colours: the terminal component | (see palette) | never run by repair |
 | palette (named only) | `install.ps1` (the pipeline on the current wallpaper) | — | `doctor.ps1` `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `flow-theme`, `terminal`, `lock-screen` | `Step=palette` |
 | monitors | `install.ps1`; `tools\write-display-index.ps1`, `tools\lib\monitors.ps1` | `uninstall.ps1` section 9 (`display-index.local.json`) | `doctor.ps1` `display-index`, `display-index-more` | `Step=monitors`, `Repair=reload` |
 | defender | `tools\components\defender.ps1` | same file | `defender` | `Step=defender` |
 | profile | `install.ps1` → `Install-ShellProfile` in `activation.ps1` | `uninstall.ps1` section 3 → `Remove-ShellProfile` | `doctor.ps1` `profile` | `Step=profile` |
-| terminal | `install.ps1` (default shell, font) | `uninstall.ps1` section 3 → `Restore-WindowsTerminalSettings` in `activation.ps1` | `doctor.ps1` `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` |
+| terminal | `tools\components\terminal.ps1` (default shell, font; font helpers in `tools\lib\terminal.ps1`) | same file (`Restore-WindowsTerminalSettings`: default shell, font, the palette's colour scheme) | `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` (`terminal`: `Step=palette`) |
 | compile | `install.ps1` → `tools\compile-komorebi-rules.ps1` | `uninstall.ps1` section 9 (`komorebi.json`) | `doctor.ps1` `komorebi-json`, `komorebi-json-warnings`, `asc` | `Step=compile`, `Repair=reload` |
 | tasks | `install.ps1` (tiling mode, the tasks, the retired lock-screen sync); registering them in `activation.ps1`, task plumbing in `tools\lib\tasks.ps1` | `uninstall.ps1` section 2 (`Unregister-Autostart`, `Remove-RetiredLockScreenSync`), section 9 (`tiling-mode.txt`) | `doctor.ps1` `mode`, `task:*`, `task:retired`, `tiling`, `lock-screen:old` | `Step=tasks`, `Repair=tiling:<mode>` |
 | windows (-Activate) | `install.ps1` → `Set-FullTimeWindowsSettings` in `activation.ps1` | `uninstall.ps1` section 2 → `Restore-FullTimeWindowsSettings` | `doctor.ps1` `windows` | `Step=windows` |
@@ -86,7 +86,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | File | What's in it |
 |---|---|
-| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: hardening, taskbar auto-hide, the Startup delay and full time's Windows settings (saved, applied, put back); registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the lock screen's set and restores; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; Terminal's font helpers and restore; the accent and Flow-theme restores |
+| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: hardening, taskbar auto-hide, the Startup delay and full time's Windows settings (saved, applied, put back); registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the lock screen's set and restores; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; the accent and Flow-theme restores |
 | `tools\lib\text.ps1` | Printing paths and names safely: `ConvertTo-SafePath`, `ConvertTo-SafeText` (never a user name), `Join-RiceNameList` |
 | `tools\lib\snapshots.ps1` | The original-state snapshots uninstall puts back (`Save-` / `Get-` / `Remove-OriginalState`), one registry value as a snapshot (`Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`), `Backup-RegistryKey` (reg.exe export to `backups\`) |
 | `tools\lib\userenv.ps1` | User environment variables (`Get-` / `Set-` / `Remove-UserEnvVar`), the user PATH read and written raw (`Add-` / `Remove-UserPathEntry`, `Get-UserPathRaw`, `Test-SamePathEntry`), `Send-SettingChangeBroadcast` |
@@ -98,6 +98,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | `tools\lib\shortcuts.ps1` | `Save-RiceShortcut`, `Read-RiceShortcut`, `Get-StartMenuProgramsDir` |
 | `tools\lib\explorer.ps1` | Explorer's one restart (`Restart-Explorer`, `Wait-ExplorerRunning`, `Test-ExplorerShell`) and the tray icons kept around it (`Backup-` / `Restore-TrayIconPromotions`) |
 | `tools\lib\fonts.ps1` | `Get-NerdFontFace`: the JetBrainsMono Nerd Font's face name, as Windows has it registered |
+| `tools\lib\terminal.ps1` | Windows Terminal's font faces (`Get-TerminalFontFaces`, `Set-TerminalFontFace`) and `Clear-TerminalNerdFontFaces` (uninstall, before the Nerd Font goes) |
 | `tools\lib\packages.ps1` | `versions.md`'s table, winget's sources and exit codes, `Invoke-WingetAsUser`, the MSI uninstall, the installed-version probes, `Compare-PinVersion`, moving a package to its pin |
 | `tools\lib\components.ps1` | The component loader and the step order (`Get-RiceComponents`, `Get-RiceStepOrder`, `Invoke-RiceComponentPart`, `New-RiceComponentContext`) |
 | `tools\lib\steps.ps1` | install's fixed steps and the named-only ones |
@@ -120,7 +121,7 @@ Component checks come at the end of their group, in install's order.
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
 | Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml`, `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` |
-| Integrations | `flow-theme`, `terminal*`, `profile`, `windows`; then bluetooth, commands, flow, everything, sharex, defender (components) |
+| Integrations | `flow-theme`, `profile`, `windows`; then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 
 ## 710.ahk

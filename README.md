@@ -289,7 +289,7 @@ only runs with `-Activate`).
 | `tasks` | Registers komorebi's and AutoHotkey's scheduled tasks, for whichever way this machine runs (and removes the old ones the bar, Flow and ShareX had) |
 | `windows` | The Windows settings of a full-time install (taskbar, hardening, Startup delay) |
 
-`bluetooth`, `commands`, `flow`, `everything`, `sharex` and `defender` are components: each one's install, uninstall and doctor
+`bluetooth`, `commands`, `flow`, `everything`, `sharex`, `defender` and `terminal` are components: each one's install, uninstall and doctor
 code lives in one file in `tools/components/`, and a new file there becomes a step of its own
 ([its README](tools/components/README.md) explains how).
 

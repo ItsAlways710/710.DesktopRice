@@ -1125,8 +1125,8 @@ function Test-DoctorLockScreen {
 
 # --- f. Integrations -----------------------------------------------------------------------------
 # The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
-# search), Windows Terminal (theme, default shell), the $PROFILE hook, and -- on a full-time
-# machine -- the Windows settings -Activate applies. (Defender's exclusions: its component.)
+# search), the $PROFILE hook, and -- on a full-time machine -- the Windows settings -Activate
+# applies. (Windows Terminal and Defender's exclusions: their components.)
 
 function Test-DoctorFlowTheme {
     # Flow on the palette's theme (tools\palette\targets\flow.ps1): selected in its settings and
@@ -1145,62 +1145,6 @@ function Test-DoctorFlowTheme {
     if ($theme -eq '710sRice' -and $file) { return New-DoctorResult -Id 'flow-theme' -Status 'OK' -Text 'Flow Launcher themed (710sRice)' }
     $why = if ($theme -ne '710sRice') { "it's on '$(if ($theme) { $theme } else { "Flow's default" })'" } else { '710sRice.xaml is missing' }
     New-DoctorResult -Id 'flow-theme' -Status 'XX' -Text "Flow Launcher isn't on the palette's theme ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
-}
-
-function Get-DoctorTerminalSettings {
-    # Windows Terminal's settings.json, from the same two places install and the palette look.
-    $path = @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-              "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json") |
-            Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    if ($path) { Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable }
-}
-
-function Test-DoctorTerminal {
-    # Themed: the palette step sets profiles.defaults.colorScheme to wallust's own scheme.
-    # Default shell: the terminal step points defaultProfile at the PowerShell 7 profile.
-    $wt = Get-DoctorTerminalSettings
-    if (-not $wt) {
-        if (Test-Path -LiteralPath "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe") {
-            return New-DoctorResult -Id 'terminal' -Status '..' -Text "Windows Terminal hasn't been opened yet -- no settings to check"
-        }
-        return   # not installed: group b says so
-    }
-    $active = Resolve-ActivePaletteProfile
-    if ('terminal' -in $active.Profile.off) {
-        New-DoctorResult -Id 'terminal' -Status '..' -Text "Windows Terminal's colours: off in $(Get-PaletteProfileLabel -Id $active.Id -Name $active.Profile.name)"
-    }
-    $scheme  = if ($wt['profiles'] -is [hashtable] -and $wt['profiles']['defaults'] -is [hashtable]) { $wt['profiles']['defaults']['colorScheme'] }
-    $hasOurs = [bool](@($wt['schemes']) | Where-Object { $_ -is [hashtable] -and $_['name'] -eq 'wallust' })
-    if ('terminal' -in $active.Profile.off) { }
-    elseif ($scheme -eq 'wallust' -and $hasOurs) { New-DoctorResult -Id 'terminal' -Status 'OK' -Text 'Windows Terminal themed (wallust)' }
-    else {
-        $why = if ($scheme -ne 'wallust') { "colorScheme isn't wallust" } else { 'no wallust scheme' }
-        New-DoctorResult -Id 'terminal' -Status 'XX' -Text "Windows Terminal isn't themed ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
-    }
-    $pwsh = @(if ($wt['profiles'] -is [hashtable]) { $wt['profiles']['list'] }) | Where-Object { $_ -is [hashtable] -and $_['source'] -eq 'Windows.Terminal.PowershellCore' } | Select-Object -First 1
-    if (-not $pwsh -or -not $pwsh['guid']) {
-        New-DoctorResult -Id 'terminal-default' -Status '!!' -Text 'Windows Terminal has no PowerShell 7 profile yet' -Fix 'open Terminal once, then 710sRice install -Only terminal'
-    } elseif ($wt['defaultProfile'] -eq $pwsh['guid']) {
-        New-DoctorResult -Id 'terminal-default' -Status 'OK' -Text 'Windows Terminal opens PowerShell 7'
-    } else {
-        New-DoctorResult -Id 'terminal-default' -Status '!!' -Text 'Windows Terminal opens something other than PowerShell 7' -Fix '710sRice install -Only terminal' -Step 'terminal'
-    }
-    # The font (every profile's, profiles.defaults.font.face): the Nerd Font, for the prompt's
-    # icons. Never set by 710sRice here yet (no 'terminal-font' snapshot) = [XX], so repair and
-    # update bring existing installs along; set, then changed by you since = [!!], left alone.
-    $face = Get-NerdFontFace
-    if ($face) {
-        # The defaults, and every profile that sets its own face (a profile's own wins).
-        $wrong = @(Get-TerminalFontFaces -Settings $wt | Where-Object { $_.Face -cne $face })
-        $which = ($wrong | ForEach-Object { "$($_.Name): $(if ($_.Face) { $_.Face } else { "Terminal's default" })" }) -join '; '
-        if (-not $wrong.Count) {
-            New-DoctorResult -Id 'terminal-font' -Status 'OK' -Text "Windows Terminal uses the Nerd Font ($face)"
-        } elseif (-not (Get-OriginalState -Label 'terminal-font')) {
-            New-DoctorResult -Id 'terminal-font' -Status 'XX' -Text "Windows Terminal doesn't use the Nerd Font -- the prompt's icons show as boxes" -Detail $which -Fix '710sRice install -Only terminal' -Step 'terminal'
-        } else {
-            New-DoctorResult -Id 'terminal-font' -Status '!!' -Text "Windows Terminal's font changed since 710sRice set $face -- your call; the prompt's icons need $face" -Detail $which -Fix '710sRice install -Only terminal'
-        }
-    }
 }
 
 function Test-DoctorProfileHook {
@@ -1308,7 +1252,6 @@ function Get-DoctorGroups {
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
             @{ Id = 'flow-theme'; Name = 'Flow Launcher theme';  Run = { Test-DoctorFlowTheme } }
-            @{ Id = 'terminal';   Name = 'Windows Terminal';     Run = { Test-DoctorTerminal } }
             @{ Id = 'profile';    Name = 'Shell profile hook';   Run = { Test-DoctorProfileHook } }
             @{ Id = 'windows';    Name = 'Windows settings';     Run = { Test-DoctorWindowsSettings } }
         ) }

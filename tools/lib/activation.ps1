@@ -49,6 +49,7 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 . (Join-Path $PSScriptRoot 'shortcuts.ps1')
 . (Join-Path $PSScriptRoot 'explorer.ps1')
 . (Join-Path $PSScriptRoot 'fonts.ps1')
+. (Join-Path $PSScriptRoot 'terminal.ps1')
 
 # --- Registry hardening (HKCU only, -Activate-gated) ---------------------------------
 function Get-HardeningSettings {
@@ -1386,13 +1387,13 @@ function Remove-ShellProfile {
     Step-Ok "Profile hook removed: $(ConvertTo-SafePath $profilePath) (previous saved to $(ConvertTo-SafePath "$profilePath.bak"))"
 }
 
-# --- Restoring theming side effects (wallpaper/accent/Terminal/Flow) -- uninstall-only --
+# --- Restoring theming side effects (wallpaper/accent/Flow) -- uninstall-only ------------
 # The wallpaper/lock-screen restore functions live next to what they revert
 # (Restore-OriginalWallpaper in tools\lib\wallpaper.ps1, Restore-LockScreenPicture in the lock
-# screen's own section above). These three cover the rest of what install.ps1 Section 4
+# screen's own section above). These two cover the rest of what install.ps1 Section 4
 # and tools\apply-wallust-outputs.ps1 change on a real wallpaper/theme apply, plus Flow
-# Launcher's theme -- all called from uninstall.ps1. (Flow's own settings are its component's:
-# tools\components\flow.ps1.)
+# Launcher's theme -- both called from uninstall.ps1. (Windows Terminal's and Flow's own settings
+# are their components': tools\components\terminal.ps1, flow.ps1.)
 function Restore-WindowsAccent {
     <# Reverts the accent-color/dark-mode values tools\apply-wallust-outputs.ps1 sets,
        back to its own 'windows-accent' snapshot (taken there, via a small duplicated
@@ -1411,153 +1412,6 @@ function Restore-WindowsAccent {
     Set-RegValueFromSnapshot -Path $dwm -Name 'ColorizationColor' -Snapshot $snap.Dwm_ColorizationColor
     Send-SettingChangeBroadcast
     Remove-OriginalState -Label 'windows-accent'
-    return $true
-}
-
-function Get-TerminalFontFaces {
-    <# Every place Windows Terminal's settings name a font face: profiles.defaults (every profile),
-       and each profile in profiles.list that sets its own -- a profile's own face wins over the
-       defaults, so those are the faces Terminal draws with. [pscustomobject] Key ('defaults', or
-       the profile's guid -- 'name:<name>' without one), Name, Face ($null: the defaults set none). #>
-    param($Settings)
-    $p = $Settings['profiles']
-    if ($p -isnot [System.Collections.IDictionary]) { return }
-    $d = $p['defaults']
-    $face = if ($d -is [System.Collections.IDictionary] -and $d['font'] -is [System.Collections.IDictionary] -and $d['font'].Contains('face')) { "$($d['font']['face'])" } else { $null }
-    [pscustomobject]@{ Key = 'defaults'; Name = 'every profile'; Face = $face }
-    foreach ($x in @($p['list'])) {
-        if ($x -isnot [System.Collections.IDictionary] -or $x['font'] -isnot [System.Collections.IDictionary] -or -not $x['font'].Contains('face')) { continue }
-        $key = if ($x['guid']) { "$($x['guid'])" } else { "name:$($x['name'])" }
-        [pscustomobject]@{ Key = $key; Name = "$($x['name'])"; Face = "$($x['font']['face'])" }
-    }
-}
-
-function Set-TerminalFontFace {
-    <# Sets (or, $Face = $null, removes) the font face at one Get-TerminalFontFaces Key in the
-       settings hashtable; a font object left empty is removed with it. Leaves size / weight alone. #>
-    param($Settings, [string]$Key, [AllowNull()][string]$Face)
-    if ($Settings['profiles'] -isnot [System.Collections.IDictionary]) { $Settings['profiles'] = @{} }
-    $p = $Settings['profiles']
-    $target = if ($Key -eq 'defaults') {
-        if ($p['defaults'] -isnot [System.Collections.IDictionary]) { $p['defaults'] = @{} }
-        $p['defaults']
-    } else {
-        @($p['list']) | Where-Object { $_ -is [System.Collections.IDictionary] -and ($(if ($Key.StartsWith('name:')) { "name:$($_['name'])" } else { "$($_['guid'])" }) -eq $Key) } | Select-Object -First 1
-    }
-    if (-not $target) { return }
-    if ($null -eq $Face -or $Face -eq '') {
-        if ($target['font'] -is [System.Collections.IDictionary]) {
-            $target['font'].Remove('face')
-            if (-not $target['font'].Count) { $target.Remove('font') }
-        }
-    } else {
-        if ($target['font'] -isnot [System.Collections.IDictionary]) { $target['font'] = @{} }
-        $target['font']['face'] = $Face
-    }
-}
-
-function Clear-TerminalNerdFontFaces {
-    <# uninstall -Force, right before it removes the JetBrainsMono Nerd Font package: any Windows
-       Terminal face that still names it (after uninstall put Terminal's own "before" back -- a
-       "before" that was already the Nerd Font, winarchy's on the Dell, or yours) goes back to
-       Terminal's own font, so no profile names a font that's gone. (B2's and T5's vanished
-       window, 2026-10-01, turned out to be Windows Installer's Restart Manager closing Terminal
-       during the font's MSI uninstall -- uninstall.ps1 now removes it with that off: see
-       Invoke-MsiUninstall in tools\lib\packages.ps1.) Returns the names of the places changed
-       (empty: nothing to do; $null: no settings). #>
-    $path = @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-              "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    if (-not $path) { return $null }
-    $wt = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-    $hits = @(Get-TerminalFontFaces $wt | Where-Object { "$($_.Face)" -match '^JetBrainsMono (NF|NFM|NFP|Nerd Font)\b' })
-    foreach ($h in $hits) { Set-TerminalFontFace -Settings $wt -Key "$($h.Key)" -Face $null }
-    if ($hits.Count) { $wt | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $path -Encoding UTF8 }
-    @($hits | ForEach-Object Name)
-}
-
-function Test-TerminalUsesScheme {
-    # Does any profile draw with colour scheme $Name -- profiles.defaults or one in profiles.list,
-    # named directly or as either half of a { light, dark } pair?
-    param([Parameter(Mandatory)]$Settings, [Parameter(Mandatory)][string]$Name)
-    $p = $Settings['profiles']
-    if ($p -isnot [System.Collections.IDictionary]) { return $false }
-    foreach ($x in @($p['defaults']) + @($p['list'])) {
-        if ($x -isnot [System.Collections.IDictionary] -or -not $x.Contains('colorScheme')) { continue }
-        $cs = $x['colorScheme']
-        if ($cs -is [System.Collections.IDictionary]) { if ("$($cs['light'])" -eq $Name -or "$($cs['dark'])" -eq $Name) { return $true } }
-        elseif ("$cs" -eq $Name) { return $true }
-    }
-    $false
-}
-
-function Restore-WindowsTerminalSettings {
-    <# Reverts both Terminal changes back to their own independent snapshots: 'terminal-
-       colorscheme' (profiles.defaults.colorScheme/theme/the "wallust" themes[] entry --
-       taken by tools\apply-wallust-outputs.ps1's own inline duplicate, same reasoning as
-       Restore-WindowsAccent above) and 'terminal-defaultprofile' (taken by install.ps1
-       Section 8). Two separate labels, not one, because they're written by two different
-       scripts that don't run in a fixed relative order relative to each other over the
-       life of an install (Section 4 calls apply-wallust-outputs.ps1 before Section 8 ever
-       runs on a first install, but apply-wallust-outputs.ps1 also fires independently on
-       every later real wallpaper change) -- combining them into one label would let
-       whichever runs first "win" the snapshot and silently drop the other's fields.
-       Applies whichever of the two snapshots exist (each is independently optional) to
-       the CURRENT settings.json in a single read-modify-write, so anything else the person
-       changed in Terminal in between (a new profile, a font tweak) survives. #>
-    # (And 'terminal-font' -- the font faces install's terminal step set since 2026-10-01: the
-    # defaults' and each profile's own -- applied the same way.)
-    $colorSnap = Get-OriginalState -Label 'terminal-colorscheme'
-    $profileSnap = Get-OriginalState -Label 'terminal-defaultprofile'
-    $fontSnap = Get-OriginalState -Label 'terminal-font'
-    if (-not $colorSnap -and -not $profileSnap -and -not $fontSnap) { return $false }
-
-    $wtSettingsCandidates = @(
-        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-        "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-    )
-    $wtSettingsPath = $wtSettingsCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if (-not $wtSettingsPath) {
-        Step-Info 'Windows Terminal settings.json not found -- nothing to restore (already gone, or Terminal was never launched).'
-        Remove-OriginalState -Label 'terminal-colorscheme'
-        Remove-OriginalState -Label 'terminal-defaultprofile'
-        Remove-OriginalState -Label 'terminal-font'
-        return $true
-    }
-    $wt = Get-Content $wtSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-
-    if ($colorSnap) {
-        if ($colorSnap.ColorSchemeExisted -and $wt['profiles'] -and $wt['profiles']['defaults'] -is [hashtable]) {
-            $wt['profiles']['defaults']['colorScheme'] = $colorSnap.ColorScheme
-        } elseif ($wt['profiles'] -and $wt['profiles']['defaults'] -is [hashtable]) {
-            $wt['profiles']['defaults'].Remove('colorScheme')
-        }
-        if ($colorSnap.ThemeKeyExisted) { $wt['theme'] = $colorSnap.Theme }
-        elseif ($wt.ContainsKey('theme')) { $wt.Remove('theme') }
-        if (-not $colorSnap.WallustThemeEntryExisted -and $wt['themes'] -is [array]) {
-            $wt['themes'] = @($wt['themes'] | Where-Object { $_['name'] -ne 'wallust' })
-        }
-        # The "wallust" colour scheme itself (the palette's Terminal target adds it to schemes[]): gone
-        # too once nothing uses it -- the defaults or a profile of its own, as a name or as a light /
-        # dark pair. It used to stay in Terminal's scheme list forever (found 2026-10-01). Still
-        # used = kept (a "before" that already said wallust -- the Dell's -- or your own pick).
-        if ($wt['schemes'] -is [array] -and -not (Test-TerminalUsesScheme -Settings $wt -Name 'wallust')) {
-            $wt['schemes'] = @($wt['schemes'] | Where-Object { -not ($_ -is [System.Collections.IDictionary] -and $_['name'] -eq 'wallust') })
-        }
-        Remove-OriginalState -Label 'terminal-colorscheme'
-    }
-    if ($profileSnap) {
-        if ($profileSnap.Existed) { $wt['defaultProfile'] = $profileSnap.Value }
-        elseif ($wt.ContainsKey('defaultProfile')) { $wt.Remove('defaultProfile') }
-        Remove-OriginalState -Label 'terminal-defaultprofile'
-    }
-    if ($fontSnap) {
-        # Each face install changed, back as it was (the defaults' and each profile's own; a profile
-        # that's gone since is skipped). Faces you set after install on other profiles stay.
-        foreach ($f in @($fontSnap.Faces)) { Set-TerminalFontFace -Settings $wt -Key "$($f.Key)" -Face $f.Face }
-        Remove-OriginalState -Label 'terminal-font'
-    }
-
-    $wt | ConvertTo-Json -Depth 50 | Set-Content -Path $wtSettingsPath -Encoding UTF8
     return $true
 }
 

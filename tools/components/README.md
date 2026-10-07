@@ -38,7 +38,7 @@ Once loaded, a component that fails is reported and the rest go on: an `Install`
 its own `[XX]` line (the run finishes), an `Uninstall` that throws is reported and the other
 components still revert, a `Check` that throws is "couldn't check".
 
-## The six today
+## The seven today
 
 | File | Runs after | What it owns |
 |---|---|---|
@@ -48,6 +48,7 @@ components still revert, a `Check` that throws is "couldn't check".
 | `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), started (as you) when it isn't running, doctor's "running" line |
 | `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), its own sign-in start off (the Startup-folder shortcut its installer makes), doctor's ShareX lines |
 | `defender.ps1` | `monitors` | Windows Defender's exclusions for what its scans slow down (ShareX, Everything, komorebic.exe, pwsh.exe, this repo): added, removed and checked only from an admin window, and only ever ours |
+| `terminal.ps1` | `profile` | Windows Terminal: PowerShell 7 as its default profile and the Nerd Font for every profile (each saved before its first change); uninstall puts its settings back, the palette's colour scheme included; doctor's three Terminal lines. Its font helpers, which uninstall's Nerd Font removal uses too, are in `tools\lib\terminal.ps1` |
 
 The worked example is `flow.ps1`: every field but `NamedOnly`, a first start through
 `Start-AsUser`, snapshots, and a restart through 710.ahk. `everything.ps1` / `sharex.ps1` are the smaller

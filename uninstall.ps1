@@ -187,12 +187,12 @@ catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_
 # whether or not -Activate was used -- so, like the shell profile hook, they're reverted
 # here regardless of -Activate history. Each Restore-* function is its own safe no-op if
 # the thing it covers was never actually snapshotted on this machine (see
-# tools\lib\snapshots.ps1, "Original-state snapshots", for the full design). Defender's
-# exclusions are its component's (tools\components\defender.ps1), reverted below.
+# tools\lib\snapshots.ps1, "Original-state snapshots", for the full design). Windows Terminal
+# and Defender's exclusions are components (tools\components\), reverted below.
 Write-Host "`n-- Revert shell profile --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Remove the pwsh $PROFILE hook' { Remove-ShellProfile }
 
-Write-Host "`n-- Revert wallpaper / lock screen / accent color / Windows Terminal / Flow Launcher --" -ForegroundColor Cyan
+Write-Host "`n-- Revert wallpaper / lock screen / accent color / Flow Launcher --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Restore original desktop wallpaper' {
     if (Restore-OriginalWallpaper) { Step-Ok 'Desktop wallpaper restored to whatever it was before this repo ever set a default' }
     else { Step-Info 'This repo never actually changed the wallpaper on this machine (already using one of its own) -- nothing to restore.' }
@@ -210,10 +210,6 @@ Invoke-ActivationRevert 'Restore original lock-screen picture' {
 Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' {
     if (Restore-WindowsAccent) { Step-Ok 'Windows accent color and light/dark-mode settings restored' }
     else { Step-Info 'tools\apply-wallust-outputs.ps1 never actually ran on this machine -- nothing to restore.' }
-}
-Invoke-ActivationRevert 'Restore original Windows Terminal colorScheme / theme / default shell' {
-    if (Restore-WindowsTerminalSettings) { Step-Ok 'Windows Terminal settings restored' }
-    else { Step-Info 'Windows Terminal was never actually themed or had its default shell changed on this machine -- nothing to restore.' }
 }
 Invoke-ActivationRevert 'Restore Flow Launcher''s own theme (Palette Profiles themed it)' {
     if (Restore-FlowTheme) { Step-Ok "Flow Launcher's theme put back and 710sRice.xaml removed" }
@@ -310,7 +306,7 @@ foreach ($row in $wingetRows) {
     }
     if ($id -like '*NerdFont*') {
         # The font goes: no Windows Terminal profile may still name it (Clear-TerminalNerdFontFaces,
-        # tools\lib\activation.ps1), and it goes through Windows Installer told to close nothing
+        # tools\lib\terminal.ps1), and it goes through Windows Installer told to close nothing
         # (Invoke-MsiUninstall, tools\lib\packages.ps1) -- winget's silent uninstall had Restart
         # Manager shut down the Terminal running this very uninstall (B2 and T5, 2026-10-01).
         if ($DryRun) { Write-Host "  [ ] Point any Windows Terminal profile still on the Nerd Font back to Terminal's own font" }

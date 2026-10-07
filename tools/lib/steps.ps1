@@ -13,10 +13,11 @@
 
 # install's own steps, in the order install runs them -- whatever order `-Only` names them in.
 # (flow was one until Group 1 #4: it's a component now, tools\components\flow.ps1, run right after
-# wallust; defender until 2026-10-07, tools\components\defender.ps1, right after monitors.)
+# wallust; defender and terminal until 2026-10-07, tools\components\, right after monitors and
+# profile.)
 # (weather was one until Group 1 #1: the Open-Meteo widget needs nothing from install.)
 $InstallFixedStepOrder = @('packages', 'upgrade', 'envvars', 'path', 'wallust', 'theme', 'palette',
-                           'monitors', 'profile', 'terminal', 'compile', 'tasks', 'windows')
+                           'monitors', 'profile', 'compile', 'tasks', 'windows')
 
 # Steps a plain run never includes -- only -Only runs them. upgrade: doctor's named fix for "older
 # than its pin", from the local version probes; a plain run's packages step already brings a
