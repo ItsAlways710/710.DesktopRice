@@ -62,7 +62,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | theme | `install.ps1`; the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | `uninstall.ps1` section 3 (wallpaper: `Restore-OriginalWallpaper`; accent, Terminal colours, Flow theme: restore functions in `activation.ps1`), section 9 (generated palette files) | (see palette) | never run by repair |
 | palette (named only) | `install.ps1` (the pipeline on the current wallpaper) | — | `doctor.ps1` `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `flow-theme`, `terminal`, `lock-screen` | `Step=palette` |
 | monitors | `install.ps1`; `tools\write-display-index.ps1`, `tools\lib\monitors.ps1` | `uninstall.ps1` section 9 (`display-index.local.json`) | `doctor.ps1` `display-index`, `display-index-more` | `Step=monitors`, `Repair=reload` |
-| defender | `install.ps1` → `Set-DefenderExclusions` in `activation.ps1` | `uninstall.ps1` section 3 → `Remove-DefenderExclusions` | `doctor.ps1` `defender` | `Step=defender` |
+| defender | `tools\components\defender.ps1` | same file | `defender` | `Step=defender` |
 | profile | `install.ps1` → `Install-ShellProfile` in `activation.ps1` | `uninstall.ps1` section 3 → `Remove-ShellProfile` | `doctor.ps1` `profile` | `Step=profile` |
 | terminal | `install.ps1` (default shell, font) | `uninstall.ps1` section 3 → `Restore-WindowsTerminalSettings` in `activation.ps1` | `doctor.ps1` `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` |
 | compile | `install.ps1` → `tools\compile-komorebi-rules.ps1` | `uninstall.ps1` section 9 (`komorebi.json`) | `doctor.ps1` `komorebi-json`, `komorebi-json-warnings`, `asc` | `Step=compile`, `Repair=reload` |
@@ -86,7 +86,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | File | What's in it |
 |---|---|
-| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: Defender; hardening, taskbar auto-hide, the Startup delay and full time's Windows settings (saved, applied, put back); registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the lock screen's set and restores; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; Terminal's font helpers and restore; the accent and Flow-theme restores |
+| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: hardening, taskbar auto-hide, the Startup delay and full time's Windows settings (saved, applied, put back); registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the lock screen's set and restores; the stack's starts and stops (`Start-StackFromTasks`, `Stop-RunningComponents`, `Start-AhkStartedApps`, the retired start tasks); the shell profile hook; Terminal's font helpers and restore; the accent and Flow-theme restores |
 | `tools\lib\text.ps1` | Printing paths and names safely: `ConvertTo-SafePath`, `ConvertTo-SafeText` (never a user name), `Join-RiceNameList` |
 | `tools\lib\snapshots.ps1` | The original-state snapshots uninstall puts back (`Save-` / `Get-` / `Remove-OriginalState`), one registry value as a snapshot (`Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`), `Backup-RegistryKey` (reg.exe export to `backups\`) |
 | `tools\lib\userenv.ps1` | User environment variables (`Get-` / `Set-` / `Remove-UserEnvVar`), the user PATH read and written raw (`Add-` / `Remove-UserPathEntry`, `Get-UserPathRaw`, `Test-SamePathEntry`), `Send-SettingChangeBroadcast` |
@@ -120,7 +120,7 @@ Component checks come at the end of their group, in install's order.
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
 | Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml`, `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` |
-| Integrations | `flow-theme`, `terminal*`, `profile`, `defender`, `windows`; then bluetooth, commands, flow, everything, sharex (components) |
+| Integrations | `flow-theme`, `terminal*`, `profile`, `windows`; then bluetooth, commands, flow, everything, sharex, defender (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 
 ## 710.ahk

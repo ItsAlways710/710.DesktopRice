@@ -39,10 +39,10 @@
 
   STEPS. Each of the above is a named step, always run in this order:
     packages  upgrade  envvars  path  wallust  theme  palette  monitors
-    defender  profile  terminal  compile  tasks  windows
+    profile  terminal  compile  tasks  windows
   plus one step per component (tools\components\<id>.ps1, named by its Id), each right after
-  the step it names (Group 1 #12; `710sRice install -?` lists the whole order): flow, right
-  after wallust.
+  the step it names (Group 1 #12; `710sRice install -?` lists the whole order): flow right
+  after wallust, defender right after monitors, and the others.
   A plain run does every step but upgrade and palette (windows only with -Activate) -- the
   same run as always, default wallpaper and theme included. Its packages step brings a pinned
   package that's below its versions.md pin up to it, and never moves one down or touches an
@@ -180,8 +180,8 @@ function Step-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -Foreg
 function Step-Info { param([string]$Message) Write-Host "  [..] $Message" -ForegroundColor Cyan }
 function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -ForegroundColor Yellow }
 
-# Defender exclusions, hardening, taskbar, autostart, and the shell-profile hook all live
-# here, shared with uninstall.ps1's matching revert steps. Step-Ok/Info/Warn above must be
+# Hardening, taskbar, autostart and the shell-profile hook live here or in the libraries it
+# loads, shared with uninstall.ps1's matching revert steps. Step-Ok/Info/Warn above must be
 # defined before this dot-source -- activation.ps1 uses ours rather than its own copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
 # versions.md's table and the winget helpers (after activation.ps1 -- see its header).
@@ -562,16 +562,6 @@ $Steps['monitors'] = {
         2       { Step-Info "komorebi isn't running yet -- it writes this itself the first time it starts." }
         default { Step-Warn "Monitor order not written (see above) -- komorebi.json will omit display_index_preferences; komorebi falls back to Windows' own monitor order." }
     }
-}
-
-$Steps['defender'] = {
-    # --- 6. Windows Defender exclusions (unconditional) --------------------------------------
-    # Not gated behind -Activate -- matches winarchy's own install.ps1 exactly (Set-
-    # WinarchyDefenderExclusions runs unconditionally there too). Needs elevation; warns and
-    # skips (doesn't fail the install) if this shell isn't elevated -- see tools/lib/
-    # activation.ps1.
-    Write-Host "`n-- Windows Defender exclusions --" -ForegroundColor Cyan
-    Set-DefenderExclusions
 }
 
 $Steps['profile'] = {

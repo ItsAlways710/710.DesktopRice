@@ -27,7 +27,7 @@
   A genuine before-710.DesktopRice restore, not just a removal of what this repo added:
   the wallpaper, lock screen, accent color and Windows Terminal settings are restored to
   their exact real prior values (snapshotted once, the first time each was ever about to
-  change -- see tools\lib\activation.ps1's "Original-state snapshots" section), not reset
+  change -- see tools\lib\snapshots.ps1's "Original-state snapshots" section), not reset
   to some assumed default and not left as whatever this repo last set them to. So are
   full time's taskbar auto-hide, hardening values and Startup delay, from the copy
   `710sRice activate` (or install -Activate) saves when a machine goes full-time
@@ -113,8 +113,8 @@ function Invoke-ActivationRevert {
     try { & $Action } catch { Step-Warn "$($Describe): $($_.Exception.Message)" }
 }
 
-# Defender exclusions, hardening, taskbar, autostart, the shell-profile hook, and the
-# process-stopping helper all live here, shared with install.ps1. Step-Ok/Info/Warn above
+# Hardening, taskbar, autostart, the shell-profile hook and the process-stopping helper live
+# here or in the libraries it loads, shared with install.ps1. Step-Ok/Info/Warn above
 # must be defined before this dot-source -- activation.ps1 uses ours rather than its own
 # copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
@@ -181,17 +181,16 @@ Invoke-ActivationRevert 'Remove the retired lock-screen sync task and its policy
 try { Restore-FullTimeWindowsSettings -DryRun:$DryRun -FullTime $ComponentCtx.FullTime }
 catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_.Exception.Message)" }
 
-# --- 3. Revert unconditional install.ps1 steps: shell profile, Defender exclusions,
+# --- 3. Revert unconditional install.ps1 steps: shell profile,
 #        wallpaper/accent/Terminal/Flow theming ----------------------------------------
 # All of Section 4/8/9's effects below are also unconditional -- install.ps1 reaches them
-# whether or not -Activate was used -- so, like the shell profile hook and Defender
-# exclusions, they're reverted here regardless of -Activate history. Each Restore-*
-# function (tools\lib\activation.ps1) is its own safe no-op if the thing it covers was
-# never actually snapshotted on this machine (see that file's "Original-state snapshots"
-# section header for the full design).
-Write-Host "`n-- Revert shell profile / Defender exclusions --" -ForegroundColor Cyan
+# whether or not -Activate was used -- so, like the shell profile hook, they're reverted
+# here regardless of -Activate history. Each Restore-* function is its own safe no-op if
+# the thing it covers was never actually snapshotted on this machine (see
+# tools\lib\snapshots.ps1, "Original-state snapshots", for the full design). Defender's
+# exclusions are its component's (tools\components\defender.ps1), reverted below.
+Write-Host "`n-- Revert shell profile --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Remove the pwsh $PROFILE hook' { Remove-ShellProfile }
-Invoke-ActivationRevert 'Remove Windows Defender exclusions' { Remove-DefenderExclusions }
 
 Write-Host "`n-- Revert wallpaper / lock screen / accent color / Windows Terminal / Flow Launcher --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Restore original desktop wallpaper' {

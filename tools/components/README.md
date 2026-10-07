@@ -1,6 +1,6 @@
 # Components
 
-Every app with its own install step is one file here: `<id>.ps1`, returning one hashtable.
+Every app or setting with its own install step is one file here: `<id>.ps1`, returning one hashtable.
 `tools\lib\components.ps1` loads them all (`Get-RiceComponents`). install, uninstall, doctor
 and repair pick a new file up by themselves.
 
@@ -22,7 +22,7 @@ loader stops on a file that still has one.
 
 `$Ctx` has `Root` (the repo), `OnlyRun` (this is a `-Only` run), `FullTime` (the machine's
 mode: the stack starts at sign-in), `IsAdmin`, and `DryRun` (uninstall `-DryRun`). The helpers
-from `tools\lib\activation.ps1` and `tools\lib\packages.ps1` are in scope, and doctor's too
+`tools\lib\activation.ps1` loads and `tools\lib\packages.ps1`'s are in scope, and doctor's too
 (`New-DoctorResult`, ...) for `Check`.
 
 The loader checks every file when it reads it. A broken one throws and names the file: a
@@ -38,7 +38,7 @@ Once loaded, a component that fails is reported and the rest go on: an `Install`
 its own `[XX]` line (the run finishes), an `Uninstall` that throws is reported and the other
 components still revert, a `Check` that throws is "couldn't check".
 
-## The five today
+## The six today
 
 | File | Runs after | What it owns |
 |---|---|---|
@@ -47,6 +47,7 @@ components still revert, a `Check` that throws is "couldn't check".
 | `flow.ps1` | `wallust` (so `theme` themes a Flow set up in the same run) | Flow Launcher: its first start on a new machine, its settings, its own startup turned off (710.ahk starts it), doctor's Flow lines |
 | `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), started (as you) when it isn't running, doctor's "running" line |
 | `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), its own sign-in start off (the Startup-folder shortcut its installer makes), doctor's ShareX lines |
+| `defender.ps1` | `monitors` | Windows Defender's exclusions for what its scans slow down (ShareX, Everything, komorebic.exe, pwsh.exe, this repo): added, removed and checked only from an admin window, and only ever ours |
 
 The worked example is `flow.ps1`: every field but `NamedOnly`, a first start through
 `Start-AsUser`, snapshots, and a restart through 710.ahk. `everything.ps1` / `sharex.ps1` are the smaller
@@ -73,7 +74,7 @@ overridden by repair).
   that starts its own programs apart from itself (Mod Organizer 2's tools) fails with Error 5.
   The bar, Flow and ShareX: `Start-AhkStartedApps` (`tools\lib\activation.ps1`) asks 710.ahk,
   which starts them as you (config\ahk\710.ahk, "The apps 710.ahk starts"). `Start-AsUser`
-  (the same file) starts an app as you through a one-shot task -- so in that task's job: fine
+  (`tools\lib\tasks.ps1`) starts an app as you through a one-shot task -- so in that task's job: fine
   for a start that's stopped again seconds later (Flow's first start). Everything's start goes
   that way too; whether that touches what you open from Everything's own window is untested.
 - **Snapshot before the first change.** Take a once-only snapshot of anything outside the repo

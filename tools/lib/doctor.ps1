@@ -1125,8 +1125,8 @@ function Test-DoctorLockScreen {
 
 # --- f. Integrations -----------------------------------------------------------------------------
 # The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
-# search), Windows Terminal (theme, default shell), the $PROFILE hook, Defender's exclusions,
-# and -- on a full-time machine -- the Windows settings -Activate applies.
+# search), Windows Terminal (theme, default shell), the $PROFILE hook, and -- on a full-time
+# machine -- the Windows settings -Activate applies. (Defender's exclusions: its component.)
 
 function Test-DoctorFlowTheme {
     # Flow on the palette's theme (tools\palette\targets\flow.ps1): selected in its settings and
@@ -1211,25 +1211,6 @@ function Test-DoctorProfileHook {
         'other'     { New-DoctorResult -Id 'profile' -Status 'XX' -Text 'Shell profile hook points at another copy' @fix }
         default     { New-DoctorResult -Id 'profile' -Status 'XX' -Text "Shell profile hook isn't installed" @fix }
     }
-}
-
-function Test-DoctorDefender {
-    # Every path install excludes, and no old exclusion of ours left behind (an earlier
-    # pwsh.exe, or komorebi.exe from before komorebic.exe) -- the same two lists install's
-    # defender step works from. Windows only shows the exclusions to an admin.
-    if (-not (Test-IsAdmin)) { return New-DoctorResult -Id 'defender' -Status '..' -Text 'Defender exclusions: Windows only shows them to an admin -- 710sRice doctor -repair checks them' }
-    try { $pref = Get-MpPreference -ErrorAction Stop }
-    catch { return New-DoctorResult -Id 'defender' -Status '..' -Text "Defender isn't in use here (another antivirus?) -- nothing to check" }
-    $current = @($pref.ExclusionPath)
-    $want    = @(Get-DefenderExclusionPaths)
-    $missing = @($want | Where-Object { $current -notcontains $_ })
-    $stale   = @(Get-StaleDefenderExclusions -Current $current)
-    if (-not $missing.Count -and -not $stale.Count) {
-        return New-DoctorResult -Id 'defender' -Status 'OK' -Text "Defender exclusions: all $($want.Count) in place"
-    }
-    $parts  = @(if ($missing.Count) { "$($missing.Count) missing" }; if ($stale.Count) { "$(Get-DoctorPlural $stale.Count 'old one' 'old ones') left" })
-    $detail = @($missing | ForEach-Object { "missing: $(ConvertTo-SafePath $_)" }) + @($stale | ForEach-Object { "old: $(ConvertTo-SafePath $_)" })
-    New-DoctorResult -Id 'defender' -Status 'XX' -Text "Defender exclusions: $($parts -join ', ')" -Detail $detail -Fix '710sRice install -Only defender' -Step 'defender'
 }
 
 function Test-DoctorWindowsSettings {
@@ -1329,7 +1310,6 @@ function Get-DoctorGroups {
             @{ Id = 'flow-theme'; Name = 'Flow Launcher theme';  Run = { Test-DoctorFlowTheme } }
             @{ Id = 'terminal';   Name = 'Windows Terminal';     Run = { Test-DoctorTerminal } }
             @{ Id = 'profile';    Name = 'Shell profile hook';   Run = { Test-DoctorProfileHook } }
-            @{ Id = 'defender';   Name = 'Defender exclusions';  Run = { Test-DoctorDefender } }
             @{ Id = 'windows';    Name = 'Windows settings';     Run = { Test-DoctorWindowsSettings } }
         ) }
         [pscustomobject]@{ Title = 'Conflicts and leftovers'; Checks = @(
