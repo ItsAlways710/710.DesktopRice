@@ -164,11 +164,7 @@ Invoke-ActivationRevert 'Unregister autostart (Scheduled Tasks + Startup fallbac
     Unregister-Autostart
     Step-Ok 'Autostart unregistered'
 }
-Invoke-ActivationRevert 'Remove the retired lock-screen sync task and its policy key' {
-    # Only a machine from before 2026-09-28 has them; your lock-screen picture itself is put
-    # back in section 3, after the hardening revert below.
-    if (-not (Remove-RetiredLockScreenSync)) { Step-Info 'No old lock-screen sync task or policy key on this machine.' }
-}
+Invoke-ActivationRevert 'Remove the retired lock-screen sync task and its policy key' { Undo-LockScreenSync }
 # Taskbar auto-hide, the hardening values and the Startup delay: put back as they were before
 # this machine went full-time, from the copy `710sRice activate` (or install -Activate) saved.
 # No copy on a full-time machine (made full-time before 710sRice saved one): deleted -- auto-hide
@@ -199,14 +195,7 @@ Invoke-ActivationRevert 'Restore original desktop wallpaper' {
 }
 # After section 2's hardening revert: Restore-LockScreenPicture writes back the Spotlight /
 # Slideshow settings from before 710sRice, and hardening's revert must not undo them.
-Invoke-ActivationRevert 'Restore original lock-screen picture' {
-    switch (Restore-LockScreenPicture) {
-        'restored' { Step-Ok 'Lock-screen picture restored to what it was before this repo ever set it' }
-        'default'  { Step-Ok "Lock screen set to Windows' own default picture -- the one you had before is gone" }
-        'failed'   { Step-Warn 'Lock-screen picture not put back -- pick one in Settings > Personalization > Lock screen.' }
-        default    { Step-Info 'This repo never set the lock screen on this machine -- nothing to restore.' }
-    }
-}
+Invoke-ActivationRevert 'Restore original lock-screen picture' { Undo-LockScreenPicture }
 Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' {
     if (Restore-WindowsAccent) { Step-Ok 'Windows accent color and light/dark-mode settings restored' }
     else { Step-Info 'tools\apply-wallust-outputs.ps1 never actually ran on this machine -- nothing to restore.' }

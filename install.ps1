@@ -634,19 +634,9 @@ $Steps['tasks'] = {
         Register-OnDemandTasks
     }
 
-    # --- 11c. The lock screen: the old sync retired ------------------------------------------
-    # Every install sets the lock screen as your own picture (the theme step, then every
-    # wallpaper change). A machine from before 2026-09-28 may still have the old elevated
-    # 'lock-screen-sync' task and the policy key it wrote, which hides your picture: they go
-    # here -- doctor's fix for them is `-Only tasks` -- and the picture is set once, since
-    # nothing else would before the next wallpaper change. Also set once when nothing has set
-    # it yet (no record: an install from before, on a machine that never had the old task).
-    $oldSync = (Test-Task -TaskName 'lock-screen-sync') -or [bool](Get-OriginalState -Label 'lockscreen-personalizationcsp')
-    if ($oldSync -or -not (Test-Path -LiteralPath (Get-LockScreenRecordPath))) {
-        Write-Host "`n-- Lock screen --" -ForegroundColor Cyan
-        $null = Remove-RetiredLockScreenSync
-        Set-LockScreenToWallpaper
-    }
+    # --- 11c. The lock screen: the old sync retired, your picture set once when needed --------
+    # (tools\lib\lockscreen.ps1; doctor's fix for the old sync is `-Only tasks`).
+    Install-LockScreen
 }
 
 $Steps['windows'] = {

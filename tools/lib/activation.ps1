@@ -29,8 +29,8 @@
   instead; that daemon's port was dropped from this repo (Group 1 #7).
 #>
 
-# Your lock-screen picture: Invoke-LockScreenSetter and its record (install's tasks step and
-# uninstall use them below; the wallpaper pipeline dot-sources the same file).
+# The lock screen, all of it but its setter script: the setter's runner and record (the wallpaper
+# pipeline dot-sources the same file), install's and uninstall's parts, doctor's check.
 . (Join-Path $PSScriptRoot 'lockscreen.ps1')
 
 # The components (tools\components\<id>.ps1, Group 1 #12). Only functions -- nothing is read
@@ -1042,139 +1042,6 @@ function Resolve-TilingMode {
     New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
     Set-Content -Path $path -Value $mode -Encoding ascii
     [pscustomobject]@{ Mode = $mode; Source = $source; Changed = ($null -ne $before -and $before -ne $mode) }
-}
-
-# --- Lock screen: your own lock-screen picture -----------------------------------------
-# Since 2026-09-28 the lock screen follows the wallpaper as YOUR lock-screen picture (Windows'
-# per-user one), set on every wallpaper change by the pipeline -- scripts\Set-LockScreen.ps1
-# through tools\lib\lockscreen.ps1, on every install, with no task and no admin. Before that
-# (2026-09-22 .. 09-28) -Activate registered an elevated on-demand task that wrote a machine
-# policy (HKLM PersonalizationCSP) pointing at the wallpaper file, and the screen before sign-in
-# stayed black after a wallpaper change until the next Win+L (plan doc items 46 and 48). What's
-# left of that here: retiring it on a machine that still has it.
-
-function Restore-LockScreenPolicy {
-    <# Puts the machine policy the old sync wrote (HKLM PersonalizationCSP) back the way it was,
-       from the 'lockscreen-personalizationcsp' snapshot install took when it registered the old
-       task. On the usual machine nothing was there before, so the whole key goes (and Settings'
-       own lock-screen picker works again); otherwise its three values are restored. A key with
-       no snapshot of ours is never touched (a company's policy, say), and a key that's already
-       gone is fine. Needs admin (HKLM): warns and skips without it. $true when the snapshot was
-       used. #>
-    $snap = Get-OriginalState -Label 'lockscreen-personalizationcsp'
-    if (-not $snap) { return $false }
-    if (-not (Test-IsAdmin)) {
-        Step-Warn "The old lock-screen policy key needs an admin window to remove -- run this again from one."
-        return $false
-    }
-    $cspPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
-    $anyExistedBefore = $snap.LockScreenImageStatus.Existed -or $snap.LockScreenImagePath.Existed -or $snap.LockScreenImageUrl.Existed
-    if (-not $anyExistedBefore) {
-        Remove-Item -Path $cspPath -Recurse -Force -ErrorAction SilentlyContinue
-    } else {
-        Set-RegValueFromSnapshot -Path $cspPath -Name 'LockScreenImageStatus' -Snapshot $snap.LockScreenImageStatus
-        Set-RegValueFromSnapshot -Path $cspPath -Name 'LockScreenImagePath' -Snapshot $snap.LockScreenImagePath
-        Set-RegValueFromSnapshot -Path $cspPath -Name 'LockScreenImageUrl' -Snapshot $snap.LockScreenImageUrl
-    }
-    Remove-OriginalState -Label 'lockscreen-personalizationcsp'
-    $true
-}
-
-function Remove-RetiredLockScreenSync {
-    <# Retires the old lock-screen sync on a machine that still has it: the elevated
-       'lock-screen-sync' task, its launch file (launch-lock-screen-sync.txt), and the policy it
-       wrote (Restore-LockScreenPolicy). Called by install's tasks step (so -Activate, a plain
-       re-run and `710sRice install -Only tasks` -- repair's fix, and so update's) and by
-       uninstall. A no-op on a machine that never had it. $true when it removed something:
-       install then sets your picture once, since nothing else would before the next wallpaper
-       change. #>
-    $removed = $false
-    if (Test-Task -TaskName 'lock-screen-sync') {
-        $null = & schtasks.exe /Delete /TN (Get-TaskFullName -TaskName 'lock-screen-sync') /F 2>&1
-        if (Test-Task -TaskName 'lock-screen-sync') {
-            Step-Warn "Couldn't remove the retired lock-screen sync task -- run this again from an admin window."
-        } else {
-            Step-Info 'Removed the retired lock-screen sync task (the lock screen is your own picture now, set on every wallpaper change).'
-            $removed = $true
-        }
-    }
-    Remove-Item (Join-Path $env:LOCALAPPDATA '710.DesktopRice\launch-lock-screen-sync.txt') -Force -ErrorAction SilentlyContinue
-    if (Restore-LockScreenPolicy) {
-        Step-Info "Removed the old lock-screen policy key (put back the way it was before 710sRice) -- it hid your own picture."
-        $removed = $true
-    }
-    $removed
-}
-
-function Set-LockScreenToWallpaper {
-    <# Your lock-screen picture = the wallpaper that's up now, once, outside a wallpaper change:
-       install's tasks step, right after retiring the old sync, or when nothing has set it yet.
-       One line either way. #>
-    $r = Invoke-LockScreenSetter -Root $Root -Image (Get-CurrentWallpaper)
-    $text = ConvertTo-SafeText $r.Message
-    switch ($r.ExitCode) {
-        0       { Step-Ok "Lock screen $text" }
-        2       { Step-Warn "Lock screen $text" }
-        default { Step-Warn "Lock screen: $text -- it follows the next wallpaper change (SUPER+W)." }
-    }
-}
-
-function Get-WindowsLockScreenDefault {
-    # Windows' own default lock-screen picture, for when your original is gone: img100.jpg in
-    # %WINDIR%\Web\Screen, or the first picture there. $null when there's none.
-    $dir = Join-Path $env:WINDIR 'Web\Screen'
-    $first = Join-Path $dir 'img100.jpg'
-    if (Test-Path -LiteralPath $first -PathType Leaf) { return $first }
-    Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -in '.jpg', '.jpeg', '.png' } | Sort-Object Name |
-        Select-Object -First 1 -ExpandProperty FullName
-}
-
-function Restore-LockScreenPicture {
-    <# Uninstall: your lock screen as it was before 710sRice first set it, from the
-       'lockscreen-picture' snapshot scripts\Set-LockScreen.ps1 takes before its first set. The
-       picture first -- the original file (Windows reports the original, not a copy), or Windows'
-       own default picture when that file is gone -- THEN the Spotlight / Slideshow settings, so it
-       doesn't matter whether setting a picture switched them off. If -Activate had already
-       switched Spotlight off when the snapshot was taken (Hardened), those two values were its,
-       not the original: full time's own way back (Restore-FullTimeWindowsSettings) puts them
-       back, so they're left alone here. Run after that. Last, Windows' own copy of the choice
-       for the screens before sign-in, from the 'lockscreen-signin' snapshot the setter takes
-       before it first changes that copy (no snapshot = it never did: left alone). -> 'restored',
-       'default' (the original was gone), 'failed', or $null (nothing ever set here -- nothing to
-       do). #>
-    $snap = Get-OriginalState -Label 'lockscreen-picture'
-    if (-not $snap) { return $null }
-    $img = "$($snap.Image)"
-    $result = 'restored'
-    if (-not $img -or -not (Test-Path -LiteralPath $img -PathType Leaf)) { $img = Get-WindowsLockScreenDefault; $result = 'default' }
-    if ($img) {
-        # -KeepMode: Windows' Picture / Spotlight / Slideshow choice comes back from the snapshot
-        # just below, not from the setter (which otherwise chooses Picture).
-        $r = Invoke-LockScreenSetter -Root $Root -Image $img -KeepMode
-        if ($r.ExitCode -notin 0, 2) { Step-Warn "Lock-screen picture not put back: $(ConvertTo-SafeText $r.Message)"; $result = 'failed' }
-    } else { $result = 'failed' }
-    $cdm = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
-    if (-not $snap.Hardened) {
-        foreach ($name in 'RotatingLockScreenEnabled', 'RotatingLockScreenOverlayEnabled') {
-            if ($snap[$name]) { Set-RegValueFromSnapshot -Path $cdm -Name $name -Snapshot $snap[$name] }
-        }
-    }
-    if ($snap.SlideshowEnabled) {
-        Set-RegValueFromSnapshot -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lock Screen' -Name 'SlideshowEnabled' -Snapshot $snap.SlideshowEnabled
-    }
-    $signIn = Get-OriginalState -Label 'lockscreen-signin'
-    if ($signIn) {
-        $signInKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI\Creative\' +
-            [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        foreach ($name in 'RotatingLockScreenEnabled', 'LockImageFlags') {
-            if ($signIn[$name]) { Set-RegValueFromSnapshot -Path $signInKey -Name $name -Snapshot $signIn[$name] }
-        }
-        Remove-OriginalState -Label 'lockscreen-signin'
-    }
-    Remove-OriginalState -Label 'lockscreen-picture'
-    Remove-Item -LiteralPath (Get-LockScreenRecordPath) -Force -ErrorAction SilentlyContinue
-    $result
 }
 
 # --- Stopping running components (uninstall-only; not gated behind -Activate) --------

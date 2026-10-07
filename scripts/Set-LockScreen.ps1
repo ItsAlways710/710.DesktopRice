@@ -176,7 +176,7 @@ function Set-PictureMode {
 function Save-SignInOriginalOnce {
     # Windows' sign-in copy of the choice as it was, before this script first changes it -- both
     # values, in Get-RegSnapshot's shape, once ever (like Save-OriginalOnce). Uninstall puts it
-    # back: activation.ps1's Restore-LockScreenPicture.
+    # back: tools\lib\lockscreen.ps1's Restore-LockScreenPicture.
     $file = Join-Path $stateDir 'original-state\lockscreen-signin.json'
     if (Test-Path -LiteralPath $file) { return }
     $o = [ordered]@{
