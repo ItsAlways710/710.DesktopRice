@@ -72,12 +72,18 @@
                 if (-not $colorSnap.WallustThemeEntryExisted -and $wt['themes'] -is [array]) {
                     $wt['themes'] = @($wt['themes'] | Where-Object { $_['name'] -ne 'wallust' })
                 }
-                # The "wallust" colour scheme itself (the palette's Terminal target adds it to schemes[]): gone
-                # too once nothing uses it -- the defaults or a profile of its own, as a name or as a light /
-                # dark pair. It used to stay in Terminal's scheme list forever (found 2026-10-01). Still
-                # used = kept (a "before" that already said wallust -- the Dell's -- or your own pick).
-                if ($wt['schemes'] -is [array] -and -not (Test-TerminalUsesScheme -Settings $wt -Name 'wallust')) {
-                    $wt['schemes'] = @($wt['schemes'] | Where-Object { -not ($_ -is [System.Collections.IDictionary] -and $_['name'] -eq 'wallust') })
+                # The "wallust" colour scheme itself (the palette's Terminal target adds it to schemes[]). A
+                # snapshot from 2026-10-07 on says whether one was there before ours (review item 3): that
+                # one is put back in place of ours. Otherwise ours goes once nothing uses it -- the defaults
+                # or a profile of its own, as a name or as a light / dark pair; it used to stay in
+                # Terminal's scheme list forever (found 2026-10-01). Still used = kept: removing it would
+                # leave that profile without its colours (your own pick since, or an older snapshot's
+                # "before" that already said wallust -- the Dell's).
+                $others = @($wt['schemes'] | Where-Object { -not ($_ -is [System.Collections.IDictionary] -and $_['name'] -eq 'wallust') })
+                if ($colorSnap.WallustSchemeExisted -and $colorSnap.WallustScheme) {
+                    $wt['schemes'] = @($others) + @($colorSnap.WallustScheme)
+                } elseif ($wt['schemes'] -is [array] -and -not (Test-TerminalUsesScheme -Settings $wt -Name 'wallust')) {
+                    $wt['schemes'] = $others
                 }
                 Remove-OriginalState -Label 'terminal-colorscheme'
             }

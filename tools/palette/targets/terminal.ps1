@@ -49,12 +49,17 @@ $readable += @{ Fg = 'cursorColor'; Bg = 'background'; Min = 3.0; Guard = 'termi
         # puts them back (same label and shape the old pipeline wrote, so existing snapshots still work).
         $colorSchemeExisted = $wt['profiles'] -is [System.Collections.IDictionary] -and $wt['profiles']['defaults'] -is [System.Collections.IDictionary] -and $wt['profiles']['defaults'].Contains('colorScheme')
         $existingTheme = if ($wt['themes'] -is [array]) { @($wt['themes']) | Where-Object { $_['name'] -eq 'wallust' } | Select-Object -First 1 } else { $null }
+        # A "wallust" scheme of someone else's that ours is about to replace: saved whole (since
+        # 2026-10-07), so uninstall puts it back rather than leaving ours in its place.
+        $existingScheme = @($wt['schemes']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['name'] -eq 'wallust' } | Select-Object -First 1
         Save-PaletteOriginalStateOnce -Label 'terminal-colorscheme' -Data @{
             ColorSchemeExisted       = $colorSchemeExisted
             ColorScheme              = if ($colorSchemeExisted) { $wt['profiles']['defaults']['colorScheme'] } else { $null }
             ThemeKeyExisted          = $wt.Contains('theme')
             Theme                    = $wt['theme']
             WallustThemeEntryExisted = $null -ne $existingTheme
+            WallustSchemeExisted     = $null -ne $existingScheme
+            WallustScheme            = $existingScheme
         }
         if (-not $wt.Contains('profiles') -or $wt['profiles'] -isnot [System.Collections.IDictionary]) { $wt['profiles'] = [ordered]@{} }
         if (-not $wt['profiles'].Contains('defaults') -or $wt['profiles']['defaults'] -isnot [System.Collections.IDictionary]) { $wt['profiles']['defaults'] = [ordered]@{} }

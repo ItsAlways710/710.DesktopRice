@@ -848,7 +848,7 @@ function Get-PaletteLfSha256 {
 }
 
 function Save-PaletteOriginalStateOnce {
-    <# The true-uninstall snapshot (tools\lib\activation.ps1's Save-OriginalState, same path and
+    <# The true-uninstall snapshot (tools\lib\snapshots.ps1's Save-OriginalState, same path and
        shape: %LOCALAPPDATA%\710.DesktopRice\original-state\<label>.json, written once ever) --
        uninstall's Restore-* functions read these. #>
     param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)]$Data)
@@ -860,7 +860,7 @@ function Save-PaletteOriginalStateOnce {
 }
 
 function Get-PaletteRegValueSnapshot {
-    # One named value, never a whole key (activation.ps1's Get-RegValueSnapshot, same shape).
+    # One named value, never a whole key (snapshots.ps1's Get-RegValueSnapshot, same shape).
     param([string]$Path, [string]$Name)
     $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
     if (-not $item) { return [ordered]@{ Existed = $false; Value = $null; Type = $null } }
@@ -1027,13 +1027,13 @@ function Exit-PaletteLock {
 # ------------------------------------------------------------------------------------------
 function Get-PaletteCurrentWallpaper {
     <# The wallpaper that's up now: HKCU\Control Panel\Desktop\WallPaper -- what both
-       SystemParametersInfo and YASB's IDesktopWallpaper call keep current (activation.ps1's
+       SystemParametersInfo and YASB's IDesktopWallpaper call keep current (wallpaper.ps1's
        Get-CurrentWallpaper, the same read). $null when none is set. #>
     (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallPaper' -ErrorAction SilentlyContinue).WallPaper
 }
 
 function ConvertTo-PaletteSafeText {
-    # No path under the user's folders in anything printed or logged (activation.ps1's
+    # No path under the user's folders in anything printed or logged (text.ps1's
     # ConvertTo-SafeText rule: the profile folders, either slash, whole-folder matches).
     param([AllowEmptyString()][string]$Text)
     if (-not $Text) { return $Text }
@@ -1093,7 +1093,7 @@ function Invoke-PaletteTargets {
 
 function Send-PaletteAhkMessage {
     <# Posts a registered message ('710sRice.PaletteFailed', '710sRice.StartApps' with -WParam,
-       ...) to 710.ahk's hidden window, found by its title (activation.ps1's Find-AhkWindow, the
+       ...) to 710.ahk's hidden window, found by its title (ahk.ps1's Find-AhkWindow, the
        same lookup -- this library stays free of activation.ps1). 710.ahk lets these through UIPI
        itself; before it knows a message the post is simply refused. $false when 710.ahk isn't
        there. #>
@@ -1114,7 +1114,7 @@ public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntP
         $script = Join-Path $script:PaletteLibRoot 'config\ahk\710.ahk'
         $hwnd = [IntPtr]::Zero
         while ($true) {
-            # [NullString]::Value, not $null: $null reaches a .NET string as "" (activation.ps1's note).
+            # [NullString]::Value, not $null: $null reaches a .NET string as "" (ahk.ps1's note).
             $hwnd = [Palette.Native.Ahk]::FindWindowEx([IntPtr]::Zero, $hwnd, 'AutoHotkey', [NullString]::Value)
             if ($hwnd -eq [IntPtr]::Zero) { return $false }
             $sb = [System.Text.StringBuilder]::new(1024)
