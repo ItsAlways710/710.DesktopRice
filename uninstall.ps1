@@ -195,7 +195,7 @@ Invoke-ActivationRevert 'Restore original desktop wallpaper' {
 }
 # After section 2's hardening revert: Restore-LockScreenPicture writes back the Spotlight /
 # Slideshow settings from before 710sRice, and hardening's revert must not undo them.
-Invoke-ActivationRevert 'Restore original lock-screen picture' { Undo-LockScreenPicture }
+Invoke-ActivationRevert 'Restore original lock-screen picture' { Undo-LockScreenPicture -WasFullTime $ComponentCtx.FullTime }
 Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' {
     if (Restore-WindowsAccent) { Step-Ok 'Windows accent color and light/dark-mode settings restored' }
     else { Step-Info 'tools\apply-wallust-outputs.ps1 never actually ran on this machine -- nothing to restore.' }

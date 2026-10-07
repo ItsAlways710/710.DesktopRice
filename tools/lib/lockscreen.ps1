@@ -177,11 +177,15 @@ function Restore-LockScreenPicture {
        doesn't matter whether setting a picture switched them off. If -Activate had already
        switched Spotlight off when the snapshot was taken (Hardened), those two values were its,
        not the original: full time's own way back (Restore-FullTimeWindowsSettings) puts them
-       back, so they're left alone here. Run after that. Last, Windows' own copy of the choice
+       back, so they're left alone here -- unless that didn't run in this uninstall
+       (-FullTimeRestored:$false: on demand by then, after a deactivate, with no copy left), when
+       they're deleted, Windows' own default, as full time's way back does without a copy. Run
+       after that. Last, Windows' own copy of the choice
        for the screens before sign-in, from the 'lockscreen-signin' snapshot the setter takes
        before it first changes that copy (no snapshot = it never did: left alone). -> 'restored',
        'default' (the original was gone), 'failed', or $null (nothing ever set here -- nothing to
        do). #>
+    param([bool]$FullTimeRestored = $true)
     $snap = Get-OriginalState -Label 'lockscreen-picture'
     if (-not $snap) { return $null }
     $img = "$($snap.Image)"
@@ -197,6 +201,12 @@ function Restore-LockScreenPicture {
     if (-not $snap.Hardened) {
         foreach ($name in 'RotatingLockScreenEnabled', 'RotatingLockScreenOverlayEnabled') {
             if ($snap[$name]) { Set-RegValueFromSnapshot -Path $cdm -Name $name -Snapshot $snap[$name] }
+        }
+    } elseif (-not $FullTimeRestored) {
+        # Nothing else puts Spotlight back after a deactivate: its lock-screen set left Picture
+        # chosen, and the machine is on demand now (review item 5, 2026-10-07).
+        foreach ($name in 'RotatingLockScreenEnabled', 'RotatingLockScreenOverlayEnabled') {
+            Remove-ItemProperty -Path $cdm -Name $name -ErrorAction SilentlyContinue
         }
     }
     if ($snap.SlideshowEnabled) {
@@ -242,8 +252,10 @@ function Undo-LockScreenSync {
 
 function Undo-LockScreenPicture {
     # uninstall, section 3: your lock screen as it was before 710sRice (Restore-LockScreenPicture),
-    # and a line saying how that went.
-    switch (Restore-LockScreenPicture) {
+    # and a line saying how that went. -WasFullTime: the mode uninstall read before anything
+    # changed; it, or a saved copy, means section 2's full-time way back ran.
+    param([bool]$WasFullTime = $true)
+    switch (Restore-LockScreenPicture -FullTimeRestored ($WasFullTime -or [bool](Get-SavedFullTimeSettings))) {
         'restored' { Step-Ok 'Lock-screen picture restored to what it was before this repo ever set it' }
         'default'  { Step-Ok "Lock screen set to Windows' own default picture -- the one you had before is gone" }
         'failed'   { Step-Warn 'Lock-screen picture not put back -- pick one in Settings > Personalization > Lock screen.' }
