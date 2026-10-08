@@ -61,6 +61,7 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 . (Join-Path $PSScriptRoot '..\steps\theme.ps1')
 . (Join-Path $PSScriptRoot '..\steps\monitors.ps1')
 . (Join-Path $PSScriptRoot '..\steps\profile.ps1')
+. (Join-Path $PSScriptRoot '..\steps\compile.ps1')
 
 # --- Autostart: Scheduled Tasks At-LogOn (-Activate-gated) ---------------------------
 

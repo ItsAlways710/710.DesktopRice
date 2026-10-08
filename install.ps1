@@ -399,11 +399,7 @@ $Steps['profile'] = { Install-ProfileStep }   # tools\steps\profile.ps1
 
 $Steps['monitors'] = { Install-MonitorsStep }   # tools\steps\monitors.ps1
 
-$Steps['compile'] = {
-    # --- 10. Recompile komorebi.json -----------------------------------------------------------
-    Write-Host "`n-- Compiling komorebi.json --" -ForegroundColor Cyan
-    & (Join-Path $Root 'tools\compile-komorebi-rules.ps1')
-}
+$Steps['compile'] = { Install-CompileStep }   # tools\steps\compile.ps1
 
 $Steps['tasks'] = {
     # --- 10b. Tiling mode (elevated komorebi or not) -------------------------------------------

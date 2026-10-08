@@ -68,7 +68,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | defender | `tools\components\defender.ps1` | same file | `defender` | `Step=defender` |
 | profile | `tools\steps\profile.ps1` (`Install-ProfileStep`: the `$PROFILE` hook) | same file (`Remove-ShellProfile`, uninstall's section 3) | `profile` (same file) | `Step=profile` |
 | terminal | `tools\components\terminal.ps1` (default shell, font; font helpers in `tools\lib\terminal.ps1`) | same file (`Restore-WindowsTerminalSettings`: default shell, font, the palette's colour scheme) | `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` (`terminal`: `Step=palette`) |
-| compile | `install.ps1` → `tools\compile-komorebi-rules.ps1` | `uninstall.ps1` section 9 (`komorebi.json`) | `doctor.ps1` `komorebi-json`, `komorebi-json-warnings`, `asc` | `Step=compile`, `Repair=reload` |
+| compile | `tools\steps\compile.ps1` (`Install-CompileStep`) → `tools\compile-komorebi-rules.ps1` | `uninstall.ps1` section 9 (`komorebi.json`) | `komorebi-json`, `komorebi-json-warnings`, `asc` (`tools\steps\compile.ps1`) | `Step=compile`, `Repair=reload` |
 | tasks | `install.ps1` (tiling mode, the tasks; then the lock screen's part, `Install-LockScreen` in `tools\lib\lockscreen.ps1`); registering them in `activation.ps1`, task plumbing in `tools\lib\tasks.ps1` | `uninstall.ps1` section 2 (`Unregister-Autostart`; `Undo-LockScreenSync`), section 9 (`tiling-mode.txt`) | `doctor.ps1` `mode`, `task:*`, `task:retired`, `tiling`; `lock-screen:old` (`lockscreen.ps1`) | `Step=tasks`, `Repair=tiling:<mode>` |
 | windows (-Activate) | `install.ps1` → `Install-FullTimeWindowsSettings` in `tools\lib\fulltime.ps1` | `uninstall.ps1` section 2 → `Restore-FullTimeWindowsSettings` (`fulltime.ps1`) | `windows` (`fulltime.ps1`) | `Step=windows` |
 
@@ -126,7 +126,7 @@ Component checks come at the end of their group, in install's order.
 | Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust` (`tools\steps\wallust.ps1`), other packages (`Test-DoctorOtherPackages`) |
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
-| Generated configs | `komorebi-json`, `asc`, `display-index` (`tools\steps\monitors.ps1`), `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last` (`tools\steps\theme.ps1`), `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
+| Generated configs | `komorebi-json`, `asc` (`tools\steps\compile.ps1`), `display-index` (`tools\steps\monitors.ps1`), `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last` (`tools\steps\theme.ps1`), `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
 | Integrations | `flow-theme` (`tools\steps\theme.ps1`), `profile` (`tools\steps\profile.ps1`), `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 
