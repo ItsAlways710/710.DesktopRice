@@ -3,7 +3,9 @@
   The tiling mode: komorebi elevated (the default -- admin windows tile too) or not. Chosen by
   install's switches (-ElevatedTiling / -NoElevatedTiling) or `710sRice tiling`, remembered per
   machine, read when komorebi's task is registered (Get-KomorebiRunLevel, tools\steps\tasks.ps1);
-  doctor's tiling line. Loaded by tools\lib\activation.ps1. Only functions.
+  doctor's tiling line; `710sRice tiling` itself (its rows, and repair's `tiling <mode>`: they use
+  the dispatcher's own Write-RiceError and $script:RiceExit). Loaded by tools\lib\activation.ps1.
+  Only functions.
 #>
 
 # --- Tiling mode: elevated komorebi or not (plan doc Open item 37) ------------------------
@@ -77,4 +79,60 @@ function Test-DoctorTilingMode {
             -Fix '710sRice restart' -Repair 'restart'
     }
     New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task and the running komorebi agree"
+}
+
+# --- 710sRice tiling: status, elevated, normal (the dispatcher's rows; repair's `tiling <mode>`) ---
+function Get-RiceLevelText { param($Level) if ($Level -eq 'HighestAvailable' -or $Level -eq 'elevated') { 'elevated' } else { 'not elevated' } }
+
+function Show-RiceTilingStatus {
+    # Three answers that can disagree: what's saved, what komorebi's task will start it as,
+    # and what's running now. The saved mode only reaches the task through install or
+    # `tiling elevated|normal`, and the task only reaches komorebi at its next start.
+    $saved   = Get-TilingMode
+    $isSaved = Test-Path -LiteralPath (Get-TilingModePath)
+    $task    = Get-ComponentTaskInfo -TaskName 'komorebi'
+    $running = Get-ProcessElevation -Name 'komorebi'
+    $taskText = if (-not $task) { 'none -- run `710sRice install` first' }
+                else { "$(Get-RiceLevelText $task.RunLevel), $(if ($task.AtLogOn) { 'starts at sign-in' } else { 'on demand (no sign-in start)' })" }
+    $runText  = switch ($running) {
+        'elevated'    { 'elevated' }
+        'normal'      { 'not elevated' }
+        'not running' { 'not running' }
+        default       { "couldn't tell" }
+    }
+    Write-Host ''
+    Write-Host ('    {0,-20}{1}' -f 'Tiling mode:', "$saved$(if (-not $isSaved) { ' (the default)' })")
+    Write-Host ('    {0,-20}{1}' -f "komorebi's task:", $taskText)
+    Write-Host ('    {0,-20}{1}' -f 'Running komorebi:', $runText)
+    Write-Host ''
+    if ($task -and (Get-RiceLevelText $task.RunLevel) -ne (Get-RiceLevelText $saved)) {
+        Step-Warn "komorebi's task doesn't match the saved mode -- ``710sRice tiling $saved`` re-registers it."
+    } elseif ($task -and $running -in 'elevated', 'normal' -and (Get-RiceLevelText $running) -ne (Get-RiceLevelText $task.RunLevel)) {
+        Step-Info 'Takes effect at komorebi''s next start: `710sRice restart` (or sign out and in).'
+    }
+}
+
+function Set-RiceTilingMode {
+    # `tiling elevated|normal` (already admin by now): save the mode, then re-register ONLY
+    # komorebi's task, in the kind it already is -- sign-in (an -Activate'd machine) or on
+    # demand. Same mode as before: say so and re-register anyway, which also repairs a task
+    # that drifted from the saved mode. A running komorebi is left alone.
+    param([ValidateSet('elevated', 'normal')][string]$Mode)
+    $task = Get-ComponentTaskInfo -TaskName 'komorebi'
+    if (-not $task) { throw 'komorebi has no scheduled task yet -- run `710sRice install` first. Nothing was changed.' }
+    $before = Get-TilingMode
+    $null = Resolve-TilingMode -Elevated:($Mode -eq 'elevated') -Normal:($Mode -eq 'normal')
+    if ($before -eq $Mode) { Step-Info "Tiling mode is already $Mode -- re-registering komorebi's task to match anyway." }
+    else { Step-Ok "Tiling mode: $before -> $Mode" }
+    if ($task.AtLogOn) { Register-Autostart -Key 'komorebi' } else { Register-OnDemandTasks -Key 'komorebi' }
+    $after = Get-ComponentTaskInfo -TaskName 'komorebi'
+    if (-not $after -or (Get-RiceLevelText $after.RunLevel) -ne (Get-RiceLevelText $Mode)) {
+        Write-RiceError "komorebi's task still isn't $Mode (see above). The saved mode is $Mode now, so ``710sRice tiling $Mode`` again retries just the task."
+        $script:RiceExit = 1
+        return
+    }
+    $running = Get-ProcessElevation -Name 'komorebi'
+    if ($running -in 'elevated', 'normal' -and (Get-RiceLevelText $running) -ne (Get-RiceLevelText $Mode)) {
+        Step-Info "komorebi is still running $(if ($running -eq 'elevated') { 'elevated' } else { 'non-elevated' }) -- the new mode takes effect at its next start: ``710sRice restart`` (or sign out and in)."
+    }
 }

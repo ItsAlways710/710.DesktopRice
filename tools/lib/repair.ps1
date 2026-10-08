@@ -161,9 +161,9 @@ function Invoke-RepairPlan {
         try { & (Join-Path $Root 'install.ps1') -Only $Plan.Steps | Out-Host }
         catch { Write-Host "  [!!] install stopped: $($_.Exception.Message)" -ForegroundColor Yellow }
     }
-    # The rest is the dispatcher's own code for each command (tools\lib\stack-commands.ps1;
-    # repair runs inside 710sRice.ps1): the same thing as typing the command, from this same
-    # admin window.
+    # The rest is the dispatcher's own code for each command (tools\lib\tiling.ps1 and
+    # stack-commands.ps1; repair runs inside 710sRice.ps1): the same thing as typing the command,
+    # from this same admin window.
     if ($Plan.Tiling) {
         # Only saves the mode and re-registers komorebi's task; a running komorebi keeps its
         # level until it restarts (the re-check's [!!] says `710sRice restart`).
