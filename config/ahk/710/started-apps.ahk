@@ -114,7 +114,7 @@ AppsLog(m) {
 }
 
 ; Once, after install's tasks step removed the old start-up tasks (Remove-RetiredStartTasks,
-; tools\lib\activation.ps1): a bar, Flow or ShareX still running may be the copy its task started,
+; tools\lib\stack.ps1): a bar, Flow or ShareX still running may be the copy its task started,
 ; still inside the task's job -- MO2 opened from it would keep failing until it restarts. The step
 ; writes which ones were running (the StartApps bits) to restart-after-retire.txt and asks here
 ; ('710sRice.RestartRetired', further down). The file is read as this script starts too: a 710.ahk

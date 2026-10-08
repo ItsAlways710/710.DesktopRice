@@ -57,7 +57,7 @@ OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710s
 
 ; And the polite way out. A normal shell can't Stop-Process a UI Access process
 ; (also 'Access is denied'), so scripts\Stop-All.ps1 -- via Stop-RunningComponents
-; in tools\lib\activation.ps1 -- asks us to leave instead. AHK only; Stop-All
+; in tools\lib\stack.ps1 -- asks us to leave instead. AHK only; Stop-All
 ; handles komorebi/YASB/ShareX itself, in order, before it gets here.
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.Quit', 'UInt')), (*) => SetTimer(() => ExitApp(), -1))
 
@@ -71,13 +71,13 @@ OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710s
 ; `reload bar`, repair, update, install's Flow and ShareX steps, a theme change -- since only this
 ; script starts them ("The apps 710.ahk starts"). wParam says which, added up: 1 the bar, 2 Flow,
 ; 4 ShareX; each starts only if it isn't running. Fire-and-forget: the sender waits for the
-; process itself (Start-AhkStartedApps in tools\lib\activation.ps1; the theme pipeline's Flow
+; process itself (Start-AhkStartedApps in tools\lib\stack.ps1; the theme pipeline's Flow
 ; restart posts it with Send-PaletteAhkMessage, tools\lib\palette.ps1).
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.StartApps', 'UInt')), (wParam, *) => SetTimer(() => StartApps(wParam & 7, 'asked by 710sRice'), -1))
 
 ; Install's tasks step, right after it removed the old start-up tasks: restart-after-retire.txt is
 ; waiting (RestartRetired, "The apps 710.ahk starts"). The sender watches the file go, then the
-; apps come back as new processes (Request-RetiredAppsRestart, tools\lib\activation.ps1).
+; apps come back as new processes (Request-RetiredAppsRestart, tools\lib\stack.ps1).
 OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.RestartRetired', 'UInt')), (*) => SetTimer(RestartRetired, -1))
 
 ; The wallpaper pipeline, when wallust couldn't make a palette (PaletteFailedToast).

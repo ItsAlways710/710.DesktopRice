@@ -38,7 +38,7 @@ ReloadStack(note := '', *) {
 
 QuitStack() {
     ; Ordered, non-elevated stop -- the same set as scripts\Stop-All.ps1
-    ; (Stop-RunningComponents in tools\lib\activation.ps1): komorebi, the
+    ; (Stop-RunningComponents in tools\lib\stack.ps1): komorebi, the
     ; bar/capture tools, AHK last. Flow Launcher isn't touched -- this script
     ; only starts it; it's an ordinary app you can keep using without the stack.
     try Komorebic('stop')
