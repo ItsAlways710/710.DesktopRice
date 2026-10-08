@@ -70,6 +70,7 @@ $Root = $PSScriptRoot
 # the arguments that follow the name, with their switch marks intact. Hidden rows work but
 # stay out of the help list (bare `tiling` = `tiling status`). AsksAdmin tags a row that runs as
 # you but asks for UAC part-way (update's repair) with (admin) in help, like a Required row.
+# NoOptions: the command takes none -- the main block refuses anything after it (before any UAC).
 $Commands = [ordered]@{
     'help'      = @{ Usage = 'help'; Help = 'Show this list'; Admin = 'Any'
                      Run = { Show-RiceHelp } }
@@ -92,14 +93,8 @@ $Commands = [ordered]@{
                       Run = { . (Join-Path $Root 'tools\lib\switch.ps1'); Invoke-RiceSwitch 'deactivate' @args } }
     # doctor: read-only, any window. Its checks live in tools\lib\doctor.ps1, loaded only here;
     # the exit code is the number of problems ([XX]) it found.
-    'doctor'    = @{ Usage = 'doctor'; Help = 'Health check -- each problem names the command that fixes it (changes nothing)'; Admin = 'Any'
+    'doctor'    = @{ Usage = 'doctor'; Help = 'Health check -- each problem names the command that fixes it (changes nothing)'; Admin = 'Any'; NoOptions = $true
                      Run = {
-                         if ($args.Count) {
-                             Write-RiceError "Unknown option '$($args[0])' for doctor"
-                             Show-RiceCommandHelp 'doctor'
-                             $script:RiceExit = 1
-                             return
-                         }
                          . (Join-Path $Root 'tools\lib\activation.ps1')
                          . (Join-Path $Root 'tools\lib\doctor.ps1')
                          $script:RiceExit = Invoke-RiceDoctor
@@ -111,14 +106,8 @@ $Commands = [ordered]@{
     # ALSO update's hand-off (tools\lib\update.ps1): every update's first half, however old,
     # starts `710sRice.ps1 --elevated doctor -repair` or `710sRice.ps1 doctor -repair` from the
     # files it just pulled -- keep this row's name and the --elevated marker working, always.
-    'doctor -repair' = @{ Usage = 'doctor -repair'; Help = 'Fix what doctor finds -- never your wallpaper, theme or choices'; Admin = 'Required'
+    'doctor -repair' = @{ Usage = 'doctor -repair'; Help = 'Fix what doctor finds -- never your wallpaper, theme or choices'; Admin = 'Required'; NoOptions = $true
                      Run = {
-                         if ($args.Count) {
-                             Write-RiceError "Unknown option '$($args[0])' for doctor -repair"
-                             Show-RiceCommandHelp 'doctor -repair'
-                             $script:RiceExit = 1
-                             return
-                         }
                          . (Join-Path $Root 'tools\lib\activation.ps1')
                          . (Join-Path $Root 'tools\lib\doctor.ps1')
                          . (Join-Path $Root 'tools\lib\stack-commands.ps1')
@@ -128,14 +117,8 @@ $Commands = [ordered]@{
     # update: pull as you (tools\lib\update.ps1 -- loaded here, BEFORE the pull; nothing is loaded
     # after it), then doctor -repair in a new process started from the pulled files. The row runs
     # in any window; the repair asks for UAC itself (AsksAdmin: help says (admin)).
-    'update'    = @{ Usage = 'update'; Help = 'Get the newest version from GitHub, then repair -- keeps your wallpaper, theme and choices'; Admin = 'Any'; AsksAdmin = $true
+    'update'    = @{ Usage = 'update'; Help = 'Get the newest version from GitHub, then repair -- keeps your wallpaper, theme and choices'; Admin = 'Any'; AsksAdmin = $true; NoOptions = $true
                      Run = {
-                         if ($args.Count) {
-                             Write-RiceError "Unknown option '$($args[0])' for update"
-                             Show-RiceCommandHelp 'update'
-                             $script:RiceExit = 1
-                             return
-                         }
                          . (Join-Path $Root 'tools\lib\activation.ps1')
                          . (Join-Path $Root 'tools\lib\doctor.ps1')
                          . (Join-Path $Root 'tools\lib\update.ps1')
@@ -164,16 +147,8 @@ $Commands = [ordered]@{
     # (tools\lib\palette-commands.ps1), both loaded only here. Any window: a switch goes through
     # the wallpaper pipeline (apply-wallust-outputs.ps1 -ProfileId), which keeps the old choice
     # when the new profile's palette can't be made.
-    'palette'     = @{ Usage = 'palette'; Help = 'List the palette profiles (SUPER+Alt+Space > Palette profiles)'; Admin = 'Any'
-                       Run = {
-                           if ($args.Count) {
-                               Write-RiceError "Unknown option '$($args[0])' for palette"
-                               Show-RiceCommandHelp 'palette'
-                               $script:RiceExit = 1
-                               return
-                           }
-                           . (Join-Path $Root 'tools\lib\palette.ps1'); . (Join-Path $Root 'tools\lib\palette-commands.ps1'); Show-RicePalettes
-                       } }
+    'palette'     = @{ Usage = 'palette'; Help = 'List the palette profiles (SUPER+Alt+Space > Palette profiles)'; Admin = 'Any'; NoOptions = $true
+                       Run = { . (Join-Path $Root 'tools\lib\palette.ps1'); . (Join-Path $Root 'tools\lib\palette-commands.ps1'); Show-RicePalettes } }
     'palette use' = @{ Usage = 'palette use <profile>'; Help = 'Theme everything with that profile now (default, 0-9 or its name)'; Admin = 'Any'
                        Run = { . (Join-Path $Root 'tools\lib\palette-commands.ps1'); Invoke-RicePaletteUse @args } }
     # The editor is a window of its own (tools\palette-editor.ps1, hidden pwsh -STA): these start
@@ -334,6 +309,10 @@ try {
             $rest = @($argv | Select-Object -Skip $skip)
             if (@($rest | Where-Object { "$_" -in $HelpFlags }).Count) {
                 Show-RiceCommandHelp $name
+            } elseif ($Commands[$name].NoOptions -and $rest.Count) {
+                Write-RiceError "Unknown option '$($rest[0])' for $name"
+                Show-RiceCommandHelp $name
+                $script:RiceExit = 1
             } elseif ($Commands[$name].Admin -eq 'Required' -and -not (Test-RiceAdmin)) {
                 # Never relaunch from a relaunch: if the admin window somehow isn't admin, stop
                 # here rather than asking for UAC again and again.
