@@ -227,12 +227,13 @@ function Test-DoctorThemeFiles {
 function Test-DoctorThemeInputs {
     # The theme on screen made from what's in the repo now, with the profile chosen now. The
     # pipeline stamps what it was made from after every run that applied everything
-    # (theme-inputs.sha256: tools\apply-wallust-outputs.ps1, tools\lib\palette.ps1, every file in
-    # tools\palette\targets, and "profile:<id>" = the chosen profile file's hash) -- the list comes
-    # from Get-PaletteThemeInputs (tools\lib\palette.ps1), the one the pipeline writes with. A pull
-    # that brings a new target or template, a profile changed by hand, a choice made behind the
-    # pipeline's back, a run that stopped part-way: each leaves the old look until the next
-    # wallpaper change. No stamp at all = an install from before the stamp.
+    # (theme-inputs.sha256: tools\apply-wallust-outputs.ps1, tools\lib\palette.ps1 and the
+    # palette-files.ps1 it loads, every file in tools\palette\targets, and "profile:<id>" = the
+    # chosen profile file's hash) -- the list comes from Get-PaletteThemeInputs
+    # (tools\lib\palette.ps1), the one the pipeline writes with. A pull that brings a new target or
+    # template, a profile changed by hand, a choice made behind the pipeline's back, a run that
+    # stopped part-way: each leaves the old look until the next wallpaper change. No stamp at all
+    # = an install from before the stamp.
     $stamp = Join-Path (Get-DoctorLogDir) 'theme-inputs.sha256'
     $fix = @{ Fix = '710sRice install -Only palette'; Step = 'palette' }
     $made = [ordered]@{}

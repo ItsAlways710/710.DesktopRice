@@ -22,8 +22,8 @@ stamp pick a new file up by themselves.
 `$Values` is this target's resolved properties (`$Values.accent` → `'#696868'`); `$Theme`
 has `Roles`, `Targets` (every target's values), `AppDark`; `$Context` has `Mode` (`full`,
 `reapply`, `borders`), `IsAdmin`, `Changed` (the file target's output changed this run).
-Helpers from `tools\lib\palette.ps1` are in scope (`ConvertTo-PaletteRgb`,
-`Save-PaletteOriginalStateOnce`, `Write-PaletteFile`, ...).
+Helpers from `tools\lib\palette.ps1` and the `palette-files.ps1` it loads are in scope
+(`ConvertTo-PaletteRgb`, `Save-PaletteOriginalStateOnce`, `Write-PaletteFile`, ...).
 
 A target that changes something outside the repo takes a once-only snapshot first
 (`Save-PaletteOriginalStateOnce`) and gets a matching restore in uninstall

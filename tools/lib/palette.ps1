@@ -784,57 +784,9 @@ function Resolve-PaletteTheme {
 }
 
 # ------------------------------------------------------------------------------------------
-# Rendering and writing
+# Rendering and writing (tools\lib\palette-files.ps1: every caller of this library has it)
 # ------------------------------------------------------------------------------------------
-function Expand-PaletteTemplate {
-    <# {{name}} -> value, byte for byte everything else (line endings included -- the file as the
-       clone has it, exactly what wallust did with the old templates). An unknown {{name}} throws:
-       a typo in a template must not ship a broken file. #>
-    param([Parameter(Mandatory)][string]$Text, [Parameter(Mandatory)][System.Collections.IDictionary]$Values)
-    [regex]::Replace($Text, '\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}', {
-        param($m)
-        $k = $m.Groups[1].Value
-        if (-not $Values.Contains($k)) { throw "template placeholder {{$k}} has no value" }
-        "$($Values[$k])"
-    })
-}
-
-function Write-PaletteFile {
-    <# UTF-8, no BOM. Only writes when the bytes differ (watchers -- YASB's stylesheet watch --
-       fire on every write), through a temp file + move so a reader never sees half a file.
-       $true = written. #>
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][AllowEmptyString()][string]$Text)
-    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Text)
-    if (Test-Path -LiteralPath $Path) {
-        $old = [IO.File]::ReadAllBytes($Path)
-        if ([System.Linq.Enumerable]::SequenceEqual($old, $bytes)) { return $false }
-    } else {
-        $dir = Split-Path -Parent $Path
-        if (-not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Force -Path $dir }
-    }
-    $tmp = "$Path.tmp-$PID"
-    [IO.File]::WriteAllBytes($tmp, $bytes)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
-    $true
-}
-
-function Get-PaletteTemplateValues {
-    <# What a target's template sees: its properties, plus _isDark / _mode. #>
-    param([Parameter(Mandatory)]$Theme, [Parameter(Mandatory)][string]$TargetId)
-    $v = [ordered]@{}
-    foreach ($k in $Theme.Targets[$TargetId].Keys) { $v[$k] = $Theme.Targets[$TargetId][$k] }
-    $v['_isDark'] = if ($Theme.AppDark) { 'True' } else { 'False' }
-    $v['_mode'] = if ($Theme.AppDark) { 'dark' } else { 'light' }
-    $v
-}
-
-function Get-PaletteTargetText {
-    <# A file target's rendered text (no writing) -- the pipeline, the sandbox's byte-for-byte
-       proof and the final Dell test all use this. #>
-    param([Parameter(Mandatory)]$Theme, [Parameter(Mandatory)]$Target)
-    $tpl = Join-Path (Split-Path -Parent $Target.File) $Target.Template
-    Expand-PaletteTemplate -Text ([IO.File]::ReadAllText($tpl)) -Values (Get-PaletteTemplateValues -Theme $Theme -TargetId $Target.Id)
-}
+. (Join-Path $PSScriptRoot 'palette-files.ps1')
 
 # ------------------------------------------------------------------------------------------
 # Small shared helpers the targets use
@@ -916,14 +868,15 @@ function Test-PaletteIsAdmin {
 # ------------------------------------------------------------------------------------------
 function Get-PaletteThemeInputs {
     <# Everything that decides the colours, as "repo-relative path -> LF sha256": the entry
-       script, this library, every file in tools\palette\targets, and the active profile as
-       "profile:<id>" (its file's hash -- Default's file when Default is active). The pipeline
-       writes these lines LAST (theme-inputs.sha256); doctor recomputes them and compares. #>
+       script, this library and palette-files.ps1, every file in tools\palette\targets, and the
+       active profile as "profile:<id>" (its file's hash -- Default's file when Default is active).
+       The pipeline writes these lines LAST (theme-inputs.sha256); doctor recomputes and compares. #>
     param([string]$ProfileId = (Get-ActivePaletteProfileId))
     $root = $script:PaletteLibRoot
     $inputs = [ordered]@{}
     $inputs['tools\apply-wallust-outputs.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\apply-wallust-outputs.ps1')
     $inputs['tools\lib\palette.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette.ps1')
+    $inputs['tools\lib\palette-files.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette-files.ps1')
     foreach ($f in @(Get-ChildItem -LiteralPath (Get-PaletteTargetsDir) -File | Sort-Object Name)) {
         $inputs["tools\palette\targets\$($f.Name)"] = Get-PaletteLfSha256 -Path $f.FullName
     }
