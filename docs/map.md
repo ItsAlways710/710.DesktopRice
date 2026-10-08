@@ -30,7 +30,7 @@ adds a module or adds a check updates this file in the same commit.
 | `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) | `steps.ps1` (and with it `components.ps1`), `activation.ps1` |
 | `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |
-| `scripts\Start-Komorebi.ps1`, `Start-Ahk.ps1`, `Start-Yasb.ps1` | What komorebi's and 710.ahk's tasks run (through `tools\lib\run-hidden.vbs`); `Start-Yasb.ps1` is what 710.ahk runs for the bar | `Start-Yasb.ps1`: `tools\lib\bluetooth.ps1` |
+| `scripts\Start-Komorebi.ps1`, `Start-Ahk.ps1`, `Start-Yasb.ps1` | What komorebi's and 710.ahk's tasks run (through `tools\lib\run-hidden.vbs`); `Start-Yasb.ps1` is what 710.ahk runs for the bar | `Start-Ahk.ps1`: `tools\lib\ahk-load.ps1` (it checks 710.ahk loads first); `Start-Yasb.ps1`: `tools\lib\bluetooth.ps1` |
 | `scripts\Set-LockScreen.ps1` | Sets your lock-screen picture (Windows PowerShell 5.1: WinRT) | — |
 | `tools\reload-stack.ps1` | SUPER+Shift+R (710.ahk's ReloadStack) and `reload bar` | — |
 | `tools\apply-wallust-outputs.ps1` | The wallpaper pipeline: wallust, then every palette target | `tools\lib\lockscreen.ps1`, `tools\lib\palette.ps1` |
@@ -99,6 +99,7 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | `tools\lib\tasks.ps1` | The task folder (`$script:TaskFolder`), `Get-TaskFullName`, `Test-Task`, `New-TaskXml`, `ConvertTo-HiddenLaunch` (run-hidden.vbs and its launch file), `Get-ComponentTaskInfo`, `Start-AsUser` |
 | `tools\lib\elevation.ps1` | `Test-IsAdmin`, `Get-ProcessElevation` |
 | `tools\lib\ahk.ps1` | Talking to the running 710.ahk: `Find-AhkWindow`, `Send-AhkMessage`, `Send-AhkQuit`, `Get-AhkWindowProcessId` |
+| `tools\lib\ahk-load.ps1` | Will 710.ahk load? AutoHotkey's own check (`/Validate`): `Test-AhkScriptLoads`, `Format-AhkLoadError`, `Get-AhkLoadFix`; doctor's 710.ahk line when it won't load (`Get-DoctorAhkWontLoad`). Also dot-sourced by `scripts\Start-Ahk.ps1` (Windows PowerShell 5.1) |
 | `tools\lib\shortcuts.ps1` | `Save-RiceShortcut`, `Read-RiceShortcut`, `Get-StartMenuProgramsDir` |
 | `tools\lib\explorer.ps1` | Explorer's one restart (`Restart-Explorer`, `Wait-ExplorerRunning`, `Test-ExplorerShell`) and the tray icons kept around it (`Backup-` / `Restore-TrayIconPromotions`) |
 | `tools\lib\fonts.ps1` | `Get-NerdFontFace`: the JetBrainsMono Nerd Font's face name, as Windows has it registered |
@@ -134,7 +135,7 @@ Component checks come at the end of their group, in install's order.
 | (header) | `update` (`Get-DoctorUpdateResult`), `local-changes` |
 | Repo and command | `path` (`tools\steps\path.ps1`), `envvars`, `weather` (`tools\steps\envvars.ps1`) |
 | Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, other packages (`Test-DoctorOtherPackages`) -- `tools\steps\packages.ps1`; `wallust` (`tools\steps\wallust.ps1`) |
-| Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
+| Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1`; `stack:ahk` says when 710.ahk won't load (`tools\lib\ahk-load.ps1`) |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`, `tools\steps\tasks.ps1`), `tiling` (`tools\lib\tiling.ps1`) |
 | Generated configs | `komorebi-json`, `asc` (`tools\steps\compile.ps1`), `display-index` (`tools\steps\monitors.ps1`), `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last` (`tools\steps\theme.ps1`), `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
 | Integrations | `flow-theme` (`tools\steps\theme.ps1`), `profile` (`tools\steps\profile.ps1`), `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
@@ -173,5 +174,8 @@ inside them (`; ====` banners), reading the parts in place (`ReadScriptText`, `k
 | (`710.ahk`, last) | `#Include *i %A_ScriptDir%\user.ahk` -- always the last line |
 
 Doctor's "710.ahk changed since it started" compares `710.ahk`, its parts and `user.ahk` with 710.ahk's
-start time (`Get-DoctorStaleText`). `scripts\Start-Ahk.ps1` and every `Find-AhkWindow` find 710.ahk by
+start time (`Get-DoctorStaleText`). When 710.ahk isn't running, or has changed since, doctor asks
+AutoHotkey whether it loads (`tools\lib\ahk-load.ps1`): a key `user.ahk` defines again with `::`, or
+any other mistake, is a needs-you `[XX]` naming the line -- repair leaves 710.ahk alone, and
+`scripts\Start-Ahk.ps1` makes the same check before it starts it (why goes in `ahk-autostart.log`). `scripts\Start-Ahk.ps1` and every `Find-AhkWindow` find 710.ahk by
 its window title (the script's full path).

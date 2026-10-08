@@ -72,6 +72,16 @@ Remove-Item Env:CLAUDE_CODE_CHILD_SESSION, Env:CLAUDECODE -ErrorAction SilentlyC
 
 Write-Log '--- startup (autostart) ---'
 
+# A 710.ahk that won't load -- a key user.ahk defines again, a typo there -- would stop every attempt
+# below on AutoHotkey's error box. AutoHotkey's own check first (tools\lib\ahk-load.ps1), and why
+# goes in this log instead; 710sRice doctor says the same, and what to do.
+. (Join-Path $PSScriptRoot '..\tools\lib\ahk-load.ps1')
+$load = Test-AhkScriptLoads -AhkExe $exe -ScriptPath $script
+if ($load.Loaded -eq $false) {
+    Write-Log "710.ahk won't load -- $(Format-AhkLoadError $load (Split-Path -Parent $PSScriptRoot)). Not started: 710sRice doctor says what to do."
+    exit 1
+}
+
 $overallDeadline = (Get-Date).AddMinutes(2)
 $attempt = 0
 while ((Get-Date) -lt $overallDeadline) {

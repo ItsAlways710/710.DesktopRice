@@ -502,6 +502,9 @@ function Test-DoctorStack {
         $id = "stack:$($c.Key)"
         $running = $procs[$c.Key]
         if (-not $running.Count) {
+            # 710.ahk that won't load (a key user.ahk defines again, a typo there): say why, and leave
+            # it to you -- starting it would only stop on the same error (tools\lib\ahk-load.ps1).
+            if ($c.Key -eq 'ahk' -and ($wont = Get-DoctorAhkWontLoad $id "710.ahk isn't running, and it won't load" '710sRice start' $ahkExe $ahkScript)) { $wont; continue }
             $text   = "$($c.Name) isn't running$(if ($c.Key -eq 'sharex') { ' -- capture hotkeys do nothing without it' })"
             $detail = if ($c.Key -eq 'yasb') { Get-DoctorYasbWatchdogNote } else { $null }
             if (-not $detail -and $c.Log) { $detail = "its log: $($c.Log) (710sRice logs opens the folder)" }
@@ -522,6 +525,9 @@ function Test-DoctorStack {
         # end. The last finding each line can have -- the ones above cover these anyway.
         $stale = Get-DoctorStaleText $c.Key $running[0]
         if ($stale) {
+            # A reload into a 710.ahk that won't load keeps the old one running, behind AutoHotkey's
+            # error box (its docs, Reload): say why instead, and leave it to you.
+            if ($c.Key -eq 'ahk' -and ($wont = Get-DoctorAhkWontLoad $id "$($stale.Text), and 710.ahk won't load now" '710sRice reload' $ahkExe $ahkScript)) { $wont; continue }
             New-DoctorResult -Id $id -Status 'XX' -Text $stale.Text -Detail $stale.Detail -Fix '710sRice reload' -Repair 'reload'
             continue
         }

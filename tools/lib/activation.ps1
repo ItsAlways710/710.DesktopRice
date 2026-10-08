@@ -36,6 +36,7 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 . (Join-Path $PSScriptRoot 'tasks.ps1')
 . (Join-Path $PSScriptRoot 'elevation.ps1')
 . (Join-Path $PSScriptRoot 'ahk.ps1')
+. (Join-Path $PSScriptRoot 'ahk-load.ps1')
 . (Join-Path $PSScriptRoot 'shortcuts.ps1')
 . (Join-Path $PSScriptRoot 'explorer.ps1')
 . (Join-Path $PSScriptRoot 'fonts.ps1')

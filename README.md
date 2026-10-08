@@ -503,7 +503,11 @@ unplugged screen's workspaces and windows wait for it, and come back with it, pi
 These files are yours alone. Git ignores them, so neither `710sRice update` nor `git pull` touches them:
 
 - `config/ahk/user.ahk` — your own hotkeys. It's loaded after `710.ahk` if it exists, and
-  SUPER+K lists its hotkeys too. Reload with SUPER+Shift+R.
+  SUPER+K lists its hotkeys too. Reload with SUPER+Shift+R. A key `710.ahk` already has can't
+  be defined again with `::` — AutoHotkey then won't load `710.ahk` at all (and so no bar,
+  Flow Launcher or ShareX either); `710sRice doctor` names the key and the line. To give one
+  of 710's keys a job of your own, use `Hotkey()` in `user.ahk` instead:
+  `Hotkey("#q", (*) => MsgBox("my SUPER+Q"))` replaces what SUPER+Q does.
 - `config/pwsh/user.ps1` — your own PowerShell profile additions, loaded last by
   `config/pwsh/profile.ps1`. Open a new terminal to pick up changes.
 - `config/komorebi/rules.local.toml` — your own app rules, games and pins. Quick add rule
