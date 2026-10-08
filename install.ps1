@@ -4,7 +4,7 @@
   Idempotent installer for 710.DesktopRice.
 
 .DESCRIPTION
-  - Installs what versions.md lists (its table is the one list -- tools\lib\packages.ps1
+  - Installs what versions.md lists (its table is the one list -- tools\lib\versions.ps1
     reads it). Rows with a version number (komorebi, YASB, AutoHotkey, Flow Launcher,
     Everything, wallust) are installed at that version, and the winget ones winget-pinned so
     a general `winget upgrade --all` elsewhere on the machine can't silently move them out
@@ -184,8 +184,6 @@ function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -Foreg
 # uninstall.ps1's matching revert steps. Step-Ok/Info/Warn above must be defined before this
 # dot-source -- the libraries use ours rather than their own copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
-# versions.md's table and the winget helpers (after activation.ps1 -- see its header).
-. (Join-Path $Root 'tools\lib\packages.ps1')
 
 Write-Host "`n== 710.DesktopRice install ==" -ForegroundColor Cyan
 if ($OnlyRun) { Step-Info "Running only: $($RunSteps -join ', ')" }
@@ -212,7 +210,7 @@ $NotInstalled = [System.Collections.Generic.List[string]]::new()
 $Steps['packages'] = {
     # --- 1. Packages (winget) -----------------------------------------------------------
     # versions.md is the one list of what's installed and at which version (read through
-    # tools\lib\packages.ps1; nothing here keeps a copy). A row with a version number is a
+    # tools\lib\versions.ps1; nothing here keeps a copy). A row with a version number is a
     # pin: installed at exactly that version and winget-pinned, so a general
     # `winget upgrade --all` elsewhere on the machine can't move it out from under this
     # repo's tested config. A `latest` row is installed unpinned and takes its own updates
@@ -363,7 +361,7 @@ $Steps['upgrade'] = {
     # --- upgrade: pinned packages older than their pin, to the pin (named-only) ----------
     # Pinned winget rows only (a version number in versions.md): `latest` rows are unpinned
     # so a normal `winget upgrade --all` moves them; wallust is the wallust step's job.
-    # Installed versions come from the local probes in tools\lib\packages.ps1 (doctor reads
+    # Installed versions come from the local probes in tools\lib\probes.ps1 (doctor reads
     # the same ones). Newer than the pin = left alone (the user's call -- e.g. a hand upgrade
     # being tried before versions.md is bumped); older = stop the app, pin remove -> winget
     # upgrade --version <pin> -> pin add, check, start it again if it was running -- komorebi
@@ -382,7 +380,7 @@ $Steps['upgrade'] = {
         if ($null -eq $cmp) { Step-Warn "$($name): couldn't read its version ('$($before.Version)') -- left alone"; continue }
         if ($cmp -eq 0) { Step-Ok "$name $($before.Version) -- at its pin"; continue }
         if ($cmp -gt 0) { Step-Warn "$name $($before.Version) is newer than its pin $($row.Version) -- left alone"; continue }
-        # The same routine the packages step runs for one below its pin (packages.ps1).
+        # The same routine the packages step runs for one below its pin (tools\lib\topin.ps1).
         if (-not (Invoke-MoveToPin -Row $row -From $before.Version)) { $NotInstalled.Add("$name (not at its pin $($row.Version))") }
     }
 }

@@ -6,7 +6,7 @@ The one list of what this repo installs and at which version, and what `uninstal
 copy — and `710sRice doctor` compares it with the machine. A pin bump is a one-line
 change here, and a pin still means "tested on the Dell and accepted".
 
-**Table format is load-bearing**, not just documentation: `tools/lib/packages.ps1`
+**Table format is load-bearing**, not just documentation: `tools/lib/versions.ps1`
 (`Get-VersionsTable`) parses this exact table (by column position, between the header
 separator row and the next blank line) — for what install installs and pins, and what
 uninstall is allowed to remove. If you add or reorder columns, update that parser to match.

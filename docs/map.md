@@ -8,7 +8,7 @@ adds a module or adds a check updates this file in the same commit.
 ## Rules for changing the code
 
 - **The big files only get smaller.** `config\ahk\710.ahk`, `tools\lib\activation.ps1`,
-  `tools\lib\doctor.ps1`, `710sRice.ps1`, `install.ps1`, `tools\lib\packages.ps1`, `uninstall.ps1`,
+  `tools\lib\doctor.ps1`, `710sRice.ps1`, `install.ps1`, `uninstall.ps1`,
   and, when they're touched, `tools\palette-editor.ps1`, `tools\lib\palette.ps1`,
   `tools\components\flow.ps1`, `tools\compile-komorebi-rules.ps1` and `tools\reload-stack.ps1`. A
   big file grows only by the line that calls a new module, a comment fix, or a module call that got
@@ -26,9 +26,9 @@ adds a module or adds a check updates this file in the same commit.
 
 | Entry point | What it is | Loads |
 |---|---|---|
-| `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` always; per verb: `activation.ps1`, `packages.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1` |
-| `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) -- but packages' and upgrade's, still in its `$Steps` table | `steps.ps1` (and with it `components.ps1`), `activation.ps1`, `packages.ps1` |
-| `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1`, `packages.ps1` |
+| `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` always; per verb: `activation.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1` |
+| `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) -- but packages' and upgrade's, still in its `$Steps` table | `steps.ps1` (and with it `components.ps1`), `activation.ps1` |
+| `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |
 | `scripts\Start-Komorebi.ps1`, `Start-Ahk.ps1`, `Start-Yasb.ps1` | What komorebi's and 710.ahk's tasks run (through `tools\lib\run-hidden.vbs`); `Start-Yasb.ps1` is what 710.ahk runs for the bar | `Start-Yasb.ps1`: `tools\lib\bluetooth.ps1` |
 | `scripts\Set-LockScreen.ps1` | Sets your lock-screen picture (Windows PowerShell 5.1: WinRT) | — |
@@ -53,8 +53,8 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 
 | Step | Install | Uninstall puts back | Doctor (check Ids) | Repair / update |
 |---|---|---|---|---|
-| packages | `install.ps1`; winget helpers, probes, move-to-pin in `tools\lib\packages.ps1` | `uninstall.ps1` sections 5 (pins), 6 (packages; the Nerd Font through `Invoke-MsiUninstall` after `Clear-TerminalNerdFontFaces`), 8 (PSGallery modules) | `doctor.ps1` group b: `pkg:*`, `pins`, `pkg:shell-tools` | `Step=packages` |
-| upgrade (named only) | `install.ps1`; `Invoke-MoveToPin` in `packages.ps1` | — | `pkg:*` "older than its pin" | `Step=upgrade` |
+| packages | `install.ps1`; versions.md's table in `tools\lib\versions.ps1`, winget in `winget.ps1`, the probes in `probes.ps1`, the move to a pin in `topin.ps1` | `uninstall.ps1` sections 5 (pins), 6 (packages; the Nerd Font through `Invoke-MsiUninstall`, `tools\lib\msi.ps1`, after `Clear-TerminalNerdFontFaces`), 8 (PSGallery modules) | `doctor.ps1` group b: `pkg:*`, `pins`, `pkg:shell-tools` | `Step=packages` |
+| upgrade (named only) | `install.ps1`; `Invoke-MoveToPin` in `tools\lib\topin.ps1` | — | `pkg:*` "older than its pin" | `Step=upgrade` |
 | envvars | `tools\steps\envvars.ps1` (`Install-EnvVarsStep`; also removes the old weather variables) | same file (`Undo-ConfigEnvVars`, uninstall's section 4, which removes any old weather variables itself) | `envvars`, `weather-vars`, `weather` (same file) | `Step=envvars` |
 | bluetooth | `tools\components\bluetooth.ps1` (+ `tools\lib\bluetooth.ps1`) | same file | `bluetooth` | `Step=bluetooth` |
 | commands | `tools\components\commands.ps1` | same file | `commands` | `Step=commands` |
@@ -107,7 +107,11 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | `tools\lib\tiling.ps1` | The tiling mode -- elevated komorebi or not (see Pieces) -- and doctor's `tiling` line |
 | `tools\lib\switch.ps1` | `710sRice activate` / `deactivate` (dispatcher-only: loaded by their rows) |
 | `tools\lib\terminal.ps1` | Windows Terminal's font faces (`Get-TerminalFontFaces`, `Set-TerminalFontFace`) and `Clear-TerminalNerdFontFaces` (uninstall, before the Nerd Font goes) |
-| `tools\lib\packages.ps1` | `versions.md`'s table, winget's sources and exit codes, `Invoke-WingetAsUser`, the MSI uninstall, the installed-version probes, `Compare-PinVersion`, moving a package to its pin |
+| `tools\lib\versions.ps1` | `versions.md`'s table (`Get-VersionsTable`), `Test-WingetRow`, `Test-PinnedRow` |
+| `tools\lib\winget.ps1` | winget's sources (`Get-WingetSourceArgs`) and exit codes (`Get-WingetOutcome`, `Format-WingetCode`), the version `winget list` shows, the per-user packages, `Invoke-WingetAsUser` |
+| `tools\lib\msi.ps1` | Removing an MSI package without closing anything (`Get-MsiProductCode`, `Invoke-MsiUninstall`: the Nerd Font) |
+| `tools\lib\probes.ps1` | What's installed, read locally (`Get-PackageVersion` and its probes), `Compare-PinVersion` |
+| `tools\lib\topin.ps1` | Moving a pinned package up to its pin (`Invoke-MoveToPin`: stop the app, upgrade, start it again) |
 | `tools\lib\components.ps1` | The component loader and the step order (`Get-RiceComponents`, `Get-RiceStepOrder`, `Invoke-RiceComponentPart`, `New-RiceComponentContext`) |
 | `tools\lib\steps.ps1` | install's fixed steps and the named-only ones |
 | `tools\lib\lockscreen.ps1` | The lock screen, but for its setter script (see Pieces): `Invoke-LockScreenSetter` and its record (the pipeline's, no dependencies), install's and uninstall's parts, the restores, doctor's check |

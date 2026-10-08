@@ -56,7 +56,7 @@ function Clear-TerminalNerdFontFaces {
        Terminal's own font, so no profile names a font that's gone. (B2's and T5's vanished
        window, 2026-10-01, turned out to be Windows Installer's Restart Manager closing Terminal
        during the font's MSI uninstall -- uninstall.ps1 now removes it with that off: see
-       Invoke-MsiUninstall in tools\lib\packages.ps1.) Returns the names of the places changed
+       Invoke-MsiUninstall in tools\lib\msi.ps1.) Returns the names of the places changed
        (empty: nothing to do; $null: no settings). #>
     $path = @("$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
               "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1

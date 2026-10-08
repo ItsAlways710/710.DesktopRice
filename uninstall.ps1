@@ -117,9 +117,6 @@ function Invoke-ActivationRevert {
 # with install.ps1. Step-Ok/Info/Warn above must be defined before this dot-source -- the
 # libraries use ours rather than their own copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
-# versions.md's table (Get-VersionsTable) and the winget helpers -- exit codes,
-# Format-WingetCode, Invoke-WingetAsUser -- shared with install.ps1 (after activation.ps1).
-. (Join-Path $Root 'tools\lib\packages.ps1')
 
 Write-Host "`n== 710.DesktopRice uninstall ==" -ForegroundColor Cyan
 if ($DryRun) { Step-Info "DRY RUN: nothing will be changed." }
@@ -265,7 +262,7 @@ foreach ($row in $wingetRows) {
     if ($id -like '*NerdFont*') {
         # The font goes: no Windows Terminal profile may still name it (Clear-TerminalNerdFontFaces,
         # tools\lib\terminal.ps1), and it goes through Windows Installer told to close nothing
-        # (Invoke-MsiUninstall, tools\lib\packages.ps1) -- winget's silent uninstall had Restart
+        # (Invoke-MsiUninstall, tools\lib\msi.ps1) -- winget's silent uninstall had Restart
         # Manager shut down the Terminal running this very uninstall (B2 and T5, 2026-10-01).
         if ($DryRun) { Write-Host "  [ ] Point any Windows Terminal profile still on the Nerd Font back to Terminal's own font" }
         else {

@@ -43,6 +43,13 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 . (Join-Path $PSScriptRoot 'fulltime.ps1')
 . (Join-Path $PSScriptRoot 'stack.ps1')
 . (Join-Path $PSScriptRoot 'tiling.ps1')
+# What 710sRice installs: versions.md's table, winget, removing an MSI, the local version probes,
+# moving a pinned package up to its pin.
+. (Join-Path $PSScriptRoot 'versions.ps1')
+. (Join-Path $PSScriptRoot 'winget.ps1')
+. (Join-Path $PSScriptRoot 'msi.ps1')
+. (Join-Path $PSScriptRoot 'probes.ps1')
+. (Join-Path $PSScriptRoot 'topin.ps1')
 
 # install's fixed steps, one module each (tools\steps\<step>.ps1): the step itself, what uninstall
 # puts back, doctor's checks (docs\map.md, Install steps).

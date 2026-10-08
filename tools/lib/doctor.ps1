@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   `710sRice doctor` -- a read-only health report of this clone and its install. Dot-sourced
-  by 710sRice.ps1 after tools\lib\activation.ps1 and tools\lib\packages.ps1 (it uses both;
+  by 710sRice.ps1 after tools\lib\activation.ps1 (it uses the libraries that loads;
   the dispatcher has already loaded tools\lib\steps.ps1, and with it tools\lib\components.ps1:
   each component file's Check joins its group) -- never run directly.
 
@@ -239,7 +239,7 @@ function Get-DoctorLocalChangesResult {
 # (Test-DoctorEnvVars, Test-DoctorWeather).
 
 # --- b. Packages and pins -----------------------------------------------------------------------
-# versions.md's rows against the machine: the local probes in tools\lib\packages.ps1 (the ones
+# versions.md's rows against the machine: the local probes in tools\lib\probes.ps1 (the ones
 # install's upgrade step goes by, so a check and its fix can't disagree) and ONE `winget pin
 # list`, started in the background at the top of the run -- a `winget list` per package would
 # be 20-30 s. Pinned rows get their version against the pin; the rest just need to be there.

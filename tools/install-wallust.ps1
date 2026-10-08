@@ -8,7 +8,7 @@
     install.ps1's wallust step, or run on its own. Pinned deliberately (not "latest")
     since wallust is alpha software feeding live colors into komorebi borders, YASB, and
     Windows Terminal. The pin is versions.md's wallust row (the one list of versions,
-    read through tools\lib\packages.ps1); install.ps1 passes it in as -Version.
+    read through tools\lib\versions.ps1); install.ps1 passes it in as -Version.
 
     The extracted binary lands in tools/bin/wallust/, inside the repo tree but
     gitignored -- never committed, always re-downloadable byte-for-byte.
@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Version) {
-    . (Join-Path $RepoRoot 'tools\lib\packages.ps1')
+    . (Join-Path $RepoRoot 'tools\lib\versions.ps1')
     $row = @(Get-VersionsTable -Path (Join-Path $RepoRoot 'versions.md')) | Where-Object { $_.InstallId -like '*wallust*' } | Select-Object -First 1
     if (-not $row) { throw "versions.md has no wallust row -- no version to install" }
     $Version = $row.Version

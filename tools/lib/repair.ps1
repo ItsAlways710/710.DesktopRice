@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
   `710sRice doctor -repair` -- doctor's checks, the fix behind every [XX] that doesn't need
-  you, then the checks again. Dot-sourced by 710sRice.ps1 after activation.ps1, packages.ps1
-  and doctor.ps1 (it uses all three) -- never run directly. Runs in the admin window: the row
+  you, then the checks again. Dot-sourced by 710sRice.ps1 after activation.ps1 and doctor.ps1
+  (it uses both) -- never run directly. Runs in the admin window: the row
   is Admin Required.
 
 .DESCRIPTION

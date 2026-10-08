@@ -22,7 +22,7 @@ loader stops on a file that still has one.
 
 `$Ctx` has `Root` (the repo), `OnlyRun` (this is a `-Only` run), `FullTime` (the machine's
 mode: the stack starts at sign-in), `IsAdmin`, and `DryRun` (uninstall `-DryRun`). The helpers
-`tools\lib\activation.ps1` loads and `tools\lib\packages.ps1`'s are in scope, and doctor's too
+`tools\lib\activation.ps1` loads are in scope (the package ones too), and doctor's too
 (`New-DoctorResult`, ...) for `Check`.
 
 The loader checks every file when it reads it. A broken one throws and names the file: a
