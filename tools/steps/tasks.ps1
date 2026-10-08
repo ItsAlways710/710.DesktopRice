@@ -398,8 +398,8 @@ function Test-DoctorTasks {
             continue
         }
         if (-not $t.Enabled) {
-            New-DoctorResult -Id $id -Status '!!' -Text "$name's task is disabled in Task Scheduler" `
-                -Fix "re-enable it in Task Scheduler (Task Scheduler Library > 710.DesktopRice > $($c.TaskName))"
+            New-DoctorResult -Id $id -Status 'XX' -Text "$name's task is disabled in Task Scheduler" `
+                -Detail 'the tasks step registers it again, enabled' @tasksFix
             continue
         }
         $kind = @(if ($t.AtLogOn) { 'sign-in' } else { 'on demand' }; if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' }) -join ', '

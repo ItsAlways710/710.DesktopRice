@@ -190,8 +190,8 @@ function Install-UpgradeStep {
     # Pinned winget rows only (a version number in versions.md): `latest` rows are unpinned
     # so a normal `winget upgrade --all` moves them; wallust is the wallust step's job.
     # Installed versions come from the local probes in tools\lib\probes.ps1 (doctor reads
-    # the same ones). Newer than the pin = left alone (the user's call -- e.g. a hand upgrade
-    # being tried before versions.md is bumped); older = stop the app, pin remove -> winget
+    # the same ones). Newer than the pin = left alone (no downgrades -- e.g. a hand upgrade being
+    # tried before versions.md is bumped); older = stop the app, pin remove -> winget
     # upgrade --version <pin> -> pin add, check, start it again if it was running -- komorebi
     # and 710.ahk through their tasks, the bar and Flow by asking 710.ahk (Invoke-MoveToPin).
     Write-Host "`n-- Upgrade pinned packages --" -ForegroundColor Cyan

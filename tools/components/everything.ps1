@@ -162,14 +162,14 @@
     }
 
     Check = {
-        # Running (SUPER+S needs it) -- [!!] as before; then the settings: [XX] until this step has
-        # run here (no snapshot yet), and for a value turned back on since.
+        # Running (SUPER+S needs it; this step starts it, as you), then the settings: [XX] until this
+        # step has run here (no snapshot yet), and for a value turned back on since.
         param($Ctx)
         $exe = Get-EverythingExe
         if (-not $exe) { return }   # the packages group says so
-        if ((Get-EverythingSessionProcess).Count) { New-DoctorResult -Id 'everything' -Status 'OK' -Text 'Everything running' }
-        else { New-DoctorResult -Id 'everything' -Status '!!' -Text "Everything isn't running -- SUPER+S (Flow's file search) needs it" -Fix 'start Everything from the Start menu' }
         $fix = @{ Fix = '710sRice install -Only everything'; Step = 'everything' }
+        if ((Get-EverythingSessionProcess).Count) { New-DoctorResult -Id 'everything' -Status 'OK' -Text 'Everything running' }
+        else { New-DoctorResult -Id 'everything' -Status 'XX' -Text "Everything isn't running -- SUPER+S (Flow's file search) needs it" @fix }
         if (-not (Get-OriginalState -Label 'everything-settings')) {
             return New-DoctorResult -Id 'everything-settings' -Status 'XX' -Text 'Everything: not set up by 710sRice yet (its tray icon, its update check)' @fix
         }

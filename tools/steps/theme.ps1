@@ -287,7 +287,7 @@ function Test-DoctorPaletteLastRun {
     $detail = @("$(ConvertTo-SafeText "$($s.reason)")")
     if ($s.image) { $detail = @("wallpaper: $($s.image)") + $detail }
     if ("$($s.stage)" -eq 'targets') {
-        return New-DoctorResult -Id 'palette-last' -Status '!!' -Text "The last theme run ($when) didn't apply everything" -Detail $detail -Fix '710sRice install -Only palette'
+        return New-DoctorResult -Id 'palette-last' -Status 'XX' -Text "The last theme run ($when) didn't apply everything" -Detail $detail -Fix '710sRice install -Only palette' -Step 'palette'
     }
     New-DoctorResult -Id 'palette-last' -Status '!!' -Text "The last theme run ($when) couldn't make a palette -- the theme on screen is from before it" `
         -Detail $detail -Fix 'pick another wallpaper (SUPER+W), or another palette source (SUPER+Alt+Space > Palette profiles)'

@@ -121,7 +121,7 @@ function Invoke-MoveToPin {
        it starts them; never 710.ahk itself for them: on an on-demand machine between sessions
        that would start half the stack). Never
        down: callers only come here for a package below its pin, never for one newer than it
-       (the user's call -- doctor's [!!]). Prints its own lines. $true when the package ended at
+       (no downgrades -- doctor's [!!] says how to go back). Prints its own lines. $true when the package ended at
        its pin (a restart-to-finish counts); $false when it didn't -- the caller counts that as
        not installed (W2). #>
     param([Parameter(Mandatory)]$Row, [string]$From)

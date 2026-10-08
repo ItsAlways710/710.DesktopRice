@@ -347,6 +347,6 @@ function Test-DoctorLockScreen {
         }
         return New-DoctorResult -Id 'lock-screen' -Status 'OK' -Text "Lock screen: set with the wallpaper ($(if ($name) { "$name, " })$when)"
     }
-    New-DoctorResult -Id 'lock-screen' -Status '!!' -Text "Lock screen: the last set ($when) didn't take -- it shows an older picture" `
-        -Detail @($(if ($name) { "wallpaper: $name" }), (ConvertTo-SafeText "$($rec.reason)")) -Fix '710sRice install -Only palette'
+    New-DoctorResult -Id 'lock-screen' -Status 'XX' -Text "Lock screen: the last set ($when) didn't take -- it shows an older picture" `
+        -Detail @($(if ($name) { "wallpaper: $name" }), (ConvertTo-SafeText "$($rec.reason)")) -Fix '710sRice install -Only palette' -Step 'palette'
 }

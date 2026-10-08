@@ -543,7 +543,7 @@ function Test-DoctorWindowsSettings {
     $delay = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' -Name StartupDelayInMSec -ErrorAction Ignore
     if ($null -eq $delay -or $delay.StartupDelayInMSec -ne 0) { $drift += 'the Startup delay is back' }
     if ($drift.Count) {
-        return New-DoctorResult -Id 'windows' -Status '!!' -Text "Windows settings drifted: $($drift -join '; ')" -Fix '710sRice install -Only windows' -Step 'windows'
+        return New-DoctorResult -Id 'windows' -Status 'XX' -Text "Windows settings drifted: $($drift -join '; ')" -Fix '710sRice install -Only windows' -Step 'windows'
     }
     New-DoctorResult -Id 'windows' -Status 'OK' -Text 'Windows settings (-Activate): taskbar auto-hides, hardening applied, no Startup delay'
 }

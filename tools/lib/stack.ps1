@@ -529,7 +529,7 @@ function Test-DoctorStack {
             if ($running[0].ProcessName -eq 'AutoHotkey64_UIA') {
                 New-DoctorResult -Id $id -Status 'OK' -Text '710.ahk running (UI Access)'
             } elseif ("$ahkExe" -like '*AutoHotkey64_UIA.exe') {
-                New-DoctorResult -Id $id -Status '!!' -Text "710.ahk is running without UI Access -- its hotkeys don't reach admin windows" -Fix '710sRice restart'
+                New-DoctorResult -Id $id -Status 'XX' -Text "710.ahk is running without UI Access -- its hotkeys don't reach admin windows" -Fix '710sRice restart' -Repair 'restart'
             } else {
                 New-DoctorResult -Id $id -Status 'OK' -Text '710.ahk running'
             }

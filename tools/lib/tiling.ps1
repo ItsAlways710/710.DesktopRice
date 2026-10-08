@@ -73,8 +73,8 @@ function Test-DoctorTilingMode {
         return New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task agrees ($(if ($running -eq 'not running') { "komorebi isn't running" } else { "couldn't read the running komorebi" }))"
     }
     if ($running -ne $taskMode) {
-        return New-DoctorResult -Id 'tiling' -Status '!!' -Text "Tiling mode: $saved -- but the running komorebi $(if ($running -eq 'elevated') { 'is elevated' } else { "isn't" }) (it started before the change)" `
-            -Fix '710sRice restart'
+        return New-DoctorResult -Id 'tiling' -Status 'XX' -Text "Tiling mode: $saved -- but the running komorebi $(if ($running -eq 'elevated') { 'is elevated' } else { "isn't" }) (it started before the change)" `
+            -Fix '710sRice restart' -Repair 'restart'
     }
     New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task and the running komorebi agree"
 }

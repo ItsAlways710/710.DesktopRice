@@ -391,7 +391,7 @@ function Get-DoctorComponentContext {
 # --- The repair plan -----------------------------------------------------------------------
 # What `710sRice doctor -repair` does about a report's [XX] lines -- asked by doctor's closing
 # lines (the preview) and by repair itself, so the two can't disagree. [!!] and [..] are
-# never touched: they're either the user's call or plain facts. (claude/cli-plan.md, Stage 4,
+# never touched: they're facts repair can't or mustn't change. (claude/cli-plan.md, Stage 4,
 # Topics 1-2.)
 
 function Get-RepairPlan {
