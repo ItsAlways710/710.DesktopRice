@@ -58,7 +58,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | bluetooth | `tools\components\bluetooth.ps1` (+ `tools\lib\bluetooth.ps1`) | same file | `bluetooth` | `Step=bluetooth` |
 | commands | `tools\components\commands.ps1` | same file | `commands` | `Step=commands` |
 | path | `tools\steps\path.ps1` (`Install-PathStep`); PATH helpers in `tools\lib\userenv.ps1` | same file (`Undo-RiceCommandPath`, uninstall's section 4) | `path` (same file) | `Step=path` |
-| wallust | `install.ps1`; `tools\install-wallust.ps1`, `tools\write-wallust-config.ps1` | `uninstall.ps1` sections 7 (binary), 9 (`wallust.toml`) | `doctor.ps1` `wallust`, `wallust-toml` | `Step=wallust` |
+| wallust | `tools\steps\wallust.ps1` (`Install-WallustStep`; `Get-WallustExe`); `tools\install-wallust.ps1`, `tools\write-wallust-config.ps1` | `uninstall.ps1` sections 7 (binary), 9 (`wallust.toml`) | `wallust`, `wallust-toml` (`tools\steps\wallust.ps1`) | `Step=wallust` |
 | flow | `tools\components\flow.ps1` | same file | `flow`, `flow-startup`, `flow-prefs`, `flow-font`, `flow-fullscreen` | `Step=flow` |
 | everything | `tools\components\everything.ps1` | same file | `everything`, `everything-settings` | `Step=everything` |
 | sharex | `tools\components\sharex.ps1` | same file | `sharex`, `sharex-startup` | `Step=sharex` |
@@ -123,10 +123,10 @@ Component checks come at the end of their group, in install's order.
 |---|---|
 | (header) | `update` (`Get-DoctorUpdateResult`), `local-changes` |
 | Repo and command | `path` (`tools\steps\path.ps1`), `envvars`, `weather` (`tools\steps\envvars.ps1`) |
-| Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust`, other packages (`Test-DoctorOtherPackages`) |
+| Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust` (`tools\steps\wallust.ps1`), other packages (`Test-DoctorOtherPackages`) |
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
-| Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml`, `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
+| Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
 | Integrations | `flow-theme`, `profile` (`tools\steps\profile.ps1`), `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 

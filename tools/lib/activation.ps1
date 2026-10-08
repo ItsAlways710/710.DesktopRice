@@ -57,6 +57,7 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 # puts back, doctor's checks (docs\map.md, Install steps).
 . (Join-Path $PSScriptRoot '..\steps\envvars.ps1')
 . (Join-Path $PSScriptRoot '..\steps\path.ps1')
+. (Join-Path $PSScriptRoot '..\steps\wallust.ps1')
 . (Join-Path $PSScriptRoot '..\steps\profile.ps1')
 
 # --- Autostart: Scheduled Tasks At-LogOn (-Activate-gated) ---------------------------

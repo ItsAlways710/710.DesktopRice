@@ -190,9 +190,8 @@ function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -Foreg
 Write-Host "`n== 710.DesktopRice install ==" -ForegroundColor Cyan
 if ($OnlyRun) { Step-Info "Running only: $($RunSteps -join ', ')" }
 
-# The wallust binary: installed by the wallust step, used by the theme step -- which can
-# run without it (-Only theme), so it's found here rather than in either.
-$wallustExe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
+# The wallust binary, for the theme and palette steps below (Get-WallustExe, tools\steps\wallust.ps1).
+$wallustExe = Get-WallustExe
 
 # The machine's mode before this run changes anything -- read here, before the steps, since
 # the tasks step registers the sign-in tasks part-way through a -Activate run. A -Activate run on a
@@ -394,41 +393,7 @@ $Steps['upgrade'] = {
 $Steps['envvars'] = { Install-EnvVarsStep }   # tools\steps\envvars.ps1
 $Steps['path']    = { Install-PathStep }      # tools\steps\path.ps1
 
-$Steps['wallust'] = {
-    # --- 3. wallust -----------------------------------------------------------------------
-    Write-Host "`n-- wallust --" -ForegroundColor Cyan
-    # The pin is versions.md's wallust row (github-release: no winget package exists).
-    $wallustRow = @(Get-VersionsTable -Path (Join-Path $Root 'versions.md')) | Where-Object { $_.InstallId -like '*wallust*' } | Select-Object -First 1
-    $WallustPinnedVersion = if ($wallustRow) { $wallustRow.Version } else { $null }
-    $wallustUpToDate = $false
-    if (-not $WallustPinnedVersion) {
-        Step-Warn 'versions.md has no wallust row -- wallust not checked or installed.'
-        $wallustUpToDate = $true   # nothing to install it at; the theme step says so if it's missing
-    } elseif (Test-Path $wallustExe) {
-        try {
-            $verOut = & $wallustExe --version 2>$null | Out-String
-            if ($verOut -match [regex]::Escape($WallustPinnedVersion)) { $wallustUpToDate = $true }
-        } catch { }
-    }
-    if ($wallustUpToDate) {
-        if ($WallustPinnedVersion) { Step-Ok "wallust $WallustPinnedVersion already installed" }
-    } else {
-        Step-Info "Installing wallust $WallustPinnedVersion ..."
-        try {
-            & (Join-Path $Root 'tools\install-wallust.ps1') -Version $WallustPinnedVersion
-            Step-Ok "wallust installed"
-        } catch {
-            Write-Host "  [XX] wallust install failed: $($_.Exception.Message) -- the rest of the install carries on without it." -ForegroundColor Red
-            $NotInstalled.Add('wallust')
-        }
-    }
-
-    # wallust.toml is generated from a tracked template with this repo's real location filled
-    # in (wallust's template targets must be absolute paths). Before section 4's `wallust run`.
-    & (Join-Path $Root 'tools\write-wallust-config.ps1')
-    if ($LASTEXITCODE -ne 0) { Step-Warn 'wallust.toml not written (see message above) -- wallpaper theming will fail until it is.' }
-    else { Step-Ok 'wallust.toml current' }
-}
+$Steps['wallust'] = { Install-WallustStep -NotInstalled $NotInstalled }   # tools\steps\wallust.ps1
 
 $Steps['theme'] = {
     # --- 4. Default theme (wallpaper + everything themed from it) -------------------------

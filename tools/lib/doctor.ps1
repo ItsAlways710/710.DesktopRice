@@ -323,25 +323,6 @@ function Test-DoctorPins {
     New-DoctorResult -Id 'pins' -Status 'OK' -Text "winget pins: all $($rows.Count) in place"
 }
 
-function Test-DoctorWallust {
-    # wallust at versions.md's pin, by the very test install's wallust step makes (its
-    # --version output contains the pin) -- so this check and its fix can't disagree.
-    $row = Get-DoctorVersionRows | Where-Object { $_.InstallId -like '*wallust*' } | Select-Object -First 1
-    if (-not $row) { return }   # no wallust row: nothing to hold it to
-    $pin = $row.Version
-    $exe = Join-Path $Root 'tools\bin\wallust\wallust.exe'
-    if (-not (Test-Path -LiteralPath $exe)) {
-        return New-DoctorResult -Id 'wallust' -Status 'XX' -Text "wallust isn't installed" -Fix '710sRice install -Only wallust' -Step 'wallust'
-    }
-    $out = "$(& $exe --version 2>$null)"
-    $ver = if ($out -match '^\s*wallust\s+(\S+)') { $Matches[1] } else { '' }
-    if ($out -match [regex]::Escape($pin)) {
-        return New-DoctorResult -Id 'wallust' -Status 'OK' -Text "wallust $(if ($ver) { $ver } else { $pin }) -- at its pin"
-    }
-    $text = if ($ver) { "wallust $ver -- its pin is $pin" } else { "wallust -- its version couldn't be read (its pin is $pin)" }
-    New-DoctorResult -Id 'wallust' -Status 'XX' -Text $text -Fix '710sRice install -Only wallust' -Step 'wallust'
-}
-
 function Get-DoctorShellToolsResult {
     # The five shell tools on one line: what's there (starship with its version), and what isn't.
     param([object[]]$Rows)
@@ -641,22 +622,6 @@ function Test-DoctorDisplayIndex {
     if ($r.Beyond) {
         New-DoctorResult -Id 'display-index-more' -Status '..' -Text "$(Get-DoctorPlural $r.Beyond 'screen' 'screens') beyond the 4 this repo maps -- komorebi runs $(if ($r.Beyond -eq 1) { 'it' } else { 'them' }) on its defaults (one workspace)"
     }
-}
-
-function Test-DoctorWallustToml {
-    # write-wallust-config.ps1 -Check: wallust.toml is generated with this clone's own path in
-    # it (wallust's template targets are absolute), so a moved clone needs it written again.
-    $global:LASTEXITCODE = 0
-    $stream = @(& (Join-Path $Root 'tools\write-wallust-config.ps1') -Check 3>&1 6>$null)
-    $code = $LASTEXITCODE
-    switch ($code) {
-        0 { return New-DoctorResult -Id 'wallust-toml' -Status 'OK' -Text 'wallust.toml generated for this clone' }
-        3 { return New-DoctorResult -Id 'wallust-toml' -Status 'XX' -Text "wallust.toml isn't generated for this clone (missing, or from a moved clone)" -Fix '710sRice install -Only wallust' -Step 'wallust' }
-    }
-    # 1: it can't be generated here at all (no template, or a path wallust.toml can't hold).
-    $why = @($stream | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object { $_.Message })
-    New-DoctorResult -Id 'wallust-toml' -Status 'XX' -Text "wallust.toml can't be generated for this clone" -Detail $why `
-        -Fix 'deal with what the line above says, then 710sRice install -Only wallust' -NeedsYou
 }
 
 function Get-DoctorShownPath {
