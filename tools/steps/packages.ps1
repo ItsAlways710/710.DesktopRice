@@ -78,7 +78,7 @@ function Install-PackagesStep {
             if ($alreadyInstalled) {
                 # A pinned package below its pin goes up to it (W7; user, 2026-09-30: "install
                 # should always update pinned packages to pin, that's what the pin is for") --
-                # never down: newer than the pin is left alone, doctor's [!!] and your call. The
+                # never down: newer than the pin is left alone (doctor's [!!] says how to go back). The
                 # version is the one this same `winget list` shows (the token after the ID), so
                 # an AutoHotkey 1.1 that winget lists is moved to 2.0.28 instead of pinned at 1.1.
                 $have = Get-WingetListedVersion -Lines $listed -Id $id
@@ -325,9 +325,12 @@ function Get-DoctorPackageResult {
         0  { return New-DoctorResult -Id $id -Status 'OK' -Text "$shown -- at its pin" }
         -1 { return New-DoctorResult -Id $id -Status 'XX' -Text "$shown -- older than its pin $pin" -Fix '710sRice install -Only upgrade' -Step 'upgrade' }
         1  {
-            # The user's call, not a problem: a hand upgrade being tried out before the pin moves.
+            # Newer than what this rice was tested with: a fact, which repair never changes (no
+            # downgrades) -- with the way back, should the app misbehave: winget's own uninstall, then
+            # repair, which installs it at its pin and pins it (the packages step).
             return New-DoctorResult -Id $id -Status '!!' -Text "$shown -- newer than its pin $pin" `
-                -Detail "left alone -- your call: bump versions.md once it's tested, or go back to $pin by hand"
+                -Detail "its pin is the version this rice was tested with -- if something about it isn't working, going back is worth a try" `
+                -Fix "winget uninstall --id $($Row.InstallId) --exact (from a normal window), then 710sRice doctor -repair: it installs $pin and pins it"
         }
     }
     $what = if ($v.Version) { "its version '$($v.Version)' can't be compared with its pin $pin" } else { "installed, but its version couldn't be read" }
