@@ -225,20 +225,7 @@ $riceBin = Join-Path $Root 'bin'
 Invoke-ActivationRevert "Remove $(ConvertTo-SafePath $riceBin) from your user PATH (the 710sRice command)" { Undo-RiceCommandPath -RiceBin $riceBin }
 
 # --- 5. Remove winget pins -----------------------------------------------------------
-Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
-    # Every exit code checked: this step used to discard winget's output AND its exit
-    # code, so it said "removed" no matter what. "No pin for that package" counts as
-    # done -- the goal is no pin, however we got there.
-    $failed = @()
-    foreach ($row in ($wingetRows | Where-Object { Test-PinnedRow $_ })) {
-        $pinArgs = @('pin', 'remove', '--id', $row.InstallId, '--exact') + @(Get-WingetSourceArgs $row)
-        winget @pinArgs 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $WingetNoPin) {
-            $failed += "$($row.InstallId) ($(Format-WingetCode $LASTEXITCODE))"
-        }
-    }
-    if ($failed) { throw "winget couldn't remove the pin for: $($failed -join ', ') -- 'winget pin list' shows what's left" }
-} 'Winget pins removed'
+Invoke-Step "Remove winget pins for this repo's core (pinned) packages" { Remove-WingetPins -WingetRows $wingetRows } 'Winget pins removed'
 
 # --- 6. Remove packages ---------------------------------------------------------------
 Write-Host "`n-- Packages --" -ForegroundColor Cyan
@@ -259,57 +246,9 @@ foreach ($row in $wingetRows) {
         Step-Info "$id -- kept (versions.md marks this Pre-existing?; pass -Force to remove it anyway)"
         continue
     }
-    if ($id -like '*NerdFont*') {
-        # The font goes: no Windows Terminal profile may still name it (Clear-TerminalNerdFontFaces,
-        # tools\lib\terminal.ps1), and it goes through Windows Installer told to close nothing
-        # (Invoke-MsiUninstall, tools\lib\msi.ps1) -- winget's silent uninstall had Restart
-        # Manager shut down the Terminal running this very uninstall (B2 and T5, 2026-10-01).
-        if ($DryRun) { Write-Host "  [ ] Point any Windows Terminal profile still on the Nerd Font back to Terminal's own font" }
-        else {
-            try {
-                $moved = @(Clear-TerminalNerdFontFaces)
-                if ($moved.Count) {
-                    Step-Ok "Windows Terminal: $($moved -join ', ') still used the JetBrainsMono Nerd Font -- back to Terminal's own font before it's removed"
-                    Start-Sleep -Seconds 2   # Terminal re-reads its settings by itself; let it, before the font goes
-                }
-            } catch { Step-Warn "Windows Terminal's font couldn't be checked before removing the Nerd Font: $($_.Exception.Message)" }
-        }
-    }
-    if ($DryRun) { Write-Host "  [ ] Uninstall $id"; continue }
-    if ($id -like '*NerdFont*') {
-        $msi = $null
-        try { $msi = Get-MsiProductCode -DisplayName '^JetBrainsMono Nerd Font' } catch { }
-        if ($msi) {
-            try {
-                $code = Invoke-MsiUninstall -ProductCode $msi
-                if ($code -eq 0)        { Step-Ok "$id uninstalled (Windows Installer, closing nothing)" }
-                elseif ($code -eq 3010) { Step-Ok "$id uninstalled (Windows Installer, closing nothing) -- a program still had the font open (this Windows Terminal, likely), so its files go at your next restart: restart before installing 710sRice again" }
-                elseif ($code -eq 1605) { Step-Info "$id -- not installed, nothing to remove" }
-                else                    { Step-Warn "$id -- Windows Installer couldn't remove it (exit $code); 'winget uninstall --id $id' by hand shows why (it may close Windows Terminal)" }
-            } catch { Step-Warn "Uninstall $($id): $($_.Exception.Message)" }
-            continue
-        }
-        # No Windows Installer entry for it (installed some other way, or not at all): winget, below.
-    }
-    # Not Invoke-Step: the result line depends on winget's exit code (this used to discard
-    # it and print "uninstalled" regardless -- Flow Launcher was never actually removed).
-    try {
-        $uninstallArgs = @('uninstall', '--id', $id, '--exact', '--silent', '--disable-interactivity') + @(Get-WingetSourceArgs $row)
-        winget @uninstallArgs 2>$null | Out-Null
-        $code = $LASTEXITCODE
-        $how  = ''
-        if ($code -eq $WingetAdminProhibited) {
-            # Installed for this user only -- winget won't remove it from an elevated shell.
-            Step-Info "$id is installed for this user only -- removing it un-elevated ..."
-            $code = Invoke-WingetAsUser -Arguments $uninstallArgs
-            $how  = ' (un-elevated)'
-        }
-        if ($null -eq $code)                  { Step-Warn "$id -- the un-elevated uninstall was still running after 3 minutes; check 'winget list --id $id' once it's done" }
-        elseif ($code -eq 0)                  { Step-Ok "$id uninstalled$how" }
-        elseif ($code -eq $WingetNotInstalled) { Step-Info "$id -- not installed, nothing to remove" }
-        else                                  { Step-Warn "$id -- winget uninstall failed$how (exit $(Format-WingetCode $code)); 'winget uninstall --id $id' by hand shows why" }
-    }
-    catch { Step-Warn "Uninstall $($id): $($_.Exception.Message)" }
+    # The rest goes, each the way it has to: the Nerd Font through Windows Installer, a per-user
+    # package as you (Uninstall-WingetPackage, tools\steps\packages.ps1).
+    Uninstall-WingetPackage -Row $row -DryRun:$DryRun
 }
 
 # --- 7. wallust binary -----------------------------------------------------------------

@@ -27,7 +27,7 @@ adds a module or adds a check updates this file in the same commit.
 | Entry point | What it is | Loads |
 |---|---|---|
 | `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` always; per verb: `activation.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1` |
-| `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) -- but packages' and upgrade's, still in its `$Steps` table | `steps.ps1` (and with it `components.ps1`), `activation.ps1` |
+| `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) | `steps.ps1` (and with it `components.ps1`), `activation.ps1` |
 | `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |
 | `scripts\Start-Komorebi.ps1`, `Start-Ahk.ps1`, `Start-Yasb.ps1` | What komorebi's and 710.ahk's tasks run (through `tools\lib\run-hidden.vbs`); `Start-Yasb.ps1` is what 710.ahk runs for the bar | `Start-Yasb.ps1`: `tools\lib\bluetooth.ps1` |
@@ -53,8 +53,8 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 
 | Step | Install | Uninstall puts back | Doctor (check Ids) | Repair / update |
 |---|---|---|---|---|
-| packages | `install.ps1`; versions.md's table in `tools\lib\versions.ps1`, winget in `winget.ps1`, the probes in `probes.ps1`, the move to a pin in `topin.ps1` | `uninstall.ps1` sections 5 (pins), 6 (packages; the Nerd Font through `Invoke-MsiUninstall`, `tools\lib\msi.ps1`, after `Clear-TerminalNerdFontFaces`), 8 (PSGallery modules) | `doctor.ps1` group b: `pkg:*`, `pins`, `pkg:shell-tools` | `Step=packages` |
-| upgrade (named only) | `install.ps1`; `Invoke-MoveToPin` in `tools\lib\topin.ps1` | — | `pkg:*` "older than its pin" | `Step=upgrade` |
+| packages | `tools\steps\packages.ps1` (`Install-PackagesStep`); versions.md's table in `tools\lib\versions.ps1`, winget in `winget.ps1`, the probes in `probes.ps1`, the move to a pin in `topin.ps1` | `uninstall.ps1` decides what goes (versions.md's Pre-existing?, -Keep, -Force); section 5 (pins: `Remove-WingetPins`) and 6 (packages: `Uninstall-WingetPackage` -- the Nerd Font through `Invoke-MsiUninstall`, `tools\lib\msi.ps1`, after `Clear-TerminalNerdFontFaces`) in `tools\steps\packages.ps1`; 8 (PSGallery modules) in `uninstall.ps1` | `pkg:*`, `pins`, `pkg:shell-tools` (`tools\steps\packages.ps1`) | `Step=packages` |
+| upgrade (named only) | `tools\steps\packages.ps1` (`Install-UpgradeStep`); `Invoke-MoveToPin` in `tools\lib\topin.ps1` | — | `pkg:*` "older than its pin" | `Step=upgrade` |
 | envvars | `tools\steps\envvars.ps1` (`Install-EnvVarsStep`; also removes the old weather variables) | same file (`Undo-ConfigEnvVars`, uninstall's section 4, which removes any old weather variables itself) | `envvars`, `weather-vars`, `weather` (same file) | `Step=envvars` |
 | bluetooth | `tools\components\bluetooth.ps1` (+ `tools\lib\bluetooth.ps1`) | same file | `bluetooth` | `Step=bluetooth` |
 | commands | `tools\components\commands.ps1` | same file | `commands` | `Step=commands` |
@@ -129,7 +129,7 @@ Component checks come at the end of their group, in install's order.
 |---|---|
 | (header) | `update` (`Get-DoctorUpdateResult`), `local-changes` |
 | Repo and command | `path` (`tools\steps\path.ps1`), `envvars`, `weather` (`tools\steps\envvars.ps1`) |
-| Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust` (`tools\steps\wallust.ps1`), other packages (`Test-DoctorOtherPackages`) |
+| Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, other packages (`Test-DoctorOtherPackages`) -- `tools\steps\packages.ps1`; `wallust` (`tools\steps\wallust.ps1`) |
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`, `tools\steps\tasks.ps1`), `tiling` (`tools\lib\tiling.ps1`) |
 | Generated configs | `komorebi-json`, `asc` (`tools\steps\compile.ps1`), `display-index` (`tools\steps\monitors.ps1`), `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last` (`tools\steps\theme.ps1`), `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |

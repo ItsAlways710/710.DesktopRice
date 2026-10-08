@@ -53,6 +53,7 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 
 # install's fixed steps, one module each (tools\steps\<step>.ps1): the step itself, what uninstall
 # puts back, doctor's checks (docs\map.md, Install steps).
+. (Join-Path $PSScriptRoot '..\steps\packages.ps1')
 . (Join-Path $PSScriptRoot '..\steps\envvars.ps1')
 . (Join-Path $PSScriptRoot '..\steps\path.ps1')
 . (Join-Path $PSScriptRoot '..\steps\wallust.ps1')
