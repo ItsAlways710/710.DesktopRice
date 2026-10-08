@@ -58,9 +58,16 @@ function Install-PackagesStep {
             # Every call names its source (Get-WingetSourceArgs): winget's own for winget rows,
             # the Store for PowerShell 7's msstore row -- never both (W1).
             $sourceArgs = @(Get-WingetSourceArgs $row)
-            # The Nerd Font by its name in Windows' fonts first -- yours or every user's, either face
-            # (Get-NerdFontFace, doctor's check too) -- so a copy that's already there, installed by
-            # hand or by winget, never gets DEVCOM's installer laid over it (Godzilla, 2026-10-03).
+            # Two rows are found without asking winget, the way doctor finds them. PowerShell 7: this
+            # install runs on it (#Requires -Version 7.0) -- the Store's build or winget's, the README's
+            # way where the Store is blocked, which the Store source would call "not installed"
+            # (review item 4). The Nerd Font: by its name in Windows' fonts -- yours or every user's,
+            # either face (Get-NerdFontFace) -- so a copy that's already there, installed by hand or
+            # by winget, never gets DEVCOM's installer laid over it (Godzilla, 2026-10-03).
+            if ($id -eq '9MZ1SNWT0N5D') {
+                $here = Get-PackageVersion $row
+                if ($here.Installed) { Step-Ok "$id already installed (this install runs on it: PowerShell $($here.Version))"; continue }
+            }
             if ($id -like '*NerdFont*') {
                 $face = Get-NerdFontFace
                 if ($face) { Step-Ok "$id already installed (Windows has the font: $face)"; continue }
