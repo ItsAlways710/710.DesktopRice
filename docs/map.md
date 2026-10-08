@@ -26,7 +26,7 @@ adds a module or adds a check updates this file in the same commit.
 
 | Entry point | What it is | Loads |
 |---|---|---|
-| `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` always; per verb: `activation.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1`, `stack-commands.ps1`, `palette-commands.ps1`, `logs.ps1` |
+| `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` and `console.ps1` always; per verb: `activation.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1`, `stack-commands.ps1`, `palette-commands.ps1`, `logs.ps1` |
 | `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) | `steps.ps1` (and with it `components.ps1`), `activation.ps1` |
 | `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |
@@ -109,6 +109,7 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | `tools\lib\stack-commands.ps1` | `710sRice restart`, `reload`, `reload bar` (dispatcher-only: loaded by their rows and by `doctor -repair`'s, which runs them) |
 | `tools\lib\palette-commands.ps1` | `710sRice palette`, `palette use`, `palette edit`, `palette new` (dispatcher-only: loaded by their rows) |
 | `tools\lib\logs.ps1` | `710sRice logs` (dispatcher-only: loaded by its row) |
+| `tools\lib\console.ps1` | 710sRice's "Press Enter to close": only in a window opened for the command alone (`Test-RiceOwnConsole`, `Wait-RiceClose`; dispatcher-only) |
 | `tools\lib\terminal.ps1` | Windows Terminal's font faces (`Get-TerminalFontFaces`, `Set-TerminalFontFace`) and `Clear-TerminalNerdFontFaces` (uninstall, before the Nerd Font goes) |
 | `tools\lib\versions.ps1` | `versions.md`'s table (`Get-VersionsTable`), `Test-WingetRow`, `Test-PinnedRow` |
 | `tools\lib\winget.ps1` | winget's sources (`Get-WingetSourceArgs`) and exit codes (`Get-WingetOutcome`, `Format-WingetCode`), the version `winget list` shows, the per-user packages, `Invoke-WingetAsUser` |
