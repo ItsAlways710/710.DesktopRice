@@ -762,6 +762,11 @@ tested", so if something odd shows up around admin windows, that's the first thi
   alone: your own edits, a package newer than its pin, warnings from your own rules.
   SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and re-applies the config.
   `710sRice logs` opens the folder with every log.
+- **An app newer than its pin?** `710sRice doctor` marks it `[!!]`, and repair leaves it alone:
+  the pin is the version 710sRice was tested with, and nothing here moves an app down. If
+  something about that app isn't working, going back is worth a try: from a normal window,
+  `winget uninstall --id <its Install ID> --exact` (the IDs are in `versions.md`), then
+  `710sRice doctor -repair`, which installs the pinned version and pins it.
 - **The rice's own settings in a mess?** Uninstall, then install: every 710sRice choice goes
   back to its default (a plain re-install keeps the tiling mode, the palette profile in use and
   the screen numbers, so it isn't enough). Your own files stay -- `user.ahk`, `user.ps1`,
