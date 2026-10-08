@@ -126,7 +126,7 @@ if ($DryRun) { Step-Info "DRY RUN: nothing will be changed." }
 # Their context is taken now too -- FullTime reads the sign-in tasks, which section 2 deletes.
 try {
     $RiceComponents = @(Get-RiceComponents)
-    $ComponentCtx = New-RiceComponentContext -DryRun ([bool]$DryRun)
+    $ComponentCtx = New-RiceComponentContext -DryRun ([bool]$DryRun) -Keep $Keep
 } catch {
     Write-Host "  [XX] $($_.Exception.Message) -- nothing was changed." -ForegroundColor Red
     exit 1

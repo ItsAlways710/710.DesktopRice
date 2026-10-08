@@ -280,8 +280,14 @@
 
     Uninstall = {
         param($Ctx)
+        # Was Flow starting itself at sign-in before install? Read before the restore takes the
+        # snapshot away.
+        $ownStart = Get-OriginalState -Label 'flow-startup'
         if (Restore-FlowLauncherSettings) { Step-Ok 'Flow Launcher settings restored (keywords, identity, Explorer file search, the query box, its own sign-in start, fonts, fullscreen hotkey) and any legacy Everything plugin removed' }
         else { Step-Info 'install never changed Flow Launcher''s settings on this machine -- nothing to restore.' }
+        # You keep Flow (-Keep; versions.md doesn't mark it Pre-existing?, so -Keep is how it stays):
+        # its own sign-in start back too, if it had one (review item 7).
+        if ($Ctx.Keep -contains 'Flow-Launcher.Flow-Launcher' -and $ownStart -and $ownStart.StartFlowLauncherOnSystemStartup.Value) { Restore-FlowOwnStart }
     }
 
     Check = {

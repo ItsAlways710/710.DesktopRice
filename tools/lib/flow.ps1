@@ -2,7 +2,8 @@
 .SYNOPSIS
   Flow Launcher's files and its own sign-in start: where its settings are and reading them, its
   own task or Run value, stopping it; and the snapshots the flow component takes before it changes
-  anything (Save-FlowSnapshots) and puts back on uninstall (Restore-FlowLauncherSettings). Shared
+  anything (Save-FlowSnapshots) and puts back on uninstall (Restore-FlowLauncherSettings, and
+  Restore-FlowOwnStart when you keep Flow). Shared
   by the flow component (tools\components\flow.ps1: its step, its revert, doctor's lines), which
   keeps what the step changes (Get-FlowSetup). Loaded by tools\lib\activation.ps1. Only functions.
 #>
@@ -169,4 +170,28 @@ function Restore-FlowLauncherSettings {
     $settings | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $p.Settings -Encoding UTF8
     foreach ($l in $labels) { Remove-OriginalState -Label $l }
     $true
+}
+
+function Restore-FlowOwnStart {
+    <# Uninstall, when you keep Flow (review item 7): its own sign-in start back as it was. The flow
+       step deleted it -- the \Flow.Launcher Startup task, or the HKCU Run value -- and the restore
+       put its two settings back on; Flow makes the task or Run value again itself whenever it
+       starts with them on (Flow 2.1.3, App.xaml.cs: "reenable if it was removed"). So: Flow
+       started as you, waited for until the entry is there, stopped again -- a Flow left running
+       from that one-shot start would carry the task's job (the component's header). Its next
+       start is the one you had before 710sRice: at sign-in, its own way. #>
+    param([int]$TimeoutSeconds = 20)
+    $p = Get-FlowPaths
+    if (-not (Test-Path -LiteralPath $p.Exe)) { return }
+    if ((Test-FlowOwnTask) -or (Test-FlowRunValue)) { return }   # already back: nothing to do
+    if (-not (Start-AsUser -Exe $p.Exe -Process 'Flow.Launcher' -Name 'flow-own-start' -TimeoutSeconds 15)) {
+        Step-Warn "Flow Launcher didn't start to put back its own sign-in start -- open it once, and it does"
+        return
+    }
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while (-not ((Test-FlowOwnTask) -or (Test-FlowRunValue)) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    $back = (Test-FlowOwnTask) -or (Test-FlowRunValue)
+    [void](Stop-FlowLauncher)
+    if ($back) { Step-Ok "Flow Launcher's own sign-in start is back, as it was before 710sRice (you kept Flow)" }
+    else { Step-Warn "Flow Launcher didn't put back its own sign-in start within $TimeoutSeconds s -- open it once, and it does" }
 }

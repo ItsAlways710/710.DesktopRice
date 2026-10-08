@@ -127,10 +127,11 @@ function Invoke-RiceComponentPart {
 
 function New-RiceComponentContext {
     <# The $Ctx a component's Install / Uninstall / Check gets. FullTime = the machine's mode
-       (install passes -Activate's answer; everything else asks Test-FullTimeMachine). Never
+       (install passes -Activate's answer; everything else asks Test-FullTimeMachine). Keep =
+       uninstall's -Keep list (the packages you keep on top of versions.md's own rules). Never
        throws: a mode or admin check that fails reads as "no" -- a context must never be what
        stops an uninstall or a doctor run. #>
-    param([bool]$OnlyRun = $false, [bool]$DryRun = $false, $FullTime = $null)
+    param([bool]$OnlyRun = $false, [bool]$DryRun = $false, $FullTime = $null, [string[]]$Keep = @())
     if ($null -eq $FullTime) { try { $FullTime = [bool](Test-FullTimeMachine) } catch { $FullTime = $false } }
     $admin = try { [bool](Test-IsAdmin) } catch { $false }
     [pscustomobject]@{
@@ -139,5 +140,6 @@ function New-RiceComponentContext {
         FullTime = [bool]$FullTime
         IsAdmin  = $admin
         DryRun   = $DryRun
+        Keep     = @($Keep)
     }
 }
