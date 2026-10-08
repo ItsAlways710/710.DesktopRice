@@ -45,7 +45,7 @@ components still revert, a `Check` that throws is "couldn't check".
 |---|---|---|
 | `bluetooth.ps1` | `envvars` | The bar's Bluetooth icon: left out on a machine with no adapter (`DESKTOPRICE_NO_BLUETOOTH = _none`, for a YASB started outside 710sRice -- `scripts\Start-Yasb.ps1` sets it from the hardware at every bar start), doctor's line |
 | `commands.ps1` | `envvars` (after `bluetooth`; before Flow's first start, so it indexes them) | The Start-menu commands: ten shortcuts in Start Menu\Programs\710sRice, each `config\ahk\send-command.ahk <name>` (710.ahk's `RiceCommands`); Flow's program cache cleared when it isn't running to see a change; doctor's line |
-| `flow.ps1` | `wallust` (so `theme` themes a Flow set up in the same run) | Flow Launcher: its first start on a new machine, its settings, its own startup turned off (710.ahk starts it), doctor's Flow lines |
+| `flow.ps1` | `wallust` (so `theme` themes a Flow set up in the same run) | Flow Launcher: its first start on a new machine, its settings, its own startup turned off (710.ahk starts it) -- and back on uninstall when you keep Flow -- doctor's Flow lines. Its files, its own sign-in start and its snapshots are in `tools\lib\flow.ps1` |
 | `everything.ps1` | `flow` | Everything: its tray icon and update check off (`Everything.ini`), started (as you) when it isn't running, doctor's "running" line |
 | `sharex.ps1` | `flow` | ShareX: its update check off (`ShowTray` stays on: ShareX's silent start at sign-in needs it), its own sign-in start off (the Startup-folder shortcut its installer makes), doctor's ShareX lines |
 | `defender.ps1` | `monitors` | Windows Defender's exclusions for what its scans slow down (ShareX, Everything, komorebic.exe, pwsh.exe, this repo): added, removed and checked only from an admin window, and only ever ours |
@@ -53,10 +53,11 @@ components still revert, a `Check` that throws is "couldn't check".
 
 The worked example is `flow.ps1`: every field but `NamedOnly`, a first start through
 `Start-AsUser`, snapshots, and a restart through 710.ahk. `everything.ps1` / `sharex.ps1` are the smaller
-pattern: settings an app keeps in its own file, set once, with doctor's split between
-`[XX] not set up by 710sRice yet` (no snapshot yet: the step has never run here, so `710sRice
-update`'s repair runs it) and `[!!]` for a value you changed back yourself since (shown, never
-overridden by repair).
+pattern: settings an app keeps in its own file, set once, with doctor's `[XX]` for a value
+not as the step set it -- never set here yet (no snapshot: the step has never run here), or
+changed back since -- so `710sRice doctor -repair`, and with it `710sRice update`, runs the step.
+A component whose helpers outgrow its file keeps them in a library of its own,
+`tools\lib\<id>.ps1`, which `tools\lib\activation.ps1` loads: `terminal` and `flow` do.
 
 ## Adding one
 
@@ -77,7 +78,8 @@ overridden by repair).
   The bar, Flow and ShareX: `Start-AhkStartedApps` (`tools\lib\stack.ps1`) asks 710.ahk,
   which starts them as you (config\ahk\710.ahk, "The apps 710.ahk starts"). `Start-AsUser`
   (`tools\lib\tasks.ps1`) starts an app as you through a one-shot task -- so in that task's job: fine
-  for a start that's stopped again seconds later (Flow's first start). Everything's start goes
+  for a start that's stopped again seconds later (Flow's first start, and uninstall's start that
+  lets a kept Flow put back its own sign-in start). Everything's start goes
   that way too; whether that touches what you open from Everything's own window is untested.
 - **Snapshot before the first change.** Take a once-only snapshot of anything outside the repo
   it changes, before the change: `Save-OriginalState` with a label that starts with its `Id`

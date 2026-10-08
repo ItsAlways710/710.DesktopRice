@@ -6,7 +6,7 @@ A keyboard-first tiling desktop for Windows 11, themed from your wallpaper.
 | --- | --- |
 | [komorebi](https://github.com/LGUG2Z/komorebi) | Tiling window manager: workspaces, layouts, borders. Admin windows tile too |
 | [YASB](https://github.com/amnweb/yasb) | The bar across the top: workspaces, weather, system info, wallpaper gallery |
-| [AutoHotkey v2](https://www.autohotkey.com/) | Every hotkey, plus the themed, searchable menus (`config/ahk/710.ahk`) |
+| [AutoHotkey v2](https://www.autohotkey.com/) | Every hotkey, plus the themed, searchable menus (`config/ahk/710.ahk` and its parts in `config/ahk/710/`) |
 | [Flow Launcher](https://www.flowlauncher.com/) + [Everything](https://www.voidtools.com/) | App launcher and instant file search |
 | [ShareX](https://getsharex.com/) | Screenshots, recordings, OCR, QR scanning |
 | [Windows Terminal](https://github.com/microsoft/terminal) + PowerShell 7 | The terminal, with a [Starship](https://starship.rs/) prompt, fzf, zoxide, eza and bat |
@@ -229,7 +229,9 @@ It pulls the newest version from GitHub, then runs `710sRice doctor -repair` fro
 prompt). Repair keeps your wallpaper and theme: it moves pinned packages up to a new pin in
 [versions.md](versions.md) (closing each app first and starting it again afterwards), and
 picks up changed rules, launchers, the profile hook, Flow's, ShareX's and Everything's
-settings, the bar's config, `710.ahk` and the theme templates. Update won't pull over your own edits to tracked files
+settings, the bar's config, `710.ahk` and the theme templates. Whatever install set that has been
+changed since goes back too -- Windows Terminal's font and default shell, Flow's preferences, full
+time's Windows settings, a sign-in task someone disabled: doctor marks each one `[XX]`. Update won't pull over your own edits to tracked files
 (those belong in `user.ahk`, `rules.local.toml` or `user.ps1` -- see
 [Make it yours](#make-it-yours)), and if your copy and GitHub have both moved, it tells you
 what to run instead. Nothing new? It says so and runs a health check.
@@ -265,8 +267,8 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
 | `710sRice activate` / `deactivate` | [Switch](#switching-activate--deactivate) to full-time / back to on demand; `-DryRun` shows what it would do *(admin)* |
 | `710sRice doctor` | Health check: what's wrong, and the command that fixes each thing. Changes nothing; also says when GitHub has a newer version |
-| `710sRice doctor -repair` | Fix what doctor finds, then check again. Never touches your wallpaper, theme or choices *(admin)* |
-| `710sRice update` | Get the newest version from GitHub, then repair from it. Keeps your wallpaper, theme and choices *(admin)* |
+| `710sRice doctor -repair` | Fix what doctor finds, then check again. Never touches your wallpaper, theme or the choices 710sRice gives you: full-time or on demand, the tiling mode, your palette profiles and the one in use, the screen numbers, your own files *(admin)* |
+| `710sRice update` | Get the newest version from GitHub, then repair from it. Keeps your wallpaper, theme and those choices *(admin)* |
 | `710sRice start` / `stop` | Start or stop the stack |
 | `710sRice restart` | Stop the stack and start it again, same as SUPER+Ctrl+R (SUPER+Shift+R only restarts what it has to) |
 | `710sRice reload` | Re-apply config and rules, restarting only what changed; same as SUPER+Shift+R |
@@ -372,16 +374,20 @@ Packages: anything the installer added is removed, except two kinds of row in
 
 - **Pre-existing? yes**: common tools you may well have had already, like Everything and
   the Nerd Font. Kept, unless you pass `-Force`.
-- **Pre-existing? system**: PowerShell 7 (the uninstall itself runs on it) and Windows
-  Terminal (part of Windows 11). Never removed, `-Force` included; uninstall says so, and
+- **Pre-existing? system**: PowerShell 7 (the uninstall itself runs on it), Windows
+  Terminal (part of Windows 11) and Git (`710sRice update` pulls with it; one you installed
+  some other way is used as it is). Never removed, `-Force` included; uninstall says so, and
   you can remove them yourself in Settings > Apps > Installed apps.
 
 Two switches change what goes:
 
 - `-Keep <Install ID>` keeps a package that would otherwise be removed, e.g.
   `710sRice uninstall -Keep ShareX.ShareX`. Several at once:
-  `-Keep ShareX.ShareX,Flow-Launcher.Flow-Launcher`.
-- `-Force` removes the `yes` rows too. The Nerd Font goes without closing anything: Windows
+  `-Keep ShareX.ShareX,Flow-Launcher.Flow-Launcher`. Keep Flow Launcher, and its own start at
+  sign-in comes back too, if it had one before 710sRice.
+- `-Force` removes the `yes` rows too. For the Nerd Font that's DEVCOM's package, which install
+  only adds when Windows doesn't have the font: a copy you installed some other way stays, and
+  Windows Terminal keeps using it. The Nerd Font goes without closing anything: Windows
   Terminal (this window included) usually still has it open, so its files are deleted at your next
   restart -- restart before you install 710sRice again.
 
@@ -751,8 +757,16 @@ tested", so if something odd shows up around admin windows, that's the first thi
   font list when it starts: close every Terminal window and open one again.
 - **Something not right?** `710sRice doctor` (or **Doctor** in the main menu, SUPER+Alt+Space)
   checks the install and names the fix for each problem it finds; `710sRice doctor -repair`
-  runs those fixes for you. SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and
-  re-applies the config. `710sRice logs` opens the folder with every log.
+  runs those fixes for you. An `[XX]` is a problem: repair fixes it, unless doctor says it needs
+  you (a key `user.ahk` defines twice, say). A `[!!]` is worth a look, and repair leaves it
+  alone: your own edits, a package newer than its pin, warnings from your own rules.
+  SUPER+Shift+R (or `710sRice reload`) reloads the whole stack and re-applies the config.
+  `710sRice logs` opens the folder with every log.
+- **The rice's own settings in a mess?** Uninstall, then install: every 710sRice choice goes
+  back to its default (a plain re-install keeps the tiling mode, the palette profile in use and
+  the screen numbers, so it isn't enough). Your own files stay -- `user.ahk`, `user.ps1`,
+  `rules.local.toml`, your palette profiles: if the trouble is in one of them, move it to another
+  folder, `710sRice restart`, and see.
 
 ## Future plans
 

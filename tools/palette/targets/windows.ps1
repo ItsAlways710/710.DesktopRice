@@ -13,7 +13,7 @@
         $personalize = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize'
         $dwm = 'HKCU:\SOFTWARE\Microsoft\Windows\DWM'
         # What these were before we ever touched them -- uninstall's Restore-WindowsAccent
-        # (tools\lib\activation.ps1) puts it back. Written once in the life of the install.
+        # (tools\steps\theme.ps1) puts it back. Written once in the life of the install.
         Save-PaletteOriginalStateOnce -Label 'windows-accent' -Data @{
             Personalize_AppsUseLightTheme    = Get-PaletteRegValueSnapshot -Path $personalize -Name 'AppsUseLightTheme'
             Personalize_SystemUsesLightTheme = Get-PaletteRegValueSnapshot -Path $personalize -Name 'SystemUsesLightTheme'

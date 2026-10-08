@@ -27,6 +27,6 @@ Helpers from `tools\lib\palette.ps1` are in scope (`ConvertTo-PaletteRgb`,
 
 A target that changes something outside the repo takes a once-only snapshot first
 (`Save-PaletteOriginalStateOnce`) and gets a matching restore in uninstall
-(`tools\lib\activation.ps1`, or the app's component); one whose state can drift gets a doctor check
-(`tools\lib\doctor.ps1`). The worked example is `flow.ps1` — see
+(in its step's module, `tools\steps\`, or the app's component); one whose state can drift gets a
+doctor check, in the same place (`docs\map.md` says where each lives). The worked example is `flow.ps1` — see
 `claude/palette-profiles-plan.md`, "How to add a target".
