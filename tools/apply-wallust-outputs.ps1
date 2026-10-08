@@ -16,11 +16,11 @@
     What happens (the how: tools\lib\palette.ps1; the why: claude/palette-profiles-plan.md):
       1. One run at a time (a wallpaper change and a profile switch can meet).
       2. The chosen profile (Default when nothing's chosen, or when the chosen one is gone).
-      3. The palette: wallust with the profile's source, -s and one dump template -- or, for a
-         run that doesn't change the wallpaper (-Reapply), the last good palette when it came
-         from the same source and wallpaper. wallust FAILS -> nothing is touched: the last
-         good palette and everything on screen stay, palette-status.json says why (doctor
-         shows it), 710.ahk gets a toast, exit 1.
+      3. The palette: the last good one when it came from the same source and wallpaper (not
+         a random theme's) -- otherwise wallust with the profile's source, -s and one dump
+         template. wallust FAILS -> nothing is touched: the last good palette and everything
+         on screen stay, palette-status.json says why (doctor shows it), 710.ahk gets a toast,
+         exit 1.
       4. Every colour resolved (pure -- a broken profile stops here, nothing written).
       5. Each target applied in order; one failing doesn't stop the rest (exit 2).
       6. Wallpaper changes only: your lock-screen picture is set to the wallpaper
@@ -35,8 +35,9 @@
 .PARAMETER Image
     The wallpaper YASB just set. Left out: the one that's up now (the registry).
 .PARAMETER Reapply
-    No wallpaper change -- a profile was chosen or saved. Reuses the last good palette when the
-    profile's source and the wallpaper are the ones it came from; the lock screen is left alone.
+    No wallpaper change -- a profile was chosen or saved. The lock screen is left alone, and a
+    source that doesn't read the wallpaper (a random theme too) reuses the last good palette
+    when it made it, whatever the wallpaper.
 .PARAMETER ProfileId
     Theme with this profile instead of the chosen one, and make it the chosen one if that
     works (a profile switch: the old choice stays when wallust can't make the new palette).
@@ -97,9 +98,15 @@ try {
         if ($mode -eq 'borders') { $mode = 'reapply'; Write-PaletteLog 'no palette made yet -- a full re-theme instead of borders only' }
         if (-not $Image) { $Image = Get-PaletteCurrentWallpaper }
         $usesImage = Test-PaletteSourceUsesImage -Source $source
-        $reuse = $mode -eq 'reapply' -and $last -and $last.SourceKey -eq $key -and $source.kind -ne 'random' -and
-                 (-not $usesImage -or ($last.Image -eq "$Image" -and $last.ImageStamp -eq (Get-PaletteImageStamp $Image)))
-        # A random theme is new on every wallpaper change, but a profile save / switch keeps the one it has.
+        # Every run takes the last good palette when it came from this source and this wallpaper:
+        # made again, wallust 4.1.0-alpha's palette (read back from its cache) can be one step off
+        # the first run's in one channel of a few colours, and every target is rewritten for
+        # nothing (2026-10-08). A profile save / switch also takes it whatever the wallpaper when
+        # the source doesn't read one. A random theme is new on every run but a profile save /
+        # switch, which keeps the one it has.
+        $sameImage = $last -and $last.Image -eq "$Image" -and $last.ImageStamp -eq (Get-PaletteImageStamp $Image)
+        $reuse = $last -and $last.SourceKey -eq $key -and $source.kind -ne 'random' -and
+                 ($sameImage -or ($mode -eq 'reapply' -and -not $usesImage))
         if ($mode -eq 'reapply' -and $last -and $source.kind -eq 'random' -and $last.SourceKey -eq $key) { $reuse = $true }
         if ($reuse) {
             $palette = $last.Palette

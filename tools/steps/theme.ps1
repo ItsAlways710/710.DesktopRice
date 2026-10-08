@@ -62,10 +62,10 @@ function Install-PaletteStep {
     # The opposite of theme: no wallpaper change. Runs exactly what YASB's wallpaper widget
     # runs after every change (the pipeline, config\yasb\config.yaml's run_after) on the
     # wallpaper that's up now (Get-CurrentWallpaper -- the value Set-LockScreen.ps1 reads).
-    # Same image, same profile, same palette (wallust caches it per image), so on a healthy
-    # machine nothing visibly changes -- it's the fix for missing or stale theme files (the
-    # bar's and menus' colours, the prompt, Flow's theme, Terminal's scheme). It never falls
-    # back to the default wallpaper: that's the theme step, the reset.
+    # Same wallpaper, same profile source: the pipeline reuses the palette it made from them, so
+    # on a healthy machine nothing visibly changes -- it's the fix for missing or stale theme
+    # files (the bar's and menus' colours, the prompt, Flow's theme, Terminal's scheme). It never
+    # falls back to the default wallpaper: that's the theme step, the reset.
     Write-Host "`n-- Palette (current wallpaper) --" -ForegroundColor Cyan
     $currentWallpaper = Get-CurrentWallpaper
     if (-not $currentWallpaper -or -not (Test-Path -LiteralPath $currentWallpaper)) {
