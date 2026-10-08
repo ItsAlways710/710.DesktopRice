@@ -54,10 +54,10 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 |---|---|---|---|---|
 | packages | `install.ps1`; winget helpers, probes, move-to-pin in `tools\lib\packages.ps1` | `uninstall.ps1` sections 5 (pins), 6 (packages; the Nerd Font through `Invoke-MsiUninstall` after `Clear-TerminalNerdFontFaces`), 8 (PSGallery modules) | `doctor.ps1` group b: `pkg:*`, `pins`, `pkg:shell-tools` | `Step=packages` |
 | upgrade (named only) | `install.ps1`; `Invoke-MoveToPin` in `packages.ps1` | — | `pkg:*` "older than its pin" | `Step=upgrade` |
-| envvars | `install.ps1` (also removes the old weather variables) | `uninstall.ps1` section 4 | `doctor.ps1` `envvars`, `weather-vars`, `weather` | `Step=envvars` |
+| envvars | `tools\steps\envvars.ps1` (`Install-EnvVarsStep`; also removes the old weather variables) | same file (`Undo-ConfigEnvVars`, uninstall's section 4, which removes any old weather variables itself) | `envvars`, `weather-vars`, `weather` (same file) | `Step=envvars` |
 | bluetooth | `tools\components\bluetooth.ps1` (+ `tools\lib\bluetooth.ps1`) | same file | `bluetooth` | `Step=bluetooth` |
 | commands | `tools\components\commands.ps1` | same file | `commands` | `Step=commands` |
-| path | `install.ps1`; PATH helpers in `tools\lib\userenv.ps1` | `uninstall.ps1` section 4 | `doctor.ps1` `path` | `Step=path` |
+| path | `tools\steps\path.ps1` (`Install-PathStep`); PATH helpers in `tools\lib\userenv.ps1` | same file (`Undo-RiceCommandPath`, uninstall's section 4) | `path` (same file) | `Step=path` |
 | wallust | `install.ps1`; `tools\install-wallust.ps1`, `tools\write-wallust-config.ps1` | `uninstall.ps1` sections 7 (binary), 9 (`wallust.toml`) | `doctor.ps1` `wallust`, `wallust-toml` | `Step=wallust` |
 | flow | `tools\components\flow.ps1` | same file | `flow`, `flow-startup`, `flow-prefs`, `flow-font`, `flow-fullscreen` | `Step=flow` |
 | everything | `tools\components\everything.ps1` | same file | `everything`, `everything-settings` | `Step=everything` |
@@ -122,7 +122,7 @@ Component checks come at the end of their group, in install's order.
 | Group | Checks |
 |---|---|
 | (header) | `update` (`Get-DoctorUpdateResult`), `local-changes` |
-| Repo and command | `path`, `envvars`, `weather` |
+| Repo and command | `path` (`tools\steps\path.ps1`), `envvars`, `weather` (`tools\steps\envvars.ps1`) |
 | Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust`, other packages (`Test-DoctorOtherPackages`) |
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |

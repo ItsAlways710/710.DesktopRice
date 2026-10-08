@@ -391,54 +391,8 @@ $Steps['upgrade'] = {
     }
 }
 
-$Steps['envvars'] = {
-    # --- 2. Config env vars: repo is the source of truth --------------------------------
-    Write-Host "`n-- Config environment variables --" -ForegroundColor Cyan
-    $komorebiConfigHome = Join-Path $Root 'config\komorebi'
-    $yasbConfigHome     = Join-Path $Root 'config\yasb'
-    [Environment]::SetEnvironmentVariable('KOMOREBI_CONFIG_HOME', $komorebiConfigHome, 'User')
-    [Environment]::SetEnvironmentVariable('YASB_CONFIG_HOME', $yasbConfigHome, 'User')
-    # The repo root. config\yasb\config.yaml builds every path it needs from this through
-    # YASB's own $env: expansion (the wallpaper folder, the wallust/apply-outputs commands, the
-    # home menu entry) instead of hard-coding C:\710.DesktopRice -- clone the repo anywhere.
-    [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $Root, 'User')
-    $env:KOMOREBI_CONFIG_HOME = $komorebiConfigHome
-    $env:YASB_CONFIG_HOME     = $yasbConfigHome
-    $env:DESKTOPRICE_HOME     = $Root
-    # Shown as %USERPROFILE%\... when the clone lives under the user's folders (ConvertTo-SafePath).
-    Step-Ok "KOMOREBI_CONFIG_HOME = $(ConvertTo-SafePath $komorebiConfigHome)"
-    Step-Ok "YASB_CONFIG_HOME     = $(ConvertTo-SafePath $yasbConfigHome)"
-    Step-Ok "DESKTOPRICE_HOME     = $(ConvertTo-SafePath $Root)"
-    # The old weather widget's two variables (weatherapi.com's key and a location), unused since
-    # the bar's weather moved to Open-Meteo (Group 1 #1: no account, no key -- the location is
-    # picked in the widget). A key shouldn't sit in the environment, so they go. Names only.
-    foreach ($name in 'YASB_WEATHER_API_KEY', 'YASB_WEATHER_LOCATION') {
-        if (Get-UserEnvVar $name) {
-            Remove-UserEnvVar $name
-            Step-Ok "$name removed (the weather widget doesn't use it any more)"
-        }
-    }
-}
-
-$Steps['path'] = {
-    # --- 2c. PATH: the 710sRice command --------------------------------------------------
-    # bin\ holds one file, 710sRice.cmd -- a one-line shim that runs 710sRice.ps1 with pwsh -- so
-    # `710sRice <command>` works from any PS7 window opened from now on. Add-UserPathEntry keeps
-    # every other user PATH entry exactly as stored (%VARS% and all), appends ours, writes it back
-    # as REG_EXPAND_SZ and tells Explorer; it also adds bin\ to this window. A failure here
-    # only costs the shortcut, so it warns instead of stopping the install.
-    Write-Host "`n-- 710sRice command --" -ForegroundColor Cyan
-    $riceBin = Join-Path $Root 'bin'
-    try {
-        if (Add-UserPathEntry -Dir $riceBin) {
-            Step-Ok "710sRice command: $(ConvertTo-SafePath $riceBin) added to your PATH (open a new PS7 window to use it)"
-        } else {
-            Step-Ok '710sRice command: already on your PATH'
-        }
-    } catch {
-        Step-Warn "710sRice command: couldn't add $riceBin to your PATH -- $($_.Exception.Message)"
-    }
-}
+$Steps['envvars'] = { Install-EnvVarsStep }   # tools\steps\envvars.ps1
+$Steps['path']    = { Install-PathStep }      # tools\steps\path.ps1
 
 $Steps['wallust'] = {
     # --- 3. wallust -----------------------------------------------------------------------

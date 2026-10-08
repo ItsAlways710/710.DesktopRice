@@ -220,23 +220,7 @@ if ($componentReverts.Count) {
 
 # --- 4. Revert env vars -------------------------------------------------------------
 Write-Host "`n-- Config environment variables --" -ForegroundColor Cyan
-$komorebiConfigHome = Join-Path $Root 'config\komorebi'
-$yasbConfigHome     = Join-Path $Root 'config\yasb'
-Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (User scope, only where still pointing at this repo)" {
-    # Only clear a var if it's still pointing at THIS repo -- if something else (a
-    # newer winarchy run, a manual edit) already moved it elsewhere, that's not this
-    # script's to touch. Matches the "last write wins, don't clobber a later write"
-    # posture install.ps1's own NOTES already accept for these shared vars.
-    if ([Environment]::GetEnvironmentVariable('KOMOREBI_CONFIG_HOME', 'User') -eq $komorebiConfigHome) {
-        [Environment]::SetEnvironmentVariable('KOMOREBI_CONFIG_HOME', $null, 'User')
-    }
-    if ([Environment]::GetEnvironmentVariable('YASB_CONFIG_HOME', 'User') -eq $yasbConfigHome) {
-        [Environment]::SetEnvironmentVariable('YASB_CONFIG_HOME', $null, 'User')
-    }
-    if ([Environment]::GetEnvironmentVariable('DESKTOPRICE_HOME', 'User') -eq $Root) {
-        [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $null, 'User')
-    }
-} 'Env vars reverted'
+Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (User scope, only where still pointing at this repo)" { Undo-ConfigEnvVars } 'Env vars reverted'
 # The old weather widget's variables (Group 1 #1: unused since the bar's weather moved to
 # Open-Meteo) -- install's envvars step removes them too; whatever is still there goes.
 $oldWeather = @('YASB_WEATHER_API_KEY', 'YASB_WEATHER_LOCATION' | Where-Object { Get-UserEnvVar $_ })
@@ -250,13 +234,7 @@ if ($oldWeather.Count) {
 # written back exactly as stored (Remove-UserPathEntry). Reports its own result line, hence
 # Invoke-ActivationRevert (same -DryRun gate, no extra "done" line) rather than Invoke-Step.
 $riceBin = Join-Path $Root 'bin'
-Invoke-ActivationRevert "Remove $(ConvertTo-SafePath $riceBin) from your user PATH (the 710sRice command)" {
-    if (Remove-UserPathEntry -Dir $riceBin) {
-        Step-Ok "710sRice command: $(ConvertTo-SafePath $riceBin) removed from your PATH"
-    } else {
-        Step-Info "710sRice command: wasn't on your PATH"
-    }
-}
+Invoke-ActivationRevert "Remove $(ConvertTo-SafePath $riceBin) from your user PATH (the 710sRice command)" { Undo-RiceCommandPath -RiceBin $riceBin }
 
 # --- 5. Remove winget pins -----------------------------------------------------------
 Invoke-Step "Remove winget pins for this repo's core (pinned) packages" {
