@@ -97,7 +97,9 @@ $script:PackageProbes = @{
     'Microsoft.WindowsTerminal' = { if (Test-Path -LiteralPath "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe") { '' } }
     # PowerShell 7 is what's running this.
     '9MZ1SNWT0N5D' = { if ($PSVersionTable.PSVersion.Major -ge 7) { "$($PSVersionTable.PSVersion)" } }
-    'DEVCOM.JetBrainsMonoNerdFont' = { if (@(Get-InstalledFontNames | Where-Object { $_ -like 'JetBrainsMono NF*' }).Count) { '' } }
+    # By its name in Windows' fonts, either face (tools\lib\fonts.ps1) -- what install's packages step
+    # asks before winget, so the two agree.
+    'DEVCOM.JetBrainsMonoNerdFont' = { if (Get-NerdFontFace) { '' } }
     # Only starship's exe carries a version; the other four are there or not.
     'Starship.Starship'  = { Get-ExeProductVersion (Find-ExeOnPath 'starship.exe') }
     'junegunn.fzf'       = { if (Find-ExeOnPath 'fzf.exe') { '' } }

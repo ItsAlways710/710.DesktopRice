@@ -58,6 +58,13 @@ function Install-PackagesStep {
             # Every call names its source (Get-WingetSourceArgs): winget's own for winget rows,
             # the Store for PowerShell 7's msstore row -- never both (W1).
             $sourceArgs = @(Get-WingetSourceArgs $row)
+            # The Nerd Font by its name in Windows' fonts first -- yours or every user's, either face
+            # (Get-NerdFontFace, doctor's check too) -- so a copy that's already there, installed by
+            # hand or by winget, never gets DEVCOM's installer laid over it (Godzilla, 2026-10-03).
+            if ($id -like '*NerdFont*') {
+                $face = Get-NerdFontFace
+                if ($face) { Step-Ok "$id already installed (Windows has the font: $face)"; continue }
+            }
             $listArgs = @('list', '--id', $id, '--exact', '--accept-source-agreements') + $sourceArgs
             $listed = @(winget @listArgs 2>$null)
             $alreadyInstalled = ($listed | Out-String) -match [regex]::Escape($id)
