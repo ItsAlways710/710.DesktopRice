@@ -27,8 +27,9 @@ Columns:
   - `no` — removed by a plain `710sRice uninstall`, unless you pass `-Keep <Install ID>`;
   - `yes` — kept by a plain uninstall, removed by `710sRice uninstall -Force`;
   - `system` — installed if missing, **never removed by uninstall, `-Force` included**
-    (PowerShell 7, which uninstall itself runs on and a fresh install needs first, and Windows
-    Terminal, part of Windows 11). Remove one by hand if you want it gone (Settings > Apps).
+    (PowerShell 7, which uninstall itself runs on and a fresh install needs first, Windows
+    Terminal, part of Windows 11, and Git, which `710sRice update` pulls with). Remove one by hand
+    if you want it gone (Settings > Apps).
 
   Any other value stops install, doctor and uninstall with an error naming the row — a typo
   can never be read as "remove it".
@@ -52,7 +53,7 @@ touch these): the Nerd Font, Starship, fzf, zoxide, eza, bat, Everything, PSFzf.
 
 Marked `system` (never removed, `-Force` included — user, 2026-09-30, Group 1 W9: "Keep both,
 always, ps7 will have to be a manual remove, and that's fine"): PowerShell 7 and Windows
-Terminal. Until then both were `yes` rows, so `-Force` removed them too — PowerShell 7 included,
+Terminal; Git since 2026-10-07 (treated like PowerShell 7 -- see its note below). Until then both were `yes` rows, so `-Force` removed them too — PowerShell 7 included,
 the shell the uninstall itself runs on.
 
 The history of the review, as it stood before `system` existed: Windows Terminal and PowerShell 7
@@ -76,6 +77,7 @@ PowerShell 7 note below.
 | ShareX | latest | winget | ShareX.ShareX | no | 2026-09-21 |
 | Windows Terminal | latest | winget | Microsoft.WindowsTerminal | system | 2026-09-21 |
 | PowerShell 7 | latest | msstore | 9MZ1SNWT0N5D | system | 2026-09-23 |
+| Git | latest | winget | Git.Git | system | 2026-10-07 |
 | JetBrainsMono Nerd Font | latest | winget | DEVCOM.JetBrainsMonoNerdFont | yes | 2026-09-21 |
 | Starship | latest | winget | Starship.Starship | yes | 2026-09-21 |
 | fzf | latest | winget | junegunn.fzf | yes | 2026-09-21 |
@@ -87,6 +89,11 @@ PowerShell 7 note below.
 | DisplayConfig | latest | psgallery | DisplayConfig | no | 2026-10-05 |
 
 ## Notes on specific rows
+
+**Git** -- added 2026-10-07: `710sRice update` pulls with it, and the one-line install clones with
+it. `system`, like PowerShell 7: installed if missing, never removed by uninstall. Found on your
+PATH first (install's packages step and doctor alike), so a git installed some other way is used as
+it is -- winget's `Git.Git` only goes on a machine that has none.
 
 **DisplayConfig** -- added 2026-10-05 for the Screens menu (the bar's monitor button and
 SUPER+Alt+Space > Screens): it reads every connected screen, on or off, through Windows' own

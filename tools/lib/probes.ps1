@@ -97,6 +97,13 @@ $script:PackageProbes = @{
     'Microsoft.WindowsTerminal' = { if (Test-Path -LiteralPath "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe") { '' } }
     # PowerShell 7 is what's running this.
     '9MZ1SNWT0N5D' = { if ($PSVersionTable.PSVersion.Major -ge 7) { "$($PSVersionTable.PSVersion)" } }
+    # Git: on the PATH, whoever installed it (`git version 2.51.0.windows.1`).
+    'Git.Git' = {
+        $git = Find-ExeOnPath 'git.exe'
+        if (-not $git) { return }
+        $line = "$(& $git --version 2>$null)"
+        if ($line -match '(\d+(?:\.\d+)+)') { $Matches[1] } else { '' }
+    }
     # By its name in Windows' fonts, either face (tools\lib\fonts.ps1) -- what install's packages step
     # asks before winget, so the two agree.
     'DEVCOM.JetBrainsMonoNerdFont' = { if (Get-NerdFontFace) { '' } }
