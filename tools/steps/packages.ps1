@@ -238,13 +238,22 @@ function Uninstall-WingetPackage {
     # line saying what would happen.
     param([Parameter(Mandatory)]$Row, [switch]$DryRun)
     $id = $Row.InstallId
+    $msi = $null
     if ($id -like '*NerdFont*') {
         # The font goes: no Windows Terminal profile may still name it (Clear-TerminalNerdFontFaces,
         # tools\lib\terminal.ps1), and it goes through Windows Installer told to close nothing
         # (Invoke-MsiUninstall, tools\lib\msi.ps1) -- winget's silent uninstall had Restart
         # Manager shut down the Terminal running this very uninstall (B2 and T5, 2026-10-01).
-        if ($DryRun) { Write-Host "  [ ] Point any Windows Terminal profile still on the Nerd Font back to Terminal's own font" }
-        else {
+        # Only when it IS going -- DEVCOM's Windows Installer entry is there, or winget lists it: a
+        # copy you installed yourself stays, and Terminal keeps it (his call, 2026-10-07).
+        try { $msi = Get-MsiProductCode -DisplayName '^JetBrainsMono Nerd Font' } catch { }
+        $going = [bool]$msi
+        if (-not $going) {
+            $listArgs = @('list', '--id', $id, '--exact', '--accept-source-agreements') + @(Get-WingetSourceArgs $Row)
+            $going = (@(winget @listArgs 2>$null) | Out-String) -match [regex]::Escape($id)
+        }
+        if ($going -and $DryRun) { Write-Host "  [ ] Point any Windows Terminal profile still on the Nerd Font back to Terminal's own font" }
+        elseif ($going) {
             try {
                 $moved = @(Clear-TerminalNerdFontFaces)
                 if ($moved.Count) {
@@ -256,8 +265,6 @@ function Uninstall-WingetPackage {
     }
     if ($DryRun) { Write-Host "  [ ] Uninstall $id"; return }
     if ($id -like '*NerdFont*') {
-        $msi = $null
-        try { $msi = Get-MsiProductCode -DisplayName '^JetBrainsMono Nerd Font' } catch { }
         if ($msi) {
             try {
                 $code = Invoke-MsiUninstall -ProductCode $msi
