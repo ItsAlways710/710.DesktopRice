@@ -446,8 +446,8 @@
     }
 
     Check = {
-        # The same comparison the install step makes, nothing written: functional items and Flow
-        # starting itself at sign-in are [XX] (the flow step fixes them); preferences are [!!].
+        # The same comparison the install step makes, nothing written: anything not as the flow
+        # step set it is [XX] -- functional items, Flow starting itself at sign-in, the preferences.
         param($Ctx)
         $p = Get-FlowPaths
         if (-not (Test-Path -LiteralPath $p.Exe)) { return }   # the packages group says so
@@ -463,18 +463,18 @@
         if (@($setup.Findings | Where-Object { $_.Kind -eq 'startup' }).Count) {
             New-DoctorResult -Id 'flow-startup' -Status 'XX' -Text 'Flow Launcher also starts itself at sign-in (its own setting) -- two starts open its window' @fix
         }
-        if ($preference.Count) { New-DoctorResult -Id 'flow-prefs' -Status '!!' -Text "Flow Launcher preferences: $($preference -join '; ')" @fix }
+        if ($preference.Count) { New-DoctorResult -Id 'flow-prefs' -Status 'XX' -Text "Flow Launcher preferences: $($preference -join '; ')" @fix }
         else { New-DoctorResult -Id 'flow-prefs' -Status 'OK' -Text 'Flow Launcher preferences (opens empty, tray icon hidden, no update prompt)' }
-        # The fonts and the fullscreen setting: never set by 710sRice here (no snapshot) = [XX];
-        # set, then changed by you since = [!!] -- your call, repair leaves it.
+        # The fonts and the fullscreen setting: [XX] when not as the flow step sets them -- never set
+        # by 710sRice here (no snapshot), or changed since.
         if ($setup.Face) {
             $which = $setup.FontsWrong -join ', '
             if (-not $setup.FontsWrong.Count) { New-DoctorResult -Id 'flow-font' -Status 'OK' -Text "Flow Launcher uses the Nerd Font ($($setup.Face))" }
             elseif (-not (Get-OriginalState -Label 'flow-fonts')) { New-DoctorResult -Id 'flow-font' -Status 'XX' -Text "Flow Launcher doesn't use the Nerd Font ($which)" @fix }
-            else { New-DoctorResult -Id 'flow-font' -Status '!!' -Text "Flow Launcher's font changed since 710sRice set $($setup.Face) ($which) -- your call" -Fix '710sRice install -Only flow' }
+            else { New-DoctorResult -Id 'flow-font' -Status 'XX' -Text "Flow Launcher's font changed since 710sRice set $($setup.Face) ($which)" @fix }
         }
         if (-not $setup.FullscreenOff) { New-DoctorResult -Id 'flow-fullscreen' -Status 'OK' -Text "Flow Launcher stays shut over fullscreen windows" }
         elseif (-not (Get-OriginalState -Label 'flow-fullscreen')) { New-DoctorResult -Id 'flow-fullscreen' -Status 'XX' -Text 'Flow Launcher opens over fullscreen windows (its "Ignore hotkeys in fullscreen" is off)' @fix }
-        else { New-DoctorResult -Id 'flow-fullscreen' -Status '!!' -Text 'Flow Launcher''s "Ignore hotkeys in fullscreen" switched off since 710sRice set it -- your call' -Fix '710sRice install -Only flow' }
+        else { New-DoctorResult -Id 'flow-fullscreen' -Status 'XX' -Text 'Flow Launcher''s "Ignore hotkeys in fullscreen" switched off since 710sRice set it' @fix }
     }
 }

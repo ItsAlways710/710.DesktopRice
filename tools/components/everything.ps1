@@ -163,7 +163,7 @@
 
     Check = {
         # Running (SUPER+S needs it) -- [!!] as before; then the settings: [XX] until this step has
-        # run here (no snapshot yet), [!!] for a value turned back on since (your call).
+        # run here (no snapshot yet), and for a value turned back on since.
         param($Ctx)
         $exe = Get-EverythingExe
         if (-not $exe) { return }   # the packages group says so
@@ -176,7 +176,7 @@
         $now = Read-EverythingValues (Get-EverythingIniPath)
         $back = @(if ($now.show_tray_icon -ne '0') { 'its tray icon is on' }; if ($now.check_for_updates_on_startup -ne '0') { 'it checks for updates' })
         if ($back.Count) {
-            return New-DoctorResult -Id 'everything-settings' -Status '!!' -Text "Everything: $($back -join ', ') again (changed since 710sRice set it -- your call)" -Fix '710sRice install -Only everything turns it off again'
+            return New-DoctorResult -Id 'everything-settings' -Status 'XX' -Text "Everything: $($back -join ', ') again (changed since 710sRice set it)" @fix
         }
         New-DoctorResult -Id 'everything-settings' -Status 'OK' -Text 'Everything set up (no tray icon, no update check)'
     }

@@ -241,7 +241,7 @@
             return New-DoctorResult -Id 'sharex' -Status 'XX' -Text 'ShareX: not set up by 710sRice yet (its update check)' @fix
         }
         if ($now.AutoCheckUpdate -ne $false) {
-            return New-DoctorResult -Id 'sharex' -Status '!!' -Text 'ShareX checks for updates again (turned back on since 710sRice set it -- your call)' -Fix '710sRice install -Only sharex turns it off again'
+            return New-DoctorResult -Id 'sharex' -Status 'XX' -Text 'ShareX checks for updates again (turned back on since 710sRice set it)' @fix
         }
         New-DoctorResult -Id 'sharex' -Status 'OK' -Text 'ShareX set up (no update check; starts hidden; the bar hides its icon)'
     }

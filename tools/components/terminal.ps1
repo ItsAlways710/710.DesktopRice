@@ -139,11 +139,11 @@
             } elseif ($wt['defaultProfile'] -eq $pwsh['guid']) {
                 New-DoctorResult -Id 'terminal-default' -Status 'OK' -Text 'Windows Terminal opens PowerShell 7'
             } else {
-                New-DoctorResult -Id 'terminal-default' -Status '!!' -Text 'Windows Terminal opens something other than PowerShell 7' -Fix '710sRice install -Only terminal' -Step 'terminal'
+                New-DoctorResult -Id 'terminal-default' -Status 'XX' -Text 'Windows Terminal opens something other than PowerShell 7' -Fix '710sRice install -Only terminal' -Step 'terminal'
             }
             # The font (every profile's, profiles.defaults.font.face): the Nerd Font, for the prompt's
-            # icons. Never set by 710sRice here yet (no 'terminal-font' snapshot) = [XX], so repair and
-            # update bring existing installs along; set, then changed by you since = [!!], left alone.
+            # icons. Not the Nerd Font = [XX] (the terminal step sets it): never set by 710sRice here yet
+            # (no 'terminal-font' snapshot), or changed since -- repair puts back what install set.
             $face = Get-NerdFontFace
             if ($face) {
                 # The defaults, and every profile that sets its own face (a profile's own wins).
@@ -154,7 +154,7 @@
                 } elseif (-not (Get-OriginalState -Label 'terminal-font')) {
                     New-DoctorResult -Id 'terminal-font' -Status 'XX' -Text "Windows Terminal doesn't use the Nerd Font -- the prompt's icons show as boxes" -Detail $which -Fix '710sRice install -Only terminal' -Step 'terminal'
                 } else {
-                    New-DoctorResult -Id 'terminal-font' -Status '!!' -Text "Windows Terminal's font changed since 710sRice set $face -- your call; the prompt's icons need $face" -Detail $which -Fix '710sRice install -Only terminal'
+                    New-DoctorResult -Id 'terminal-font' -Status 'XX' -Text "Windows Terminal's font changed since 710sRice set $face -- the prompt's icons need it" -Detail $which -Fix '710sRice install -Only terminal' -Step 'terminal'
                 }
             }
         }
