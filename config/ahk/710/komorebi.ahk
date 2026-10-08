@@ -1,4 +1,4 @@
-; Part of 710.ahk: komorebi -- Komorebic() and the helpers the keys and menus use.
+; Part of 710.ahk: komorebi -- Komorebic() and the helpers the keys and menus use (SUPER+Alt+L's in scrolling.ahk).
 ; config\ahk\710.ahk #Includes it in place -- not a script to run on its own.
 #Requires AutoHotkey v2.0
 
@@ -23,25 +23,6 @@ QueryKomorebic(args) {
     result := FileExist(tempFile) ? Trim(FileRead(tempFile), " `t`r`n") : ''
     try FileDelete(tempFile)
     return result
-}
-
-; Flips the FOCUSED workspace between Scrolling (2 columns) and bsp -- asks
-; komorebi what you're standing on and what it's currently running, so it
-; works identically on workspace 3 or C, and doesn't touch anything you're
-; not looking at. Promoted here from the user's personal user.ahk override --
-; this is a real, daily-used feature, not a per-machine tweak, so it belongs
-; in the tracked dispatcher rather than the gitignored override file.
-ToggleScrolling() {
-    global KomorebicExe
-    mon := QueryKomorebic('query focused-monitor-index')
-    ws := QueryKomorebic('query focused-workspace-index')
-    layout := QueryKomorebic('query focused-workspace-layout')
-    if (StrLower(layout) = 'scrolling') {
-        Run('"' KomorebicExe '" workspace-layout ' mon ' ' ws ' bsp', , 'Hide')
-    } else {
-        Run('"' KomorebicExe '" workspace-layout ' mon ' ' ws ' scrolling', , 'Hide')
-        Run('"' KomorebicExe '" scrolling-layout-columns 2', , 'Hide')
-    }
 }
 
 Komorebic(cmd) {

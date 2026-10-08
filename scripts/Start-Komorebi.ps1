@@ -275,6 +275,7 @@ while ((Get-Date) -lt $overallDeadline) {
                     Write-Log "games check: $($games.Count) games listed (games.toml + your [[game]] rules), none tiled."
                 }
             } catch { Write-Log "couldn't unmanage game windows post-startup: $($_.Exception.Message)" }
+            if ($pwsh) { try { $r = Invoke-PwshScript -Script 'scrolling-rule.ps1' -Arguments '-AfterStart'; Write-Log "scrolling rule: exit $($r.ExitCode) (tools\scrolling-rule.ps1 -AfterStart: Scrolling beside another screen to Columns when the screens changed; display-changes.log has any switch)." } catch { Write-Log "scrolling rule: couldn't run tools\scrolling-rule.ps1: $($_.Exception.Message)" } }
         }
         exit 0
     }

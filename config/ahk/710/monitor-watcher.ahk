@@ -17,7 +17,8 @@
 ; So: 3 s after the last display or device change -- each new one restarts the wait -- and once
 ; more 5 s after that, we post komorebi that same message. Counts unchanged: komorebi does nothing.
 ; komorebi runs elevated; posting to it works because 710.ahk runs with UI Access. One line per
-; nudge in display-changes.log (710sRice logs), capped at 256 KB (then .old).
+; nudge in display-changes.log (710sRice logs), capped at 256 KB (then .old). 2 s after the
+; second nudge, the Scrolling rule has its look (scrolling.ahk, ScrollingRuleAfterChange).
 DisplayLog := EnvGet('LOCALAPPDATA') '\710.DesktopRice\display-changes.log', NudgeWhy := ''
 OnMessage(AllowFromNormalProcesses(0x7E), (*) => ScheduleKomorebiNudge('display changed'))                           ; WM_DISPLAYCHANGE
 OnMessage(AllowFromNormalProcesses(0x219), (wParam, *) => (wParam = 7 ? ScheduleKomorebiNudge('devices changed') : ''))  ; WM_DEVICECHANGE, DBT_DEVNODES_CHANGED
@@ -31,7 +32,10 @@ KomorebiNudgeFirst() {
     NudgeKomorebi('3 s')
     SetTimer(KomorebiNudgeSecond, -5000)
 }
-KomorebiNudgeSecond() => NudgeKomorebi('8 s')
+KomorebiNudgeSecond() {
+    NudgeKomorebi('8 s')
+    SetTimer(ScrollingRuleAfterChange, -2000)
+}
 
 NudgeKomorebi(after) {
     global NudgeWhy

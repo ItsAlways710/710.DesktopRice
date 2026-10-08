@@ -21,7 +21,7 @@
 #^c::RedrawApp()                                 ; redraw this app (fixes Chrome's / Claude's extra title bar)
 #+Enter::Komorebic('promote')                    ; promote to largest tile
 #+l::Komorebic('cycle-layout next')              ; cycle to next layout
-#!l::ToggleScrolling()                           ; toggle scrolling layout - 2 cols
+#!l::ToggleScrolling()                           ; toggle scrolling layout - 2 cols (not beside another screen)
 #Tab::Komorebic('focus-last-workspace')          ; back to the previous workspace
 #+Tab::Komorebic('move-to-last-workspace')       ; send window to previous workspace
 #^Enter::Komorebic('promote-focus')              ; focus top of the tree

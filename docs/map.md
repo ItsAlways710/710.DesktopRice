@@ -31,7 +31,7 @@ adds a module or adds a check updates this file in the same commit.
 | `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) | `steps.ps1` (and with it `components.ps1`), `activation.ps1` |
 | `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |
-| `scripts\Start-Komorebi.ps1`, `Start-Ahk.ps1`, `Start-Yasb.ps1` | What komorebi's and 710.ahk's tasks run (through `tools\lib\run-hidden.vbs`); `Start-Yasb.ps1` is what 710.ahk runs for the bar | `Start-Ahk.ps1`: `tools\lib\ahk-load.ps1` (it checks 710.ahk loads first); `Start-Yasb.ps1`: `tools\lib\bluetooth.ps1` |
+| `scripts\Start-Komorebi.ps1`, `Start-Ahk.ps1`, `Start-Yasb.ps1` | What komorebi's and 710.ahk's tasks run (through `tools\lib\run-hidden.vbs`); `Start-Yasb.ps1` is what 710.ahk runs for the bar | `Start-Komorebi.ps1`: runs `tools\scrolling-rule.ps1 -AfterStart` last; `Start-Ahk.ps1`: `tools\lib\ahk-load.ps1` (it checks 710.ahk loads first); `Start-Yasb.ps1`: `tools\lib\bluetooth.ps1` |
 | `scripts\Set-LockScreen.ps1` | Sets your lock-screen picture (Windows PowerShell 5.1: WinRT) | — |
 | `tools\reload-stack.ps1` | SUPER+Shift+R (710.ahk's ReloadStack) and `reload bar` | — |
 | `tools\apply-wallust-outputs.ps1` | The wallpaper pipeline: wallust, then every palette target | `tools\lib\lockscreen.ps1`, `tools\lib\palette.ps1` |
@@ -85,6 +85,7 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | Palette profiles and the theme | `tools\lib\palette.ps1`, `palette-files.ps1`, `palette-edit.ps1`, `tools\palette-editor.ps1` / `.xaml`, `tools\palette\targets\*` (one file per themed app; README there), `tools\apply-wallust-outputs.ps1`; `710sRice palette ...` in `tools\lib\palette-commands.ps1` |
 | Tiling rules | `tools\compile-komorebi-rules.ps1` (`config\komorebi\base.json`, `rules.toml`, `rules.local.toml`, `games.toml`, `vendor\asc`), `tools\add-rule.ps1`, `tools\remove-rule.ps1`, `tools\update-asc.ps1` |
 | Screens | `tools\screens.ps1`, `tools\lib\monitors.ps1`, `tools\write-display-index.ps1` |
+| Scrolling beside another screen | `config\ahk\710\scrolling.ahk`: SUPER+Alt+L's check (`ToggleScrolling`, `ScreenHasSideNeighbour`), and the rule's run once a display change has settled (`monitor-watcher.ahk` calls `ScrollingRuleAfterChange`) with its toast; `tools\scrolling-rule.ps1`: the rule -- when komorebi's screens changed, Scrolling beside another screen goes to Columns -- also run by `scripts\Start-Komorebi.ps1` after every komorebi start; in the logs folder, the screens it last checked (`scrolling-screens.json`) and the toast (`scrolling-rule.txt`) |
 | doctor / repair / update | `tools\lib\doctor.ps1` (the groups, the checks that belong to no step, the shared helpers, the repair plan, the report; each step's checks are in its module), `tools\lib\repair.ps1` (the rounds, starting what's down), `tools\lib\update.ps1` (the pull, then repair from the new files) |
 
 ## Shared libraries
@@ -154,7 +155,7 @@ inside them (`; ====` banners), reading the parts in place (`ReadScriptText`, `k
 
 | Part (`config\ahk\710\`) | What's in it |
 |---|---|
-| `komorebi.ahk` | `Komorebic`, `QueryKomorebic`, `ToggleScrolling`, `LaunchOnCursorMonitor`, `CloseWindow`, `RedrawApp`, `EndGpuHelpers` |
+| `komorebi.ahk` | `Komorebic`, `QueryKomorebic`, `LaunchOnCursorMonitor`, `CloseWindow`, `RedrawApp`, `EndGpuHelpers` |
 | `komorebi-keys.ahk` | The window, focus, move, stack, resize, workspace and monitor hotkeys |
 | `sharex.ahk` | `Sharex()` and the capture hotkeys |
 | `apps.ahk` | App launchers: browser, Explorer, web apps, Obsidian, Claude |
@@ -168,6 +169,7 @@ inside them (`; ====` banners), reading the parts in place (`ReadScriptText`, `k
 | `started-apps.ahk` | The apps 710.ahk starts: `StartApps` (the bar, Flow, ShareX), `RestartRetired`, the start at load |
 | `yasb-watchdog.ahk` | The bar's watchdog |
 | `monitor-watcher.ahk` | komorebi's monitor watcher: display-change nudges |
+| `scrolling.ahk` | Scrolling beside another screen: `ToggleScrolling` (SUPER+Alt+L) and its check, `ScreenHasSideNeighbour`; `ScrollingRuleAfterChange` (runs `tools\scrolling-rule.ps1`) and its toast |
 | `screens.ahk` | The Screens menu, `RunThen` |
 | `quick-rule.ahk` | Quick add rule (click-to-pick); Remove a rule / Edit my rules |
 | `menus.ahk` | The menus' items (Capture, Tiling) and their state text |

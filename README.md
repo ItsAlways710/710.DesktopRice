@@ -461,8 +461,17 @@ keys, Esc to go back.
 ## Screens and workspaces
 
 Up to four screens, each with workspaces 1–9. Workspace 1 of the first screen uses
-komorebi's Scrolling layout (Columns while more than one screen is connected); the others
-use BSP.
+komorebi's Scrolling layout, two columns wide (Columns while more than one screen is
+connected: komorebi's own rule); the others use BSP.
+
+SUPER+Alt+L switches the workspace you're on between Scrolling (two columns) and BSP, but not
+to Scrolling on a screen with another screen to its left or right: komorebi would put the
+windows that scroll off that screen on its neighbour, so a toast says why instead. A screen
+above or below doesn't count. When your screens change (one turned on, plugged in or moved,
+even while the stack was stopped), any workspace in Scrolling that now has a screen beside it
+switches to Columns, with a toast and a line in `display-changes.log`. The bar's layout button
+and SUPER+Shift+L (the next layout) are YASB's and komorebi's own and don't check: Scrolling
+picked there stays until you change it, or your screens change.
 
 Workspace 9 of the first screen starts with tiling off: windows stay where they open. It
 suits apps with lots of windows of their own (Wabbajack, Mod Organizer 2), and it's the

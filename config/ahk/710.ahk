@@ -42,6 +42,7 @@ GamesToml := RepoRoot "\games.toml"
 #Include 710\started-apps.ahk
 #Include 710\yasb-watchdog.ahk
 #Include 710\monitor-watcher.ahk
+#Include 710\scrolling.ahk
 #Include 710\screens.ahk
 #Include 710\quick-rule.ahk
 #Include 710\menus.ahk
