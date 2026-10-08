@@ -157,7 +157,7 @@ $Commands = [ordered]@{
     'reload bar' = @{ Usage = 'reload bar'; Help = 'Restart just the bar (YASB)'; Admin = 'Any'
                      Run = { . (Join-Path $Root 'tools\lib\activation.ps1'); . (Join-Path $Root 'tools\lib\stack-commands.ps1'); Invoke-RiceReloadBar } }
     'logs'      = @{ Usage = 'logs'; Help = 'Open the logs folder (and list what''s in it)'; Admin = 'Any'
-                     Run = { Show-RiceLogs } }
+                     Run = { . (Join-Path $Root 'tools\lib\logs.ps1'); Show-RiceLogs } }
     # palette: the palette profiles (tools\lib\palette.ps1) and the four commands
     # (tools\lib\palette-commands.ps1), both loaded only here. Any window: a switch goes through
     # the wallpaper pipeline (apply-wallust-outputs.ps1 -ProfileId), which keeps the old choice
@@ -220,35 +220,6 @@ function Invoke-RiceScript {
     $global:LASTEXITCODE = 0
     & $path @rest
     $script:RiceExit = if ($?) { 0 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
-}
-
-# --- logs ----------------------------------------------------------------------------------------
-function Show-RiceLogs {
-    # The folder every 710.DesktopRice log lives in: its path and logs here, newest first (which
-    # one just moved), and the folder in Explorer. From an admin window Explorer hands the
-    # folder to your running (normal) shell, so that window isn't elevated. The path is shown
-    # as %LOCALAPPDATA%\..., never expanded: that carries the Windows user name.
-    $dir   = Join-Path $env:LOCALAPPDATA '710.DesktopRice'
-    $shown = '%LOCALAPPDATA%\710.DesktopRice'
-    if (-not (Test-Path -LiteralPath $dir)) {
-        Write-RiceError "Nothing logged yet -- $shown doesn't exist"
-        $script:RiceExit = 1
-        return
-    }
-    Write-Host ''
-    Write-Host "  $shown"
-    $logs = @(Get-ChildItem -LiteralPath $dir -File |
-              Where-Object { $_.Name -like '*.log' -or $_.Name -like '*.log.old' } |
-              Sort-Object LastWriteTime -Descending)
-    foreach ($f in $logs) {
-        $size = if ($f.Length -ge 1MB) { '{0:N1} MB' -f ($f.Length / 1MB) }
-                elseif ($f.Length -ge 1KB) { '{0:N0} KB' -f ($f.Length / 1KB) }
-                else { "$($f.Length) B" }
-        Write-Host ('    {0,-28}{1,9}   {2:yyyy-MM-dd HH:mm:ss}' -f $f.Name, $size, $f.LastWriteTime)
-    }
-    if (-not $logs.Count) { Write-Host '    (no .log files yet)' }
-    Write-Host ''
-    Invoke-Item -LiteralPath $dir
 }
 
 # --- Admin: reopen in an admin window ------------------------------------------------------------
