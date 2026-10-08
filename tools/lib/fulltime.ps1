@@ -174,7 +174,7 @@ function Remove-StartupDelay {
 
 function Get-FullTimeSettingsPath {
     # Where the saved copy lives (Save-OriginalState's label 'full-time-settings'). Built here
-    # rather than through Get-OriginalStateDir, which creates the folder: dry runs read this.
+    # like Get-OriginalStateDir's (which created the folder until 2026-10-07): dry runs read this.
     Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state\full-time-settings.json'
 }
 

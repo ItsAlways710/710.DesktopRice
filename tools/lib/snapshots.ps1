@@ -43,9 +43,9 @@ function Backup-RegistryKey {
 # so it carries a small duplicated copy of Save-OriginalState/Get-RegValueSnapshot rather
 # than calling these. Keep both copies in sync if this shape ever changes.
 function Get-OriginalStateDir {
-    $dir = Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state'
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $dir
+    # The snapshots' folder. Only writing one creates it (Save-OriginalState): doctor and the dry
+    # runs read snapshots, and a read never creates anything (review item 10, 2026-10-07).
+    Join-Path $env:LOCALAPPDATA '710.DesktopRice\original-state'
 }
 
 function Save-OriginalState {
@@ -55,6 +55,7 @@ function Save-OriginalState {
     param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)]$Data)
     $file = Join-Path (Get-OriginalStateDir) "$Label.json"
     if (Test-Path $file) { return }
+    $null = New-Item -ItemType Directory -Path (Get-OriginalStateDir) -Force
     $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $file -Encoding UTF8
 }
 
