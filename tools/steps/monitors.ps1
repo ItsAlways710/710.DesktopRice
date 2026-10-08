@@ -5,6 +5,11 @@
   tools\lib\monitors.ps1 (only while komorebi runs; komorebi's launcher writes it the first time
   otherwise) -- and doctor's display-index line. Uninstall deletes the file in its section 9.
   Loaded by tools\lib\activation.ps1. Only functions.
+
+  The map (komorebi's display_index_preferences) is keyed by serial_number_id, which komorebi's
+  own docs (multi-monitor-setup.md) recommend for this key, or the device_id when a screen has no
+  serial or shares it. winarchy writes a live, device_id-keyed copy from its window-slots daemon
+  instead; that daemon's port was dropped from this repo (Group 1 #7).
 #>
 
 # --- install's step -------------------------------------------------------------------------------

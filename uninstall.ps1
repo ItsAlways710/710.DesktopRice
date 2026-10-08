@@ -104,7 +104,7 @@ function Invoke-Step {
 }
 
 function Invoke-ActivationRevert {
-    # Same -DryRun gate as Invoke-Step, but for the tools\lib\activation.ps1 functions
+    # Same -DryRun gate as Invoke-Step, but for the functions tools\lib\activation.ps1 loads
     # below -- those already report their own Step-Ok/Step-Warn per setting/component (see
     # e.g. Set-WindowsHardening, Register-Autostart), so this doesn't also print a
     # redundant "Done" line the way Invoke-Step's $Done parameter would.
@@ -113,10 +113,9 @@ function Invoke-ActivationRevert {
     try { & $Action } catch { Step-Warn "$($Describe): $($_.Exception.Message)" }
 }
 
-# Hardening, taskbar, autostart, the shell-profile hook and the process-stopping helper live
-# here or in the libraries it loads, shared with install.ps1. Step-Ok/Info/Warn above
-# must be defined before this dot-source -- activation.ps1 uses ours rather than its own
-# copies.
+# The libraries and the steps' modules (tools\lib\activation.ps1 loads them all), shared
+# with install.ps1. Step-Ok/Info/Warn above must be defined before this dot-source -- the
+# libraries use ours rather than their own copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
 # versions.md's table (Get-VersionsTable) and the winget helpers -- exit codes,
 # Format-WingetCode, Invoke-WingetAsUser -- shared with install.ps1 (after activation.ps1).

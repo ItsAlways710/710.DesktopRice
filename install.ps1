@@ -137,8 +137,8 @@ if ($ElevatedTiling -and $NoElevatedTiling) {
 # --- The steps -------------------------------------------------------------------------
 # Every step, in the one order they ever run in (see STEPS above), and the two only -Only
 # runs -- from tools\lib\steps.ps1, the one list install, `710sRice install -?` and doctor's
-# repair plan all read. The step bodies are further down, in $Steps; this part only decides
-# which of them run -- before anything is touched, so a bad command line changes nothing.
+# repair plan all read. The steps are in $Steps, below (their bodies in tools\steps\); this part
+# only decides which run -- before anything is touched, so a bad command line changes nothing.
 . (Join-Path $Root 'tools\lib\steps.ps1')
 # Install's fixed steps plus one step per component (tools\components\<id>.ps1, Group 1 #12),
 # each right after its After step. A broken component file stops the run here, before anything.
@@ -180,9 +180,9 @@ function Step-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -Foreg
 function Step-Info { param([string]$Message) Write-Host "  [..] $Message" -ForegroundColor Cyan }
 function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -ForegroundColor Yellow }
 
-# Hardening, taskbar, autostart and the shell-profile hook live here or in the libraries it
-# loads, shared with uninstall.ps1's matching revert steps. Step-Ok/Info/Warn above must be
-# defined before this dot-source -- activation.ps1 uses ours rather than its own copies.
+# The libraries and the steps' modules (tools\lib\activation.ps1 loads them all), shared with
+# uninstall.ps1's matching revert steps. Step-Ok/Info/Warn above must be defined before this
+# dot-source -- the libraries use ours rather than their own copies.
 . (Join-Path $Root 'tools\lib\activation.ps1')
 # versions.md's table and the winget helpers (after activation.ps1 -- see its header).
 . (Join-Path $Root 'tools\lib\packages.ps1')
@@ -387,65 +387,17 @@ $Steps['upgrade'] = {
     }
 }
 
-$Steps['envvars'] = { Install-EnvVarsStep }   # tools\steps\envvars.ps1
-$Steps['path']    = { Install-PathStep }      # tools\steps\path.ps1
-
-$Steps['wallust'] = { Install-WallustStep -NotInstalled $NotInstalled }   # tools\steps\wallust.ps1
-
-$Steps['theme']   = { Install-ThemeStep -OnlyRun $OnlyRun }   # tools\steps\theme.ps1
-$Steps['palette'] = { Install-PaletteStep }                  # tools\steps\theme.ps1
-
-$Steps['profile'] = { Install-ProfileStep }   # tools\steps\profile.ps1
-
-$Steps['monitors'] = { Install-MonitorsStep }   # tools\steps\monitors.ps1
-
-$Steps['compile'] = { Install-CompileStep }   # tools\steps\compile.ps1
-
-$Steps['tasks'] = {
-    # --- 10b. Tiling mode (elevated komorebi or not) -------------------------------------------
-    # Resolved (switch -> remembered -> default 'elevated') and remembered here; the task
-    # registration just below reads it back through Get-KomorebiRunLevel.
-    Write-Host "`n-- Tiling mode --" -ForegroundColor Cyan
-    $tiling = Resolve-TilingMode -Elevated:$ElevatedTiling -Normal:$NoElevatedTiling
-    $tilingWhy = switch ($tiling.Source) { 'switch' { 'set by this run' } 'remembered' { 'remembered from a previous install' } default { 'the default' } }
-    if ($tiling.Mode -eq 'elevated') {
-        Step-Ok "Elevated tiling ($tilingWhy): komorebi runs elevated, so admin windows tile too. Opt out with -NoElevatedTiling."
-    } else {
-        Step-Ok "Non-elevated tiling ($tilingWhy): admin windows float. Opt back in with -ElevatedTiling."
-    }
-    if ($tiling.Changed -and (Get-Process komorebi -ErrorAction SilentlyContinue)) {
-        Step-Info 'komorebi is already running in the old mode -- the new one takes effect when it next starts: sign out and back in, or run `710sRice restart`.'
-    }
-
-    # --- 11a. Tasks: komorebi's and 710.ahk's, in the machine's mode -------------------------
-    # (The bar's, Flow's and ShareX's old tasks go here too, whichever branch runs:
-    # Register-Autostart / Register-OnDemandTasks call Remove-RetiredStartTasks. 710.ahk starts
-    # those three now -- see config\ahk\710.ahk, "The apps 710.ahk starts".)
-    if ($Activate) {
-        Write-Host "`n-- Activate --" -ForegroundColor Cyan
-        Register-Autostart
-    } elseif (Test-FullTimeMachine) {
-        # Already full-time from an earlier -Activate: re-register so the tasks pick up any
-        # change to how components are launched (a newer launcher script, a moved clone),
-        # without switching modes.
-        Write-Host "`n-- Activate --" -ForegroundColor Cyan
-        Step-Info 'Autostart is active: re-registering to pick up any startup changes...'
-        Register-Autostart
-    } else {
-        # On-demand: komorebi and 710.ahk still get their tasks (no trigger), so Start-All.ps1
-        # and SUPER+Shift+R start each one at its task's own level -- the same as -Activate,
-        # from any window (Register-OnDemandTasks).
-        # The closing lines say how to switch to full-time (`710sRice activate`).
-        if (-not $OnlyRun) {
-            Step-Info 'On demand: packages, config, theming, Defender, the profile hook and Flow are applied; nothing starts at sign-in, and the taskbar, hardening and Startup delay are left as they are.'
-        }
-        Register-OnDemandTasks
-    }
-
-    # --- 11c. The lock screen: the old sync retired, your picture set once when needed --------
-    # (tools\lib\lockscreen.ps1; doctor's fix for the old sync is `-Only tasks`).
-    Install-LockScreen
-}
+# The other fixed steps: each one's body is in its module, tools\steps\<step>.ps1 (theme and palette
+# share theme.ps1), and gets what it needs of this run.
+$Steps['envvars']  = { Install-EnvVarsStep }
+$Steps['path']     = { Install-PathStep }
+$Steps['wallust']  = { Install-WallustStep -NotInstalled $NotInstalled }
+$Steps['theme']    = { Install-ThemeStep -OnlyRun $OnlyRun }
+$Steps['palette']  = { Install-PaletteStep }
+$Steps['monitors'] = { Install-MonitorsStep }
+$Steps['profile']  = { Install-ProfileStep }
+$Steps['compile']  = { Install-CompileStep }
+$Steps['tasks']    = { Install-TasksStep -Activate $Activate -OnlyRun $OnlyRun -ElevatedTiling $ElevatedTiling -NoElevatedTiling $NoElevatedTiling }
 
 $Steps['windows'] = {
     # --- 11b. Windows settings: taskbar, hardening, Startup delay (full-time machines) ---

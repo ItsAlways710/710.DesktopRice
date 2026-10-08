@@ -361,14 +361,9 @@ function Test-DoctorOtherPackages {
 # Where 710sRice keeps its logs and state: the Stack checks and the theme stamp read files there.
 function Get-DoctorLogDir { Join-Path $env:LOCALAPPDATA '710.DesktopRice' }
 
-# --- d. Tasks and tiling mode --------------------------------------------------------------------
-# komorebi and 710.ahk start through their scheduled tasks -- with a sign-in trigger on a
-# full-time (-Activate'd) machine, without one on an on-demand machine; 710.ahk starts the bar,
-# Flow and ShareX, whose own tasks are retired -- and install's tasks step (`710sRice install
-# -Only tasks`) re-registers them all in the machine's mode, which fixes nearly everything here. The mode itself is install's own rule (Test-FullTimeMachine). The
-# task's command is compared with what install would register now (Get-AutostartComponents
-# -NoWrite: the same answer, nothing written); a difference is reported by part, never with
-# the paths -- the launch files live under %LOCALAPPDATA%, whose path carries the user name.
+# --- d. Tasks and tiling mode: tools\steps\tasks.ps1 (Test-DoctorTasks), tools\lib\tiling.ps1 -------
+# (Test-DoctorTilingMode). Get-DoctorComponentName is shared: the task lines, the Stack group and
+# the repair plan name things with it.
 
 function Get-DoctorComponentName {
     # A stack component's name as the report says it; a component file's own Label for the rest.
@@ -380,123 +375,6 @@ function Get-DoctorComponentName {
             if ($c) { $c.Label } else { $Key }
         }
     }
-}
-
-function Test-DoctorSameText { param([string]$A, [string]$B) [string]::Equals("$A".Trim(), "$B".Trim(), [StringComparison]::OrdinalIgnoreCase) }
-
-function Get-DoctorTaskDrift {
-    # What differs between a component's task as registered and what install would register
-    # now: the task's command, and (for the three launched through run-hidden.vbs) its
-    # launch-<key>.txt. Nothing = they match.
-    param($Component, $Task)
-    if (-not (Test-DoctorSameText $Task.Command $Component.Exe) -or -not (Test-DoctorSameText $Task.Arguments $Component.Arguments)) {
-        "its task's command differs"
-    }
-    if ($Component.Spec) {
-        $leaf = Split-Path -Leaf $Component.Spec
-        if (-not (Test-Path -LiteralPath $Component.Spec)) { "$leaf is missing" }
-        else {
-            $lines = @(Get-Content -LiteralPath $Component.Spec -ErrorAction Stop)
-            if ($lines.Count -ne 2 -or -not (Test-DoctorSameText $lines[0] $Component.SpecLines[0]) -or -not (Test-DoctorSameText $lines[1] $Component.SpecLines[1])) {
-                "$leaf differs"
-            }
-        }
-    }
-}
-
-function Test-DoctorTasks {
-    # The mode line and one line per component's task (the worst thing found), then the bar's,
-    # Flow's and ShareX's old tasks if they're still here. (The lock-screen sync task was checked
-    # here until it was retired, 2026-09-28: plan doc item 48.)
-    $tasksFix = @{ Fix = '710sRice install -Only tasks'; Step = 'tasks' }
-    $startup = [Environment]::GetFolderPath('Startup')
-    # Their tasks (2026-10-06): what a task starts runs in its job, and so does everything opened
-    # from it -- Mod Organizer 2 opened from the bar, Flow or a ShareX action couldn't start its
-    # tools (Error 5). 710.ahk starts all three now; the tasks step removes the old tasks and their
-    # Startup-folder fallbacks (Remove-RetiredStartTasks). A machine still has them until then.
-    $old = @(Get-RetiredStartTasks | Where-Object {
-        (Test-Task -TaskName $_.TaskName) -or ($startup -and (Test-Path -LiteralPath ([IO.Path]::Combine($startup, $_.LnkName))))
-    })
-    $oldResult = if ($old.Count) {
-        New-DoctorResult -Id 'task:retired' -Status 'XX' -Text "Old start-up tasks still here: $(($old | ForEach-Object Name) -join ', ')" `
-            -Detail "710.ahk starts $(if ($old.Count -eq 1) { 'it' } else { 'them' }) now -- what you open from an app a task started can't start programs of its own (Mod Organizer 2's tools: Error 5); the fix restarts the ones running" @tasksFix
-    }
-    $components = @(Get-AutostartComponents -NoWrite)
-    if (-not $components.Count) { return $oldResult }   # nothing installed: group b says so
-    $fullTime = Test-FullTimeMachine
-    $infos = @{}
-    foreach ($c in $components) { $infos[$c.Key] = Get-ComponentTaskInfo -TaskName $c.TaskName }
-    $names = { param($list) ($list | ForEach-Object { Get-DoctorComponentName $_.Key }) -join ', ' }
-
-    # Mode. Full-time with a task that has no sign-in trigger = mixed (install's rule makes the
-    # whole machine full-time, so the tasks step gives every task its trigger back).
-    $signIn   = @($components | Where-Object { $infos[$_.Key] -and $infos[$_.Key].AtLogOn })
-    $noSignIn = @($components | Where-Object { $infos[$_.Key] -and -not $infos[$_.Key].AtLogOn })
-    if ($fullTime -and $noSignIn.Count) {
-        $text = if ($signIn.Count) { "Mode: mixed -- $(& $names $signIn) start at sign-in; $(& $names $noSignIn) $(if ($noSignIn.Count -eq 1) { "doesn't" } else { "don't" })" }
-                else { "Mode: mixed -- a Startup shortcut says full-time, but no task starts at sign-in" }
-        New-DoctorResult -Id 'mode' -Status 'XX' -Text $text @tasksFix
-    } elseif ($fullTime) {
-        # The switch named on the line itself: an [OK] line prints no fix.
-        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: full-time (starts at sign-in) -- 710sRice deactivate switches to on demand'
-    } else {
-        New-DoctorResult -Id 'mode' -Status 'OK' -Text 'Mode: on demand (710sRice start) -- 710sRice activate switches to full-time'
-    }
-
-    foreach ($c in $components) {
-        $name = Get-DoctorComponentName $c.Key
-        $id   = "task:$($c.Key)"
-        $t    = $infos[$c.Key]
-        if (-not $t) { New-DoctorResult -Id $id -Status 'XX' -Text "$name has no task" @tasksFix; continue }
-        if ($c.Key -ne 'komorebi' -and $t.RunLevel -eq 'HighestAvailable') {
-            New-DoctorResult -Id $id -Status 'XX' -Text "$name's task runs elevated -- only komorebi's may" @tasksFix; continue
-        }
-        $drift = @(Get-DoctorTaskDrift $c $t)
-        if ($drift.Count) {
-            New-DoctorResult -Id $id -Status 'XX' -Text "$name's task doesn't match what install would register now (a moved clone or a moved exe?)" -Detail $drift @tasksFix
-            continue
-        }
-        # A Startup shortcut from before the tasks (or Register-Autostart's fallback) next to a
-        # working task. The tasks step removes them (Register-Autostart; a shortcut makes the
-        # machine full-time by install's rule, so that's the path it takes).
-        if (Test-Path -LiteralPath ([IO.Path]::Combine($startup, $c.LnkName))) {
-            $why = if ($t.AtLogOn) { "$name starts twice at sign-in" } else { "it starts $name at sign-in on its own" }
-            New-DoctorResult -Id $id -Status 'XX' -Text "Startup folder still has `"$($c.LnkName)`" next to $name's task -- $why" @tasksFix
-            continue
-        }
-        if (-not $t.Enabled) {
-            New-DoctorResult -Id $id -Status '!!' -Text "$name's task is disabled in Task Scheduler" `
-                -Fix "re-enable it in Task Scheduler (Task Scheduler Library > 710.DesktopRice > $($c.TaskName))"
-            continue
-        }
-        $kind = @(if ($t.AtLogOn) { 'sign-in' } else { 'on demand' }; if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' }) -join ', '
-        New-DoctorResult -Id $id -Status 'OK' -Text "$name's task ($kind)"
-    }
-    $oldResult
-}
-
-function Test-DoctorTilingMode {
-    # Three answers that should agree: the saved mode, komorebi's task, the running komorebi.
-    # The saved mode reaches the task through `710sRice tiling <mode>` (or install), and the
-    # task reaches komorebi at its next start -- `710sRice restart`.
-    $saved = Get-TilingMode
-    $mode  = if (Test-Path -LiteralPath (Get-TilingModePath)) { $saved } else { "$saved (the default)" }
-    $t = Get-ComponentTaskInfo -TaskName 'komorebi'
-    if (-not $t) { return New-DoctorResult -Id 'tiling' -Status '..' -Text "Tiling mode: $mode -- komorebi has no task yet" }
-    $taskMode = if ($t.RunLevel -eq 'HighestAvailable') { 'elevated' } else { 'normal' }
-    if ($taskMode -ne $saved) {
-        return New-DoctorResult -Id 'tiling' -Status 'XX' -Text "Tiling mode: $saved is saved, but komorebi's task runs $(if ($taskMode -eq 'elevated') { 'elevated' } else { 'non-elevated' })" `
-            -Fix "710sRice tiling $saved" -Repair "tiling:$saved"
-    }
-    $running = Get-ProcessElevation -Name 'komorebi'
-    if ($running -notin 'elevated', 'normal') {
-        return New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task agrees ($(if ($running -eq 'not running') { "komorebi isn't running" } else { "couldn't read the running komorebi" }))"
-    }
-    if ($running -ne $taskMode) {
-        return New-DoctorResult -Id 'tiling' -Status '!!' -Text "Tiling mode: $saved -- but the running komorebi $(if ($running -eq 'elevated') { 'is elevated' } else { "isn't" }) (it started before the change)" `
-            -Fix '710sRice restart'
-    }
-    New-DoctorResult -Id 'tiling' -Status 'OK' -Text "Tiling mode: $mode -- komorebi's task and the running komorebi agree"
 }
 
 # --- e. Generated configs ------------------------------------------------------------------------

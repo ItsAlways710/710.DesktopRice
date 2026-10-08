@@ -1,6 +1,6 @@
 ' run-hidden.vbs -- launches a command line with no visible window and no waiting.
 '
-' Used by tools\lib\activation.ps1's Get-AutostartComponents (via tasks.ps1's ConvertTo-HiddenLaunch)
+' Used by tools\steps\tasks.ps1's Get-AutostartComponents (via tools\lib\tasks.ps1's ConvertTo-HiddenLaunch)
 ' as the Scheduled Task's own Action for the powershell-hosted autostart components
 ' (komorebi/yasb/ahk) -- and, 2026-09-27 until it was retired on 09-28, the elevated
 ' lock-screen-sync task (plan doc items 46 and 48).

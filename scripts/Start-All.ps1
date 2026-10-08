@@ -15,7 +15,7 @@
       starts at sign-in and Windows itself isn't changed -- hardening and the Startup delay
       only make sense for a full-time shell.
 
-  Uses the exact launch commands the sign-in tasks use (tools\lib\activation.ps1's
+  Uses the exact launch commands the sign-in tasks use (tools\steps\tasks.ps1's
   Get-AutostartComponents: komorebi and 710.ahk), so on-demand and -Activate start things the
   same way. The bar (YASB), Flow Launcher and ShareX have no task: 710.ahk starts them as it
   loads, and when it's already running this asks it to (Start-AhkStartedApps) -- a task's job

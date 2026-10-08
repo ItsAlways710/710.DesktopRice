@@ -24,7 +24,7 @@ function Backup-RegistryKey {
 
 # --- Original-state snapshots (true "restore to before 710.DesktopRice" on uninstall) --
 # Different problem from Backup-RegistryKey above and from the hardening/taskbar revert
-# pattern in activation.ps1: those settings don't exist on a stock Windows install, so
+# pattern in tools\lib\fulltime.ps1: those settings don't exist on a stock Windows install, so
 # reverting them just means deleting the value. Wallpaper, accent color, the lock screen,
 # and Windows Terminal's default shell/colorScheme are NOT like that -- something was
 # already there before 710.DesktopRice ever touched it, and a real uninstall needs to put

@@ -1,6 +1,6 @@
 # Start-Komorebi.ps1 -- resilient komorebi startup for 710.DesktopRice's autostart.
 #
-# Launched hidden by the At-LogOn Scheduled Task (tools/lib/activation.ps1's
+# Launched hidden by the At-LogOn Scheduled Task (tools/steps/tasks.ps1's
 # Get-AutostartComponents). Ported from winarchy's scripts/Start-Komorebi.ps1 @ 4574fc7
 # (tag v1.4.0). Fixes the same two causes of komorebi staying OFFLINE after logon/unlock:
 #   a) an early panic (Application Error 0xc0000409 -- Rust abort).

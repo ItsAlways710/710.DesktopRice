@@ -74,7 +74,7 @@
 # never hand-edited -- nothing under here should ever need to be committed.
 /state/
 
-# Registry key backups (tools/lib/activation.ps1's Backup-RegistryKey), written before
+# Registry key backups (tools/lib/snapshots.ps1's Backup-RegistryKey), written before
 # every taskbar/hardening registry change so `uninstall.ps1` (or a person) can hand-
 # restore from a real reg.exe export if a revert ever needs it. Local safety net, not
 # repo content.
