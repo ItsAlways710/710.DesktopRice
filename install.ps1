@@ -565,17 +565,7 @@ $Steps['monitors'] = {
     }
 }
 
-$Steps['profile'] = {
-    # --- 7. Shell profile hook ($PROFILE -> config\pwsh\profile.ps1) -------------------------
-    # Also unconditional -- winarchy calls Install-WinarchyShellProfile in its own install.ps1
-    # outside the -Activate block too. Idempotent; snapshots the previous $PROFILE to a .bak
-    # alongside it before changing anything.
-    # `$PROFILE literally: the hook line below names the real file (as %USERPROFILE%\...), and
-    # an expanded $PROFILE printed both the user name and the wrong file -- the hook goes into
-    # profile.ps1 (every host), not Microsoft.PowerShell_profile.ps1.
-    Write-Host "`n-- Shell profile (`$PROFILE hook) --" -ForegroundColor Cyan
-    Install-ShellProfile
-}
+$Steps['profile'] = { Install-ProfileStep }   # tools\steps\profile.ps1
 
 $Steps['compile'] = {
     # --- 10. Recompile komorebi.json -----------------------------------------------------------

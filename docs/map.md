@@ -27,7 +27,7 @@ adds a module or adds a check updates this file in the same commit.
 | Entry point | What it is | Loads |
 |---|---|---|
 | `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` always; per verb: `activation.ps1`, `packages.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1` |
-| `install.ps1` | Install: its switches, the step order, every fixed step's body, the closing lines | `steps.ps1` (and with it `components.ps1`), `activation.ps1`, `packages.ps1` |
+| `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) or, until it moves, in `install.ps1`'s `$Steps` table | `steps.ps1` (and with it `components.ps1`), `activation.ps1`, `packages.ps1` |
 | `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1`, `packages.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |
 | `scripts\Start-Komorebi.ps1`, `Start-Ahk.ps1`, `Start-Yasb.ps1` | What komorebi's and 710.ahk's tasks run (through `tools\lib\run-hidden.vbs`); `Start-Yasb.ps1` is what 710.ahk runs for the bar | `Start-Yasb.ps1`: `tools\lib\bluetooth.ps1` |
@@ -37,14 +37,17 @@ adds a module or adds a check updates this file in the same commit.
 | `config\ahk\710.ahk` | The hotkeys, menus, and the apps it starts | `config\ahk\user.ahk` (last, optional) |
 
 `tools\lib\activation.ps1` is what every install-side script loads: it loads the shared libraries
-(below), `tools\lib\lockscreen.ps1` and `tools\lib\components.ps1`, and holds the pieces that haven't
-moved into modules yet. Callers define `Step-Ok`, `Step-Info` and `Step-Warn` before loading it.
+(below), `tools\lib\lockscreen.ps1`, `tools\lib\components.ps1` and the fixed steps' modules
+(`tools\steps\`), and holds the pieces that haven't moved into modules yet. Callers define `Step-Ok`,
+`Step-Info` and `Step-Warn` before loading it.
 
 ## Install steps
 
-In install's order (`710sRice install -?` lists them). Fixed steps live in `install.ps1`'s `$Steps`
-table and in `tools\lib\steps.ps1`'s list; components are `tools\components\<id>.ps1`, spliced in
-after their `After` step. Doctor's check Ids are what its report lines carry; repair runs the step
+In install's order (`710sRice install -?` lists them). Fixed steps are listed in `tools\lib\steps.ps1`
+and run from `install.ps1`'s `$Steps` table; a fixed step's module, `tools\steps\<step>.ps1`, holds
+its install part, the parts of uninstall that put it back, and doctor's checks for it (uninstall and
+doctor keep the order: uninstall's sections, doctor's groups). Components are
+`tools\components\<id>.ps1`, spliced in after their `After` step. Doctor's check Ids are what its report lines carry; repair runs the step
 named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | Step | Install | Uninstall puts back | Doctor (check Ids) | Repair / update |
@@ -63,7 +66,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | palette (named only) | `install.ps1` (the pipeline on the current wallpaper) | — | `doctor.ps1` `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `flow-theme`; the terminal component's `terminal`; `lock-screen` (`tools\lib\lockscreen.ps1`) | `Step=palette` |
 | monitors | `install.ps1`; `tools\write-display-index.ps1`, `tools\lib\monitors.ps1` | `uninstall.ps1` section 9 (`display-index.local.json`) | `doctor.ps1` `display-index`, `display-index-more` | `Step=monitors`, `Repair=reload` |
 | defender | `tools\components\defender.ps1` | same file | `defender` | `Step=defender` |
-| profile | `install.ps1` → `Install-ShellProfile` in `activation.ps1` | `uninstall.ps1` section 3 → `Remove-ShellProfile` | `doctor.ps1` `profile` | `Step=profile` |
+| profile | `tools\steps\profile.ps1` (`Install-ProfileStep`: the `$PROFILE` hook) | same file (`Remove-ShellProfile`, uninstall's section 3) | `profile` (same file) | `Step=profile` |
 | terminal | `tools\components\terminal.ps1` (default shell, font; font helpers in `tools\lib\terminal.ps1`) | same file (`Restore-WindowsTerminalSettings`: default shell, font, the palette's colour scheme) | `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` (`terminal`: `Step=palette`) |
 | compile | `install.ps1` → `tools\compile-komorebi-rules.ps1` | `uninstall.ps1` section 9 (`komorebi.json`) | `doctor.ps1` `komorebi-json`, `komorebi-json-warnings`, `asc` | `Step=compile`, `Repair=reload` |
 | tasks | `install.ps1` (tiling mode, the tasks; then the lock screen's part, `Install-LockScreen` in `tools\lib\lockscreen.ps1`); registering them in `activation.ps1`, task plumbing in `tools\lib\tasks.ps1` | `uninstall.ps1` section 2 (`Unregister-Autostart`; `Undo-LockScreenSync`), section 9 (`tiling-mode.txt`) | `doctor.ps1` `mode`, `task:*`, `task:retired`, `tiling`; `lock-screen:old` (`lockscreen.ps1`) | `Step=tasks`, `Repair=tiling:<mode>` |
@@ -86,7 +89,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | File | What's in it |
 |---|---|
-| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the shell profile hook; the accent and Flow-theme restores |
+| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the accent and Flow-theme restores |
 | `tools\lib\text.ps1` | Printing paths and names safely: `ConvertTo-SafePath`, `ConvertTo-SafeText` (never a user name), `Join-RiceNameList` |
 | `tools\lib\snapshots.ps1` | The original-state snapshots uninstall puts back (`Save-` / `Get-` / `Remove-OriginalState`), one registry value as a snapshot (`Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`), `Backup-RegistryKey` (reg.exe export to `backups\`) |
 | `tools\lib\userenv.ps1` | User environment variables (`Get-` / `Set-` / `Remove-UserEnvVar`), the user PATH read and written raw (`Add-` / `Remove-UserPathEntry`, `Get-UserPathRaw`, `Test-SamePathEntry`), `Send-SettingChangeBroadcast` |
@@ -124,7 +127,7 @@ Component checks come at the end of their group, in install's order.
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
 | Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml`, `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
-| Integrations | `flow-theme`, `profile`, `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
+| Integrations | `flow-theme`, `profile` (`tools\steps\profile.ps1`), `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 
 ## 710.ahk

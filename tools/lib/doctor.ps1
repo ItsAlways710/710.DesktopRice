@@ -874,7 +874,8 @@ function Test-DoctorPaletteLastRun {
 # --- f. Integrations -----------------------------------------------------------------------------
 # The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
 # search), the $PROFILE hook, and -- on a full-time machine -- the Windows settings -Activate
-# applies. (Windows Terminal and Defender's exclusions: their components.)
+# applies. (Windows Terminal and Defender's exclusions: their components. The $PROFILE hook:
+# tools\steps\profile.ps1.)
 
 function Test-DoctorFlowTheme {
     # Flow on the palette's theme (tools\palette\targets\flow.ps1): selected in its settings and
@@ -893,16 +894,6 @@ function Test-DoctorFlowTheme {
     if ($theme -eq '710sRice' -and $file) { return New-DoctorResult -Id 'flow-theme' -Status 'OK' -Text 'Flow Launcher themed (710sRice)' }
     $why = if ($theme -ne '710sRice') { "it's on '$(if ($theme) { $theme } else { "Flow's default" })'" } else { '710sRice.xaml is missing' }
     New-DoctorResult -Id 'flow-theme' -Status 'XX' -Text "Flow Launcher isn't on the palette's theme ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
-}
-
-function Test-DoctorProfileHook {
-    # $PROFILE's 710.DesktopRice block, compared with exactly what install writes for this clone.
-    $fix = @{ Fix = '710sRice install -Only profile'; Step = 'profile' }
-    switch (Get-ShellProfileHookState) {
-        'installed' { New-DoctorResult -Id 'profile' -Status 'OK' -Text 'Shell profile hook -> this clone' }
-        'other'     { New-DoctorResult -Id 'profile' -Status 'XX' -Text 'Shell profile hook points at another copy' @fix }
-        default     { New-DoctorResult -Id 'profile' -Status 'XX' -Text "Shell profile hook isn't installed" @fix }
-    }
 }
 
 # --- g. Conflicts and leftovers --------------------------------------------------------------------

@@ -53,6 +53,10 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 . (Join-Path $PSScriptRoot 'fulltime.ps1')
 . (Join-Path $PSScriptRoot 'stack.ps1')
 
+# install's fixed steps, one module each (tools\steps\<step>.ps1): the step itself, what uninstall
+# puts back, doctor's checks (docs\map.md, Install steps).
+. (Join-Path $PSScriptRoot '..\steps\profile.ps1')
+
 # --- Autostart: Scheduled Tasks At-LogOn (-Activate-gated) ---------------------------
 
 function Get-AutostartComponents {
@@ -340,92 +344,6 @@ function Resolve-TilingMode {
     New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
     Set-Content -Path $path -Value $mode -Encoding ascii
     [pscustomobject]@{ Mode = $mode; Source = $source; Changed = ($null -ne $before -and $before -ne $mode) }
-}
-
-# --- Shell profile hook ($PROFILE -> config\pwsh\profile.ps1) ------------------------
-# Ported from winarchy's ShellProfile.ps1 @ 4574fc7: a marker-delimited block inserted (or
-# updated) in pwsh's CurrentUserAllHosts $PROFILE, idempotent, snapshotting the profile
-# before any change (Copy-Item .bak, this repo's own established pattern -- see
-# tools/components/flow.ps1 -- rather than winarchy's own New-WinarchySnapshot module).
-$script:ProfileMarkerStart = '# >>> managed by 710.DesktopRice >>>'
-$script:ProfileMarkerEnd = '# <<< managed by 710.DesktopRice <<<'
-
-function Get-ShellProfilePath {
-    # Computed by hand (not $PROFILE) so this works even when the calling session isn't
-    # pwsh with $PROFILE populated.
-    Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\profile.ps1'
-}
-
-function Get-ShellProfileBlock {
-    # The exact block install writes into $PROFILE for this clone -- one definition, read by
-    # Install-ShellProfile and by `710sRice doctor` (Get-ShellProfileHookState). The path goes
-    # in single quotes, so a ' in it is doubled: a clone under a folder with an apostrophe broke
-    # every new PS7 window (winarchy 731a0a1, Group 1 W5). Every other path's block is
-    # byte-identical to before; an old unescaped one reads as "points somewhere else" to doctor,
-    # whose fix (-Only profile) rewrites it.
-    $managed = Join-Path $Root 'config\pwsh\profile.ps1'
-    @(
-        $script:ProfileMarkerStart
-        ". '$($managed.Replace("'", "''"))'"
-        $script:ProfileMarkerEnd
-    ) -join "`r`n"
-}
-
-function Get-ShellProfileHookState {
-    <# Read-only, for doctor: 'installed' ($PROFILE holds this clone's block exactly as
-       Install-ShellProfile writes it), 'other' (a 710.DesktopRice block pointing somewhere
-       else -- a moved clone, say), or 'missing' (no block, or no profile file at all). #>
-    $profilePath = Get-ShellProfilePath
-    if (-not (Test-Path -LiteralPath $profilePath)) { return 'missing' }
-    $existing = Get-Content -LiteralPath $profilePath -Raw
-    $pattern = '(?s)' + [regex]::Escape($script:ProfileMarkerStart) + '.*?' + [regex]::Escape($script:ProfileMarkerEnd)
-    if ("$existing" -notmatch $pattern) { return 'missing' }
-    if (($Matches[0] -replace '\r?\n', "`r`n") -eq (Get-ShellProfileBlock)) { 'installed' } else { 'other' }
-}
-
-function Install-ShellProfile {
-    $profilePath = Get-ShellProfilePath
-    $block = Get-ShellProfileBlock
-
-    $existing = if (Test-Path $profilePath) { Get-Content $profilePath -Raw } else { '' }
-    $pattern = '(?s)' + [regex]::Escape($script:ProfileMarkerStart) + '.*?' + [regex]::Escape($script:ProfileMarkerEnd)
-
-    if ($existing -match $pattern) {
-        if (($Matches[0] -replace '\r?\n', "`r`n") -eq $block) {
-            Step-Ok "Profile hook already installed: $(ConvertTo-SafePath $profilePath)"
-            return
-        }
-        Copy-Item $profilePath "$profilePath.bak" -Force
-        $updated = [regex]::Replace($existing, $pattern, $block.Replace('$', '$$'))
-        Set-Content -Path $profilePath -Value $updated -Encoding utf8NoBOM
-        Step-Ok "Profile hook updated: $(ConvertTo-SafePath $profilePath) (previous saved to $(ConvertTo-SafePath "$profilePath.bak"))"
-        return
-    }
-
-    if (Test-Path $profilePath) { Copy-Item $profilePath "$profilePath.bak" -Force }
-    else { New-Item -ItemType Directory -Path (Split-Path $profilePath) -Force | Out-Null }
-    $newContent = if ($existing.Trim()) { $existing.TrimEnd() + "`r`n`r`n" + $block + "`r`n" } else { $block + "`r`n" }
-    Set-Content -Path $profilePath -Value $newContent -Encoding utf8NoBOM
-    Step-Ok "Profile hook installed: $(ConvertTo-SafePath $profilePath)"
-}
-
-function Remove-ShellProfile {
-    $profilePath = Get-ShellProfilePath
-    if (-not (Test-Path $profilePath)) {
-        Step-Info 'No pwsh $PROFILE found; nothing to remove.'
-        return
-    }
-    $existing = Get-Content $profilePath -Raw
-    $pattern = '(?s)\r?\n?' + [regex]::Escape($script:ProfileMarkerStart) + '.*?' + [regex]::Escape($script:ProfileMarkerEnd) + '\r?\n?'
-    if ($existing -notmatch $pattern) {
-        Step-Info 'Profile hook not present; nothing to remove.'
-        return
-    }
-    Copy-Item $profilePath "$profilePath.bak" -Force
-    $updated = [regex]::Replace($existing, $pattern, "`r`n").Trim()
-    if ($updated) { Set-Content -Path $profilePath -Value ($updated + "`r`n") -Encoding utf8NoBOM }
-    else { Remove-Item $profilePath }
-    Step-Ok "Profile hook removed: $(ConvertTo-SafePath $profilePath) (previous saved to $(ConvertTo-SafePath "$profilePath.bak"))"
 }
 
 # --- Restoring theming side effects (wallpaper/accent/Flow) -- uninstall-only ------------
