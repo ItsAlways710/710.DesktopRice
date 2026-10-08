@@ -27,6 +27,7 @@ adds a module or adds a check updates this file in the same commit.
 | Entry point | What it is | Loads |
 |---|---|---|
 | `710sRice.ps1` (`bin\710sRice.cmd` runs it) | The `710sRice` command: the verb table, help, the admin hand-off; each verb runs a script or a library function | `tools\lib\steps.ps1` and `console.ps1` always; per verb: `activation.ps1`, `doctor.ps1`, `repair.ps1`, `update.ps1`, `palette.ps1`, `switch.ps1`, `stack-commands.ps1`, `palette-commands.ps1`, `logs.ps1` |
+| `boot.ps1` | The one-line install (`irm ... \| iex`, Windows PowerShell 5.1): git and PowerShell 7 if missing, the clone (`C:\710.DesktopRice` or `DESKTOPRICE_HOME`; one already there is used as it is), then `710sRice.ps1 install` | — |
 | `install.ps1` | Install: its switches, the step order, the closing lines; each fixed step's body is in its module (`tools\steps\<step>.ps1`) | `steps.ps1` (and with it `components.ps1`), `activation.ps1` |
 | `uninstall.ps1` | Uninstall: stop, revert, remove, in a fixed order | `activation.ps1` |
 | `scripts\Start-All.ps1` / `Stop-All.ps1` | `710sRice start` / `stop` (and SUPER+Ctrl+R through 710.ahk) | `activation.ps1` |

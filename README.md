@@ -35,20 +35,49 @@ license from its author. See [komorebi's licensing page](https://komorebi.lgug2z
 
 - Windows 11
 - winget (built into current Windows 11)
-- **PowerShell 7, installed first.** The `710sRice` command and everything it runs need it,
-  so install it before anything else:
+- PowerShell 7 and git. The [one-line install](#the-one-line-install) installs both when
+  they're missing. Installing by hand, install PowerShell 7 first -- the `710sRice` command and
+  everything it runs need it:
 
   ```powershell
   winget install --id 9MZ1SNWT0N5D --source msstore
   ```
 
-  That's the Microsoft Store build, the same package the installer checks for. It isn't
+  That's the Microsoft Store build, versions.md's row for it. It isn't
   tied to a version: it installs the current release and keeps itself updated, and
   nothing here cares which 7.x you have. If the Store is blocked on your machine,
   `winget install --id Microsoft.PowerShell --source winget` works too.
 - Admin rights for install and uninstall (Defender exclusions and komorebi's elevated
   sign-in task need them). You don't open an admin window for that: both ask with a UAC
   prompt.
+
+## Install
+
+There are two ways to run it: **full-time**, where it's your desktop from the moment you sign
+in, or **on demand**, where you start it when you want it and stop it when you don't. You can
+switch between them at any time with `710sRice activate` and `710sRice deactivate` (see
+[Switching](#switching-activate--deactivate)).
+
+One thing to do once the bar is up: click the weather widget and pick your city (see
+[The bar](#the-bar)). There's no account or key to set up.
+
+### The one-line install
+
+From a normal PowerShell window -- Windows PowerShell is fine, an admin one isn't:
+
+```powershell
+irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/master/boot.ps1 | iex
+```
+
+It installs git and PowerShell 7 if they're missing, clones this repo to `C:\710.DesktopRice`
+and runs the installer, on demand: one UAC prompt, and the install itself runs in its own admin
+window. To put the repo somewhere else, set `$env:DESKTOPRICE_HOME = 'D:\710.DesktopRice'` in
+that window first. When it's done, open a new PowerShell 7 window: `710sRice start` starts it,
+and `710sRice activate` makes it [full-time](#switching-activate--deactivate). Run the
+one-liner again any time: it uses the clone that's there (`710sRice update` brings that up to
+date).
+
+### By hand
 
 Clone the repo wherever you like. The installer records its location in
 `DESKTOPRICE_HOME`, and everything else finds it from there.
@@ -58,20 +87,11 @@ git clone https://github.com/ItsAlways710/710.DesktopRice.git
 cd 710.DesktopRice
 ```
 
-## Install
-
-There are two ways to run it: **full-time**, where it's your desktop from the moment you sign
-in, or **on demand**, where you start it when you want it and stop it when you don't. You can
-switch between them at any time with `710sRice activate` and `710sRice deactivate` (see
-[Switching](#switching-activate--deactivate)).
-
 The first install runs from a normal PowerShell 7 window in the repo folder, as
-`.\710sRice.ps1`. It opens an admin window for the install itself (one UAC prompt) and waits
-for it. After that, `710sRice` works in any PowerShell 7 window, the one you started from
-included, and once the stack is running SUPER+Enter opens one.
-
-One thing to do once the bar is up: click the weather widget and pick your city (see
-[The bar](#the-bar)). There's no account or key to set up.
+`.\710sRice.ps1` (`install`, or `install -Activate` for full-time; both below). It opens an
+admin window for the install itself (one UAC prompt) and waits for it. After that, `710sRice`
+works in any PowerShell 7 window, the one you started from included, and once the stack is
+running SUPER+Enter opens one.
 
 ### What install always does
 
