@@ -64,7 +64,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | sharex | `tools\components\sharex.ps1` | same file | `sharex`, `sharex-startup` | `Step=sharex` |
 | theme | `tools\steps\theme.ps1` (`Install-ThemeStep`); the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | same file, from uninstall's section 3 (`Undo-Wallpaper`, `Undo-WindowsAccent`, `Undo-FlowTheme`; `Restore-WindowsAccent`, `Restore-FlowTheme`); section 9 (generated palette files); Terminal's colours: the terminal component | (see palette) | never run by repair |
 | palette (named only) | `tools\steps\theme.ps1` (`Install-PaletteStep`: the pipeline on the current wallpaper) | — | `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `flow-theme` (`tools\steps\theme.ps1`); the terminal component's `terminal`; `lock-screen` (`tools\lib\lockscreen.ps1`) | `Step=palette` |
-| monitors | `install.ps1`; `tools\write-display-index.ps1`, `tools\lib\monitors.ps1` | `uninstall.ps1` section 9 (`display-index.local.json`) | `doctor.ps1` `display-index`, `display-index-more` | `Step=monitors`, `Repair=reload` |
+| monitors | `tools\steps\monitors.ps1` (`Install-MonitorsStep`); `tools\write-display-index.ps1`, `tools\lib\monitors.ps1` | `uninstall.ps1` section 9 (`display-index.local.json`) | `display-index`, `display-index-more` (`tools\steps\monitors.ps1`) | `Step=monitors`, `Repair=reload` |
 | defender | `tools\components\defender.ps1` | same file | `defender` | `Step=defender` |
 | profile | `tools\steps\profile.ps1` (`Install-ProfileStep`: the `$PROFILE` hook) | same file (`Remove-ShellProfile`, uninstall's section 3) | `profile` (same file) | `Step=profile` |
 | terminal | `tools\components\terminal.ps1` (default shell, font; font helpers in `tools\lib\terminal.ps1`) | same file (`Restore-WindowsTerminalSettings`: default shell, font, the palette's colour scheme) | `terminal`, `terminal-default`, `terminal-font` | `Step=terminal` (`terminal`: `Step=palette`) |
@@ -126,7 +126,7 @@ Component checks come at the end of their group, in install's order.
 | Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust` (`tools\steps\wallust.ps1`), other packages (`Test-DoctorOtherPackages`) |
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
-| Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last` (`tools\steps\theme.ps1`), `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
+| Generated configs | `komorebi-json`, `asc`, `display-index` (`tools\steps\monitors.ps1`), `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last` (`tools\steps\theme.ps1`), `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
 | Integrations | `flow-theme` (`tools\steps\theme.ps1`), `profile` (`tools\steps\profile.ps1`), `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 

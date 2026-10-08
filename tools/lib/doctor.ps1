@@ -577,53 +577,6 @@ function Test-DoctorAscPin {
     New-DoctorResult -Id 'asc' -Status '!!' -Text "ASC rules file doesn't match its pin (vendor\asc\pin.toml)" -Fix $fix
 }
 
-function Test-DoctorDisplayIndex {
-    # display-index.local.json: which physical screen is screen 1, 2, 3, 4 (komorebi's 0-3).
-    # A stable map (Group 1 #7, tools\lib\monitors.ps1 -- the writer's own rules): numbers are
-    # kept, a new screen takes the next free one, so the monitors step can always be run safely
-    # to add one -- hence [XX] for a connected screen the map doesn't have. A screen in the map
-    # but not connected is normal (a laptop off its dock). A fifth screen has no number to take:
-    # a plain fact. The connected screens can only be compared while komorebi runs.
-    if (-not (Get-Command Update-DisplayIndexMap -ErrorAction SilentlyContinue)) { . (Join-Path $Root 'tools\lib\monitors.ps1') }
-    $file = Join-Path $Root 'config\komorebi\display-index.local.json'
-    $fix  = @{ Fix = '710sRice install -Only monitors, then 710sRice reload'; Step = 'monitors' }
-    $running = [bool](Get-Process komorebi -ErrorAction SilentlyContinue)
-    # A broken file (unreadable / empty): the monitors step can only rewrite it while komorebi
-    # runs, and komorebi's launcher only writes one that's MISSING -- so with komorebi down,
-    # nothing can fix it until the stack is started.
-    $broken = if ($running) { $fix + @{ Repair = 'reload' } }
-              else { @{ Fix = '710sRice start, then 710sRice doctor -repair'; NeedsYou = $true } }
-    if (-not (Test-Path -LiteralPath $file)) {
-        if ($running) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is missing' @fix -Repair 'reload' }
-        return New-DoctorResult -Id 'display-index' -Status '..' -Text 'display-index.local.json not written yet -- komorebi writes it when it next starts'
-    }
-    try { $map = Read-DisplayIndexMap -Path $file }
-    catch {
-        $why = if ("$($_.Exception.Message)" -match 'empty') { 'is empty' } else { "isn't valid ($($_.Exception.Message -replace '^display-index\.local\.json ', ''))" }
-        return New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json $why" @broken
-    }
-    if (-not $map -or -not $map.Count) { return New-DoctorResult -Id 'display-index' -Status 'XX' -Text 'display-index.local.json is empty' @broken }
-    if (-not $running) {
-        return New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $(Get-DoctorPlural $map.Count 'screen' 'screens') mapped (komorebi isn't running -- not compared)"
-    }
-    $kc = Get-DoctorKomorebic
-    if (-not $kc) { return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json -- couldn't check (komorebic.exe not found)" }
-    $raw = @(& $kc monitor-information 2>$null) -join "`n"
-    if (-not $raw.Trim()) { return New-DoctorResult -Id 'display-index' -Status '!!' -Text "display-index.local.json -- couldn't check (komorebic monitor-information said nothing)" }
-    $connected = @($raw | ConvertFrom-Json)
-    $r = Update-DisplayIndexMap -Map $map -Monitors $connected
-    if ($r.Added.Count) {
-        New-DoctorResult -Id 'display-index' -Status 'XX' -Text "display-index.local.json doesn't have $($r.Added.Count) of the $($connected.Count) connected screens (it would give $(if ($r.Added.Count -eq 1) { 'it number' } else { 'them numbers' }) $(($r.Added | ForEach-Object { $_ + 1 }) -join ', '); the others keep theirs)" @fix -Repair 'reload'
-    } else {
-        $which = switch ($connected.Count) { 1 { 'the connected screen' } 2 { 'both connected screens' } default { "all $($connected.Count) connected screens" } }
-        $which = if ($r.Beyond -or $r.NoId) { "$($connected.Count - $r.Beyond - $r.NoId) of the $($connected.Count) connected screens" } else { $which }
-        New-DoctorResult -Id 'display-index' -Status 'OK' -Text "display-index.local.json: $which mapped"
-    }
-    if ($r.Beyond) {
-        New-DoctorResult -Id 'display-index-more' -Status '..' -Text "$(Get-DoctorPlural $r.Beyond 'screen' 'screens') beyond the 4 this repo maps -- komorebi runs $(if ($r.Beyond -eq 1) { 'it' } else { 'them' }) on its defaults (one workspace)"
-    }
-}
-
 # --- f. Integrations -----------------------------------------------------------------------------
 # The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
 # search), the $PROFILE hook, and -- on a full-time machine -- the Windows settings -Activate

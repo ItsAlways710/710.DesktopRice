@@ -395,23 +395,9 @@ $Steps['wallust'] = { Install-WallustStep -NotInstalled $NotInstalled }   # tool
 $Steps['theme']   = { Install-ThemeStep -OnlyRun $OnlyRun }   # tools\steps\theme.ps1
 $Steps['palette'] = { Install-PaletteStep }                  # tools\steps\theme.ps1
 
-$Steps['monitors'] = {
-    # --- 5. Monitor identity (display_index_preferences) ----------------------------------
-    # komorebic can only report monitors while komorebi is running, so on a fresh install
-    # (komorebi never started yet) this can't work -- scripts\Start-Komorebi.ps1 writes the
-    # file itself the first time komorebi comes up and it's missing. Here it's a refresh:
-    # re-running install.ps1 while komorebi is up picks up a monitor change.
-    Write-Host "`n-- Monitor identity (display_index_preferences) --" -ForegroundColor Cyan
-    try { & (Join-Path $Root 'tools\write-display-index.ps1') }
-    catch { Write-Warning $_.Exception.Message; $global:LASTEXITCODE = 1 }
-    switch ($LASTEXITCODE) {
-        0       { Step-Ok 'Monitor order pinned (display-index.local.json)' }
-        2       { Step-Info "komorebi isn't running yet -- it writes this itself the first time it starts." }
-        default { Step-Warn "Monitor order not written (see above) -- komorebi.json will omit display_index_preferences; komorebi falls back to Windows' own monitor order." }
-    }
-}
-
 $Steps['profile'] = { Install-ProfileStep }   # tools\steps\profile.ps1
+
+$Steps['monitors'] = { Install-MonitorsStep }   # tools\steps\monitors.ps1
 
 $Steps['compile'] = {
     # --- 10. Recompile komorebi.json -----------------------------------------------------------
