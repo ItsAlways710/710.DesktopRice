@@ -60,7 +60,7 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | commands | `tools\components\commands.ps1` | same file | `commands` | `Step=commands` |
 | path | `tools\steps\path.ps1` (`Install-PathStep`); PATH helpers in `tools\lib\userenv.ps1` | same file (`Undo-RiceCommandPath`, uninstall's section 4) | `path` (same file) | `Step=path` |
 | wallust | `tools\steps\wallust.ps1` (`Install-WallustStep`; `Get-WallustExe`); `tools\install-wallust.ps1`, `tools\write-wallust-config.ps1` | `uninstall.ps1` sections 7 (binary), 9 (`wallust.toml`) | `wallust`, `wallust-toml` (`tools\steps\wallust.ps1`) | `Step=wallust` |
-| flow | `tools\components\flow.ps1` | same file | `flow`, `flow-startup`, `flow-prefs`, `flow-font`, `flow-fullscreen` | `Step=flow` |
+| flow | `tools\components\flow.ps1` (what the step changes: `Get-FlowSetup`); Flow's files, its own sign-in start and the snapshots in `tools\lib\flow.ps1` | same file (`Restore-FlowLauncherSettings`, `tools\lib\flow.ps1`) | `flow`, `flow-startup`, `flow-prefs`, `flow-font`, `flow-fullscreen` | `Step=flow` |
 | everything | `tools\components\everything.ps1` | same file | `everything`, `everything-settings` | `Step=everything` |
 | sharex | `tools\components\sharex.ps1` | same file | `sharex`, `sharex-startup` | `Step=sharex` |
 | theme | `tools\steps\theme.ps1` (`Install-ThemeStep`); the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | same file, from uninstall's section 3 (`Undo-Wallpaper`, `Undo-WindowsAccent`, `Undo-FlowTheme`; `Restore-WindowsAccent`, `Restore-FlowTheme`); section 9 (generated palette files); Terminal's colours: the terminal component | (see palette) | never run by repair |
@@ -111,6 +111,7 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | `tools\lib\palette-commands.ps1` | `710sRice palette`, `palette use`, `palette edit`, `palette new` (dispatcher-only: loaded by their rows) |
 | `tools\lib\logs.ps1` | `710sRice logs` (dispatcher-only: loaded by its row) |
 | `tools\lib\console.ps1` | 710sRice's "Press Enter to close": only in a window opened for the command alone (`Test-RiceOwnConsole`, `Wait-RiceClose`; dispatcher-only) |
+| `tools\lib\flow.ps1` | Flow Launcher's files (`Get-FlowPaths`, `Read-FlowJson`, `Get-FlowField`), its own sign-in start (`Test-FlowOwnTask`, `Test-FlowRunValue`), `Stop-FlowLauncher`, the flow component's snapshots (`Save-FlowSnapshots`, `Restore-FlowLauncherSettings`) |
 | `tools\lib\terminal.ps1` | Windows Terminal's font faces (`Get-TerminalFontFaces`, `Set-TerminalFontFace`) and `Clear-TerminalNerdFontFaces` (uninstall, before the Nerd Font goes) |
 | `tools\lib\versions.ps1` | `versions.md`'s table (`Get-VersionsTable`), `Test-WingetRow`, `Test-PinnedRow` |
 | `tools\lib\winget.ps1` | winget's sources (`Get-WingetSourceArgs`) and exit codes (`Get-WingetOutcome`, `Format-WingetCode`), the version `winget list` shows, the per-user packages, `Invoke-WingetAsUser` |
