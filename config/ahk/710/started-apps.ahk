@@ -65,8 +65,14 @@ StartBar(why) {
 
 StartFlow(why) {
     global FlowExe
-    if !FileExist(FlowExe) || ProcessExist('Flow.Launcher.exe')
+    if !FileExist(FlowExe)
         return true
+    ; Already running: not started -- and the log says so, with its pid, so a start that didn't
+    ; happen is never silent (2026-10-08: a repair's ask left Flow down and nothing said why).
+    if pid := ProcessExist('Flow.Launcher.exe') {
+        AppsLog('Flow Launcher already running (pid ' pid ') -- not started (' why ')')
+        return true
+    }
     if !AppStartAllowed('Flow Launcher')
         return false
     try Run('"' FlowExe '"')

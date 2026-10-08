@@ -61,6 +61,15 @@
         if ($flow.Count) {
             $flow | Stop-Process -Force
             $flow | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+            # 710.ahk starts Flow only when no Flow.Launcher.exe is on the process list, and a
+            # stopped Flow stays on it a moment after it exits (80-160 ms on Godzilla) -- inside
+            # repair, the ask below found it there every time and nothing started Flow
+            # (2026-10-08). So the ask waits for the list to drop the ones stopped here, up to 5 s.
+            # By name, as 710.ahk reads it: Get-Process -Id calls an exited process gone already.
+            $ids = @($flow | ForEach-Object Id)
+            $until = [datetime]::UtcNow.AddSeconds(5)
+            while (@(Get-Process -Name 'Flow.Launcher' -ErrorAction SilentlyContinue | Where-Object { $ids -contains $_.Id }).Count -and
+                   [datetime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 50 }
         }
         if ($select) {
             # What it was before we ever picked ours -- uninstall's Restore-FlowTheme puts it back.
