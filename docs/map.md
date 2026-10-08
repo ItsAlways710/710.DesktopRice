@@ -34,7 +34,7 @@ adds a module or adds a check updates this file in the same commit.
 | `scripts\Set-LockScreen.ps1` | Sets your lock-screen picture (Windows PowerShell 5.1: WinRT) | — |
 | `tools\reload-stack.ps1` | SUPER+Shift+R (710.ahk's ReloadStack) and `reload bar` | — |
 | `tools\apply-wallust-outputs.ps1` | The wallpaper pipeline: wallust, then every palette target | `tools\lib\lockscreen.ps1`, `tools\lib\palette.ps1` |
-| `config\ahk\710.ahk` | The hotkeys, menus, and the apps it starts | `config\ahk\user.ahk` (last, optional) |
+| `config\ahk\710.ahk` | The hotkeys, menus, and the apps it starts | its parts, `config\ahk\710\*.ahk` (see 710.ahk below), then `config\ahk\user.ahk` (last, optional) |
 
 `tools\lib\activation.ps1` is what every install-side script loads: it loads the shared libraries
 (below), `tools\lib\lockscreen.ps1`, `tools\lib\components.ps1` and the fixed steps' modules
@@ -142,31 +142,36 @@ Component checks come at the end of their group, in install's order.
 
 ## 710.ahk
 
-One file, in this order (each section starts with a `; ====` banner; SUPER+K lists the hotkeys
-under these titles):
+`config\ahk\710.ahk` keeps the directives, the environment it cleans, the paths and state folder,
+then `#Include`s its parts from `config\ahk\710\` in this order -- AutoHotkey reads them as though
+they were pasted in there, global code and all, so the order matters -- and `user.ahk` last. Each
+part starts with a line saying what's in it; SUPER+K lists the hotkeys under the section titles
+inside them (`; ====` banners), reading the parts in place (`ReadScriptText`, `keymap.ahk`).
 
-| Section | What's in it |
+| Part (`config\ahk\710\`) | What's in it |
 |---|---|
-| (top) | Directives, the environment it cleans, the paths and state folder |
-| komorebi | `Komorebic`, `QueryKomorebic`, `ToggleScrolling`, `LaunchOnCursorMonitor`, `CloseWindow`, `RedrawApp`, `EndGpuHelpers`; the window, focus, move, stack, resize, workspace and monitor hotkeys |
-| ShareX | `Sharex()` and the capture hotkeys |
-| App launchers | browser, Explorer, web apps, Obsidian, Claude |
-| Palette | `PalOpen` and the themed popup every menu uses |
-| Key overlay | SUPER+K: `ParseKeymap` (reads 710.ahk and user.ahk), `ToggleKeyOverlay` |
-| Power / system menu | SUPER+Esc |
-| Terminal | SUPER+Return |
-| Flow Launcher | `ToggleFlow`, `ToggleFlowScoped`; SUPER+Space, SUPER+S |
-| Stay awake | |
-| Game mode | `games.toml`, `GameWatch` |
-| The apps 710.ahk starts | `StartApps` (the bar, Flow, ShareX), `RestartRetired`, the start at load |
-| YASB watchdog | |
-| komorebi's monitor watcher | display-change nudges |
-| Screens | the Screens menu, `RunThen` |
-| Quick add rule | click-to-pick rules; Remove a rule / Edit my rules |
-| Tray + main menu | the menus' items, the messages 710sRice posts (`OnMessage`), `RiceCommands`, the tray, `ReloadStack`, `RestartStack` |
-| Palette profiles | choosing, creating and editing profiles from the menu |
-| User overrides | `#Include *i %A_ScriptDir%\user.ahk` -- always the last line |
+| `komorebi.ahk` | `Komorebic`, `QueryKomorebic`, `ToggleScrolling`, `LaunchOnCursorMonitor`, `CloseWindow`, `RedrawApp`, `EndGpuHelpers` |
+| `komorebi-keys.ahk` | The window, focus, move, stack, resize, workspace and monitor hotkeys |
+| `sharex.ahk` | `Sharex()` and the capture hotkeys |
+| `apps.ahk` | App launchers: browser, Explorer, web apps, Obsidian, Claude |
+| `palette.ahk` | `PalOpen` and the themed popup every menu uses |
+| `keymap.ahk` | SUPER+K: `ReadScriptText`, `ParseKeymap` (710.ahk with its parts, and user.ahk), `ToggleKeyOverlay` |
+| `system-menu.ahk` | SUPER+Esc, the power / system menu |
+| `terminal.ahk` | SUPER+Return |
+| `flow.ahk` | `ToggleFlow`, `ToggleFlowScoped`; SUPER+Space, SUPER+S |
+| `stay-awake.ahk` | Stay awake |
+| `game-mode.ahk` | `games.toml`, `GameWatch` |
+| `started-apps.ahk` | The apps 710.ahk starts: `StartApps` (the bar, Flow, ShareX), `RestartRetired`, the start at load |
+| `yasb-watchdog.ahk` | The bar's watchdog |
+| `monitor-watcher.ahk` | komorebi's monitor watcher: display-change nudges |
+| `screens.ahk` | The Screens menu, `RunThen` |
+| `quick-rule.ahk` | Quick add rule (click-to-pick); Remove a rule / Edit my rules |
+| `menus.ahk` | The menus' items (Capture, Tiling) and their state text |
+| `palette-profiles.ahk` | Choosing, creating and editing palette profiles from the menu |
+| `main-menu.ahk` | `MainMenuItems`, `RunDoctor`, `OpenMainMenu`; the messages 710sRice posts (`OnMessage`), `RiceCommands`; the tray |
+| `stack-control.ahk` | `ReloadStack` (SUPER+Shift+R), `QuitStack`, `RestartStack` (SUPER+Ctrl+R) and its toast |
+| (`710.ahk`, last) | `#Include *i %A_ScriptDir%\user.ahk` -- always the last line |
 
-Doctor's "710.ahk changed since it started" compares `710.ahk` and `user.ahk` with 710.ahk's start
-time (`Get-DoctorStaleText`). `scripts\Start-Ahk.ps1` and every `Find-AhkWindow` find 710.ahk by its
-window title (the script's full path).
+Doctor's "710.ahk changed since it started" compares `710.ahk`, its parts and `user.ahk` with 710.ahk's
+start time (`Get-DoctorStaleText`). `scripts\Start-Ahk.ps1` and every `Find-AhkWindow` find 710.ahk by
+its window title (the script's full path).

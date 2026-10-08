@@ -419,9 +419,9 @@ function Get-DoctorStaleText {
     # A running YASB / 710.ahk that loaded older files than the repo has now: Text (+ Detail), or
     # $null. YASB: config.yaml against the fingerprint Start-Yasb.ps1 recorded when the bar started
     # -- reload-stack.ps1's own test for "restart the bar", byte for byte, so the two can't
-    # disagree (no fingerprint = the same answer). 710.ahk: 710.ahk or user.ahk written after its
-    # process started (AHK's Reload() starts a new process); a start time Windows won't hand
-    # over = not checked, never guessed.
+    # disagree (no fingerprint = the same answer). 710.ahk: 710.ahk, one of its parts
+    # (config\ahk\710\*.ahk) or user.ahk written after its process started (AHK's Reload() starts a
+    # new process); a start time Windows won't hand over = not checked, never guessed.
     param([string]$Key, $Process)
     if ($Key -eq 'yasb') {
         $fp  = Join-Path (Get-DoctorLogDir) 'yasb-config.sha256'
@@ -438,11 +438,13 @@ function Get-DoctorStaleText {
     if ($Key -eq 'ahk') {
         $started = try { $Process.StartTime } catch { $null }
         if (-not $started) { return $null }
-        foreach ($f in 'config\ahk\710.ahk', 'config\ahk\user.ahk') {
+        $parts = @(Get-ChildItem -LiteralPath (Join-Path $Root 'config\ahk\710') -Filter '*.ahk' -File -ErrorAction SilentlyContinue |
+                   ForEach-Object { "config\ahk\710\$($_.Name)" })
+        foreach ($f in @('config\ahk\710.ahk') + $parts + @('config\ahk\user.ahk')) {
             $item = Get-Item -LiteralPath (Join-Path $Root $f) -ErrorAction SilentlyContinue
             if ($item -and $item.LastWriteTime -gt $started) {
                 $leaf = Split-Path -Leaf $f
-                $text = if ($leaf -eq '710.ahk') { '710.ahk changed since it started' } else { 'user.ahk changed since 710.ahk started' }
+                $text = if ($f -eq 'config\ahk\user.ahk') { 'user.ahk changed since 710.ahk started' } else { '710.ahk changed since it started' }
                 return [pscustomobject]@{ Text = $text; Detail = $null }
             }
         }
