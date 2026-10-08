@@ -37,7 +37,16 @@ function Write-PaletteFile {
     }
     $tmp = "$Path.tmp-$PID"
     [IO.File]::WriteAllBytes($tmp, $bytes)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
+    # A program reading the file without letting it be replaced refuses the move while it reads
+    # (YASB reading the bar's CSS: Python opens files that way). Tried again for about 2 s; if it
+    # still fails, the temp file goes and the error stands.
+    for ($try = 1; ; $try++) {
+        try { Move-Item -LiteralPath $tmp -Destination $Path -Force -ErrorAction Stop; break }
+        catch {
+            if ($try -ge 20) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; throw }
+            Start-Sleep -Milliseconds 100
+        }
+    }
     $true
 }
 
