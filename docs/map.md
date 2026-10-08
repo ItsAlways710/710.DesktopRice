@@ -62,8 +62,8 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 | flow | `tools\components\flow.ps1` | same file | `flow`, `flow-startup`, `flow-prefs`, `flow-font`, `flow-fullscreen` | `Step=flow` |
 | everything | `tools\components\everything.ps1` | same file | `everything`, `everything-settings` | `Step=everything` |
 | sharex | `tools\components\sharex.ps1` | same file | `sharex`, `sharex-startup` | `Step=sharex` |
-| theme | `install.ps1`; the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | `uninstall.ps1` section 3 (wallpaper: `Restore-OriginalWallpaper`; accent, Flow theme: restore functions in `activation.ps1`), section 9 (generated palette files); Terminal's colours: the terminal component | (see palette) | never run by repair |
-| palette (named only) | `install.ps1` (the pipeline on the current wallpaper) | — | `doctor.ps1` `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `flow-theme`; the terminal component's `terminal`; `lock-screen` (`tools\lib\lockscreen.ps1`) | `Step=palette` |
+| theme | `tools\steps\theme.ps1` (`Install-ThemeStep`); the pipeline `tools\apply-wallust-outputs.ps1`; the wallpaper and its snapshot in `tools\lib\wallpaper.ps1` | same file, from uninstall's section 3 (`Undo-Wallpaper`, `Undo-WindowsAccent`, `Undo-FlowTheme`; `Restore-WindowsAccent`, `Restore-FlowTheme`); section 9 (generated palette files); Terminal's colours: the terminal component | (see palette) | never run by repair |
+| palette (named only) | `tools\steps\theme.ps1` (`Install-PaletteStep`: the pipeline on the current wallpaper) | — | `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `flow-theme` (`tools\steps\theme.ps1`); the terminal component's `terminal`; `lock-screen` (`tools\lib\lockscreen.ps1`) | `Step=palette` |
 | monitors | `install.ps1`; `tools\write-display-index.ps1`, `tools\lib\monitors.ps1` | `uninstall.ps1` section 9 (`display-index.local.json`) | `doctor.ps1` `display-index`, `display-index-more` | `Step=monitors`, `Repair=reload` |
 | defender | `tools\components\defender.ps1` | same file | `defender` | `Step=defender` |
 | profile | `tools\steps\profile.ps1` (`Install-ProfileStep`: the `$PROFILE` hook) | same file (`Remove-ShellProfile`, uninstall's section 3) | `profile` (same file) | `Step=profile` |
@@ -89,7 +89,7 @@ named on an `[XX]` line (`Step`) or the action named (`Repair`).
 
 | File | What's in it |
 |---|---|
-| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode; the accent and Flow-theme restores |
+| `tools\lib\activation.ps1` | Loads the libraries below. Still holds, until each moves into its module: registering the tasks and reading the mode (`Register-Autostart`, `Register-OnDemandTasks`, `Unregister-Autostart`, `Test-FullTimeMachine`); the tiling mode |
 | `tools\lib\text.ps1` | Printing paths and names safely: `ConvertTo-SafePath`, `ConvertTo-SafeText` (never a user name), `Join-RiceNameList` |
 | `tools\lib\snapshots.ps1` | The original-state snapshots uninstall puts back (`Save-` / `Get-` / `Remove-OriginalState`), one registry value as a snapshot (`Get-RegValueSnapshot`, `Set-RegValueFromSnapshot`), `Backup-RegistryKey` (reg.exe export to `backups\`) |
 | `tools\lib\userenv.ps1` | User environment variables (`Get-` / `Set-` / `Remove-UserEnvVar`), the user PATH read and written raw (`Add-` / `Remove-UserPathEntry`, `Get-UserPathRaw`, `Test-SamePathEntry`), `Send-SettingChangeBroadcast` |
@@ -126,8 +126,8 @@ Component checks come at the end of their group, in install's order.
 | Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, `wallust` (`tools\steps\wallust.ps1`), other packages (`Test-DoctorOtherPackages`) |
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1` |
 | Tasks and tiling mode | `mode`, `task:*`, `task:retired` (`Test-DoctorTasks`), `tiling` |
-| Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last`, `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
-| Integrations | `flow-theme`, `profile` (`tools\steps\profile.ps1`), `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
+| Generated configs | `komorebi-json`, `asc`, `display-index`, `wallust-toml` (`tools\steps\wallust.ps1`), `palette-profile`, `theme-files`, `theme-inputs`, `palette-last` (`tools\steps\theme.ps1`), `lock-screen` (`Test-DoctorLockScreen`, `tools\lib\lockscreen.ps1`) |
+| Integrations | `flow-theme` (`tools\steps\theme.ps1`), `profile` (`tools\steps\profile.ps1`), `windows` (`Test-DoctorWindowsSettings`, `fulltime.ps1`); then bluetooth, commands, flow, everything, sharex, defender, terminal (`terminal`, `terminal-default`, `terminal-font`) (components) |
 | Conflicts and leftovers | `conflicts`, `komorebi-scripts` |
 
 ## 710.ahk

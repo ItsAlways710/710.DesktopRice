@@ -58,6 +58,7 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 . (Join-Path $PSScriptRoot '..\steps\envvars.ps1')
 . (Join-Path $PSScriptRoot '..\steps\path.ps1')
 . (Join-Path $PSScriptRoot '..\steps\wallust.ps1')
+. (Join-Path $PSScriptRoot '..\steps\theme.ps1')
 . (Join-Path $PSScriptRoot '..\steps\profile.ps1')
 
 # --- Autostart: Scheduled Tasks At-LogOn (-Activate-gated) ---------------------------
@@ -347,66 +348,4 @@ function Resolve-TilingMode {
     New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
     Set-Content -Path $path -Value $mode -Encoding ascii
     [pscustomobject]@{ Mode = $mode; Source = $source; Changed = ($null -ne $before -and $before -ne $mode) }
-}
-
-# --- Restoring theming side effects (wallpaper/accent/Flow) -- uninstall-only ------------
-# The wallpaper/lock-screen restore functions live next to what they revert
-# (Restore-OriginalWallpaper in tools\lib\wallpaper.ps1, Restore-LockScreenPicture in the lock
-# screen's own section above). These two cover the rest of what install.ps1 Section 4
-# and tools\apply-wallust-outputs.ps1 change on a real wallpaper/theme apply, plus Flow
-# Launcher's theme -- both called from uninstall.ps1. (Windows Terminal's and Flow's own settings
-# are their components': tools\components\terminal.ps1, flow.ps1.)
-function Restore-WindowsAccent {
-    <# Reverts the accent-color/dark-mode values tools\apply-wallust-outputs.ps1 sets,
-       back to its own 'windows-accent' snapshot (taken there, via a small duplicated
-       inline copy of Save-OriginalState/Get-RegValueSnapshot -- see that script and this
-       file's header note on why it doesn't dot-source this one). $null means that script
-       never actually ran on this machine -- safe no-op. #>
-    $snap = Get-OriginalState -Label 'windows-accent'
-    if (-not $snap) { return $false }
-    $personalize = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-    $dwm = 'HKCU:\SOFTWARE\Microsoft\Windows\DWM'
-    Set-RegValueFromSnapshot -Path $personalize -Name 'AppsUseLightTheme' -Snapshot $snap.Personalize_AppsUseLightTheme
-    Set-RegValueFromSnapshot -Path $personalize -Name 'SystemUsesLightTheme' -Snapshot $snap.Personalize_SystemUsesLightTheme
-    Set-RegValueFromSnapshot -Path $personalize -Name 'ColorPrevalence' -Snapshot $snap.Personalize_ColorPrevalence
-    Set-RegValueFromSnapshot -Path $dwm -Name 'ColorPrevalence' -Snapshot $snap.Dwm_ColorPrevalence
-    Set-RegValueFromSnapshot -Path $dwm -Name 'AccentColor' -Snapshot $snap.Dwm_AccentColor
-    Set-RegValueFromSnapshot -Path $dwm -Name 'ColorizationColor' -Snapshot $snap.Dwm_ColorizationColor
-    Send-SettingChangeBroadcast
-    Remove-OriginalState -Label 'windows-accent'
-    return $true
-}
-
-function Restore-FlowTheme {
-    <# Undoes the palette pipeline's Flow target (tools\palette\targets\flow.ps1): Flow's selected
-       theme goes back to what it was before (the 'flow-theme' snapshot) and our 710sRice.xaml is
-       deleted. Only while Flow is still on ours -- a theme you picked yourself since stays. The
-       old theme comes back only if its file still exists (Flow shows an error box at start for a
-       theme it can't find -- winarchy's Winarchy.xaml, say, once that's gone); otherwise the key
-       goes and Flow uses its own default. Flow is stopped first and NOT relaunched, as in
-       the flow component's uninstall (tools\components\flow.ps1). $false when there was nothing
-       to undo. #>
-    $snap = Get-OriginalState -Label 'flow-theme'
-    $flowRoot = Join-Path $env:APPDATA 'FlowLauncher'
-    $xaml = Join-Path $flowRoot 'Themes\710sRice.xaml'
-    if (-not $snap -and -not (Test-Path -LiteralPath $xaml)) { return $false }
-    $flow = @(Get-Process -Name 'Flow.Launcher' -ErrorAction SilentlyContinue)
-    if ($flow.Count) {
-        $flow | Stop-Process -Force
-        $flow | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
-    }
-    $settingsPath = Join-Path $flowRoot 'Settings\Settings.json'
-    if ($snap -and (Test-Path -LiteralPath $settingsPath)) {
-        $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-        if ("$($settings['Theme'])" -eq '710sRice') {
-            $old = "$($snap.Theme)"
-            $oldThere = $old -and (@(Join-Path $flowRoot "Themes\$old.xaml") + @(Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'FlowLauncher\app-*\Themes') -Filter "$old.xaml" -File -ErrorAction SilentlyContinue | ForEach-Object FullName) |
-                        Where-Object { Test-Path -LiteralPath $_ }).Count
-            if ($snap.ThemeExisted -and $oldThere) { $settings['Theme'] = $old } else { $settings.Remove('Theme') }
-            $settings | ConvertTo-Json -Depth 50 | Set-Content -Path $settingsPath -Encoding UTF8
-        }
-    }
-    Remove-Item -LiteralPath $xaml -Force -ErrorAction SilentlyContinue
-    Remove-OriginalState -Label 'flow-theme'
-    $true
 }

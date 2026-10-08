@@ -190,9 +190,6 @@ function Step-Warn { param([string]$Message) Write-Host "  [!!] $Message" -Foreg
 Write-Host "`n== 710.DesktopRice install ==" -ForegroundColor Cyan
 if ($OnlyRun) { Step-Info "Running only: $($RunSteps -join ', ')" }
 
-# The wallust binary, for the theme and palette steps below (Get-WallustExe, tools\steps\wallust.ps1).
-$wallustExe = Get-WallustExe
-
 # The machine's mode before this run changes anything -- read here, before the steps, since
 # the tasks step registers the sign-in tasks part-way through a -Activate run. A -Activate run on a
 # machine that isn't full-time yet switches it, by `710sRice activate`'s rules: your Windows
@@ -395,78 +392,8 @@ $Steps['path']    = { Install-PathStep }      # tools\steps\path.ps1
 
 $Steps['wallust'] = { Install-WallustStep -NotInstalled $NotInstalled }   # tools\steps\wallust.ps1
 
-$Steps['theme'] = {
-    # --- 4. Default theme (wallpaper + everything themed from it) -------------------------
-    # EVERY run, no "already themed?" check (user's call, 2026-09-23 -- the old check skipped
-    # this whenever the current wallpaper came from assets\wallpapers, which could leave e.g.
-    # Windows Terminal on whatever uninstall had restored it to). Sets
-    # assets\wallpapers\710Default001.png as the desktop wallpaper and runs the exact same
-    # wallpaper pipeline (tools\apply-wallust-outputs.ps1) YASB's Wallpapers widget runs on every
-    # real wallpaper change (see config\yasb\config.yaml's run_after) -- so komorebi borders, the
-    # Windows accent color, Windows Terminal and your lock-screen picture all end up themed to
-    # it too, via the one real code path rather than a second, parallel "first theme"
-    # implementation.
-    Write-Host "`n-- Default theme --" -ForegroundColor Cyan
-    $defaultWallpaper = Join-Path $Root 'assets\wallpapers\710Default001.png'
-
-    if (-not (Test-Path $defaultWallpaper)) {
-        Step-Warn "Default wallpaper not found at $(ConvertTo-SafePath $defaultWallpaper) -- skipping the default theme."
-    } elseif (-not (Test-Path $wallustExe) -or -not (Test-Path (Join-Path $Root 'config\wallust\wallust.toml'))) {
-        # The wallust step installs both; -Only theme on its own can find them missing.
-        Step-Warn "wallust isn't set up (no wallust.exe or wallust.toml) -- skipping the default theme.$(if ($OnlyRun) { ' Add the wallust step: 710sRice install -Only wallust,theme' })"
-    } else {
-        try {
-            # One-time snapshot of whatever wallpaper was here before -- Set-DesktopWallpaper
-            # below is about to overwrite it, and uninstall.ps1's Restore-OriginalWallpaper
-            # needs this to put the real original back, not just delete our own value (both in
-            # tools\lib\wallpaper.ps1).
-            Save-OriginalWallpaper
-            Set-DesktopWallpaper -Path $defaultWallpaper
-            Step-Ok "Desktop wallpaper set to $(ConvertTo-SafePath $defaultWallpaper)"
-
-            # The wallpaper pipeline itself, in-process (install already needs PS7), with the
-            # chosen palette profile -- Default on a fresh install. It prints what it themed
-            # (komorebi only if it's up), the lock screen included.
-            & (Join-Path $Root 'tools\apply-wallust-outputs.ps1') -Image $defaultWallpaper
-            switch ($LASTEXITCODE) {
-                0       { Step-Ok 'Default wallpaper themed (details above).' }
-                2       { Step-Warn 'Default wallpaper themed, but not everything took (see above) -- 710sRice doctor says what.' }
-                default { Step-Warn "The default wallpaper is up, but its theme wasn't applied (see above)." }
-            }
-        } catch {
-            Step-Warn "Could not apply the default theme: $($_.Exception.Message)"
-        }
-    }
-}
-
-$Steps['palette'] = {
-    # --- palette: the current wallpaper's colours, re-applied (named-only) ---------------
-    # The opposite of theme: no wallpaper change. Runs exactly what YASB's wallpaper widget
-    # runs after every change (the pipeline, config\yasb\config.yaml's run_after) on the
-    # wallpaper that's up now (Get-CurrentWallpaper -- the value Set-LockScreen.ps1 reads).
-    # Same image, same profile, same palette (wallust caches it per image), so on a healthy
-    # machine nothing visibly changes -- it's the fix for missing or stale theme files (the
-    # bar's and menus' colours, the prompt, Flow's theme, Terminal's scheme). It never falls
-    # back to the default wallpaper: that's the theme step, the reset.
-    Write-Host "`n-- Palette (current wallpaper) --" -ForegroundColor Cyan
-    $currentWallpaper = Get-CurrentWallpaper
-    if (-not $currentWallpaper -or -not (Test-Path -LiteralPath $currentWallpaper)) {
-        Step-Warn "The current wallpaper ($(if ($currentWallpaper) { ConvertTo-SafePath $currentWallpaper } else { 'none set' })) is gone -- pick one with SUPER+W; that re-themes everything from it."
-    } elseif (-not (Test-Path $wallustExe) -or -not (Test-Path (Join-Path $Root 'config\wallust\wallust.toml'))) {
-        Step-Warn "wallust isn't set up (no wallust.exe or wallust.toml) -- add the wallust step: 710sRice install -Only wallust,palette"
-    } else {
-        try {
-            & (Join-Path $Root 'tools\apply-wallust-outputs.ps1') -Image $currentWallpaper
-            switch ($LASTEXITCODE) {
-                0       { Step-Ok "Palette re-applied from the current wallpaper ($(Split-Path -Leaf $currentWallpaper)) -- details above." }
-                2       { Step-Warn 'Palette re-applied, but not everything took (see above) -- 710sRice doctor says what.' }
-                default { Step-Warn "Palette not re-applied (see above) -- the theme on screen is unchanged." }
-            }
-        } catch {
-            Step-Warn "Could not re-apply the palette: $($_.Exception.Message)"
-        }
-    }
-}
+$Steps['theme']   = { Install-ThemeStep -OnlyRun $OnlyRun }   # tools\steps\theme.ps1
+$Steps['palette'] = { Install-PaletteStep }                  # tools\steps\theme.ps1
 
 $Steps['monitors'] = {
     # --- 5. Monitor identity (display_index_preferences) ----------------------------------

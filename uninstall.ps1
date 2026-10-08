@@ -188,22 +188,14 @@ catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_
 Write-Host "`n-- Revert shell profile --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Remove the pwsh $PROFILE hook' { Remove-ShellProfile }
 
+# The theme's reverts: tools\steps\theme.ps1; the lock screen's: tools\lib\lockscreen.ps1.
 Write-Host "`n-- Revert wallpaper / lock screen / accent color / Flow Launcher --" -ForegroundColor Cyan
-Invoke-ActivationRevert 'Restore original desktop wallpaper' {
-    if (Restore-OriginalWallpaper) { Step-Ok 'Desktop wallpaper restored to whatever it was before this repo ever set a default' }
-    else { Step-Info 'This repo never actually changed the wallpaper on this machine (already using one of its own) -- nothing to restore.' }
-}
+Invoke-ActivationRevert 'Restore original desktop wallpaper' { Undo-Wallpaper }
 # After section 2's hardening revert: Restore-LockScreenPicture writes back the Spotlight /
 # Slideshow settings from before 710sRice, and hardening's revert must not undo them.
 Invoke-ActivationRevert 'Restore original lock-screen picture' { Undo-LockScreenPicture -WasFullTime $ComponentCtx.FullTime }
-Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' {
-    if (Restore-WindowsAccent) { Step-Ok 'Windows accent color and light/dark-mode settings restored' }
-    else { Step-Info 'tools\apply-wallust-outputs.ps1 never actually ran on this machine -- nothing to restore.' }
-}
-Invoke-ActivationRevert 'Restore Flow Launcher''s own theme (Palette Profiles themed it)' {
-    if (Restore-FlowTheme) { Step-Ok "Flow Launcher's theme put back and 710sRice.xaml removed" }
-    else { Step-Info 'Flow Launcher was never themed by the palette -- nothing to restore.' }
-}
+Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' { Undo-WindowsAccent }
+Invoke-ActivationRevert 'Restore Flow Launcher''s own theme (Palette Profiles themed it)' { Undo-FlowTheme }
 
 # Each component's own revert (its Uninstall: restore from its snapshots, remove what it
 # added), the last one install runs first -- before the env vars and packages below go, like

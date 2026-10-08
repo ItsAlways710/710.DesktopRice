@@ -31,8 +31,8 @@
   claude/cli-plan.md, Stage 3, has the full check list, what each severity means, and why.
 #>
 
-# The palette library: the theme checks read the chosen profile and its targets the way the
-# wallpaper pipeline does (one definition of "current theme").
+# The palette library: the theme checks (tools\steps\theme.ps1) read the chosen profile and its
+# targets the way the wallpaper pipeline does (one definition of "current theme").
 . (Join-Path $PSScriptRoot 'palette.ps1')
 
 # --- Results ------------------------------------------------------------------------------------
@@ -624,149 +624,11 @@ function Test-DoctorDisplayIndex {
     }
 }
 
-function Get-DoctorShownPath {
-    # A file as the report names it: repo-relative inside the clone, else ConvertTo-SafePath.
-    param([string]$Path)
-    if ($Path.StartsWith($Root, [StringComparison]::OrdinalIgnoreCase)) { return $Path.Substring($Root.Length).TrimStart('\', '/') }
-    ConvertTo-SafePath $Path
-}
-
-function Test-DoctorPaletteProfile {
-    # The chosen palette profile (SUPER+Alt+Space > Palette profiles, 710sRice palette use),
-    # usable or not. A chosen profile that's gone or broken is still themed -- with Default,
-    # the pipeline's fallback -- so it's [!!]: the choice is yours to fix, repair never
-    # changes it. Broken profiles nobody chose are just noted.
-    $chosen = Get-ActivePaletteProfileId
-    $active = Resolve-ActivePaletteProfile
-    $all = @(Get-PaletteProfiles)
-    if ($chosen -ne $active.Id) {
-        $chosenLabel = ($all | Where-Object Id -eq $chosen | Select-Object -First 1).Label
-        New-DoctorResult -Id 'palette-profile' -Status '!!' -Text "Palette profile: $chosenLabel is chosen but can't be used -- Default is used instead" `
-            -Detail @("$($active.Warning -replace ' -- using Default$', '')") -Fix "710sRice palette use default (or fix it in SUPER+Alt+Space > Palette profiles > Edit)"
-    } else {
-        $p = $all | Where-Object Id -eq $active.Id | Select-Object -First 1
-        New-DoctorResult -Id 'palette-profile' -Status 'OK' -Text "Palette profile: $($p.Label) ($(Get-PaletteSourceSummary -Source $active.Profile.source))"
-    }
-    foreach ($b in $all | Where-Object { $_.Exists -and $_.Error -and $_.Id -ne $chosen }) {
-        New-DoctorResult -Id "palette-profile:$($b.Id)" -Status '..' -Text "$($b.Label) can't be used: $($b.Error -replace '^[^:]+: ', '')"
-    }
-}
-
-function Test-DoctorThemeFiles {
-    # What the wallpaper pipeline (tools\apply-wallust-outputs.ps1) leaves behind: the palette it
-    # made last (config\wallust\generated\palette.json -- the one kept when wallust fails) and
-    # every file the chosen palette profile's file targets write (the bar's and menus' colours,
-    # colors.json, the prompt, Flow's theme). Made again from the current wallpaper by the palette
-    # step, which never changes the wallpaper itself.
-    $active = Resolve-ActivePaletteProfile
-    $problems = @(); $names = @()
-    if (-not (Read-PaletteLastGood)) { $problems += 'no palette made yet (config\wallust\generated\palette.json)' }
-    foreach ($t in Get-PaletteTargets) {
-        if (-not $t.Template -or -not $t.Output -or $t.Id -in $active.Profile.off) { continue }
-        $path = & $t.Output
-        if (-not $path) { continue }
-        $names += $t.Label
-        if (-not (Test-Path -LiteralPath $path)) { $problems += "$($t.Label): $(Get-DoctorShownPath $path) is missing" }
-    }
-    if ($problems.Count) {
-        return New-DoctorResult -Id 'theme-files' -Status 'XX' -Text "Theme files: $($problems -join '; ')" -Fix '710sRice install -Only palette' -Step 'palette'
-    }
-    New-DoctorResult -Id 'theme-files' -Status 'OK' -Text "Theme files: the palette, $($names -join ', ')"
-}
-
-function Test-DoctorThemeInputs {
-    # The theme on screen made from what's in the repo now, with the profile chosen now. The
-    # pipeline stamps what it was made from after every run that applied everything
-    # (theme-inputs.sha256: tools\apply-wallust-outputs.ps1, tools\lib\palette.ps1, every file in
-    # tools\palette\targets, and "profile:<id>" = the chosen profile file's hash) -- the list comes
-    # from Get-PaletteThemeInputs (tools\lib\palette.ps1), the one the pipeline writes with. A pull
-    # that brings a new target or template, a profile changed by hand, a choice made behind the
-    # pipeline's back, a run that stopped part-way: each leaves the old look until the next
-    # wallpaper change. No stamp at all = an install from before the stamp.
-    $stamp = Join-Path (Get-DoctorLogDir) 'theme-inputs.sha256'
-    $fix = @{ Fix = '710sRice install -Only palette'; Step = 'palette' }
-    $made = [ordered]@{}
-    if (Test-Path -LiteralPath $stamp) {
-        foreach ($line in @(Get-Content -LiteralPath $stamp)) {
-            if ($line -match '^([0-9a-f]{64})\s+(\S.*)$') { $made[$Matches[2].Trim()] = $Matches[1] }
-        }
-    }
-    if (-not $made.Count) {   # no stamp, or nothing readable in it
-        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text 'No record of what made the theme' @fix
-    }
-    $active = Resolve-ActivePaletteProfile
-    $label = Get-PaletteProfileLabel -Id $active.Id -Name $active.Profile.name
-    $now = Get-PaletteThemeInputs -ProfileId $active.Id
-    $what = @(
-        $madeProfile = @($made.Keys | Where-Object { $_ -like 'profile:*' }) | Select-Object -First 1
-        $nowProfile = "profile:$($active.Id)"
-        if (-not $madeProfile) { 'made before palette profiles' }
-        elseif ($madeProfile -ne $nowProfile) {
-            $was = $madeProfile.Substring(8)
-            $wasLabel = if ($was -in $script:PaletteProfileIds) { Get-PaletteProfileLabel -Id $was } else { $was }
-            "made with $wasLabel -- $label is chosen now"
-        } elseif ($made[$madeProfile] -ne $now[$nowProfile]) { "$label has changed since" }
-        foreach ($rel in $now.Keys) {
-            if ($rel -like 'profile:*') { continue }
-            $leaf = Split-Path -Leaf $rel
-            if (-not $made.Contains($rel)) { "new: $leaf" }
-            elseif ($made[$rel] -ne $now[$rel]) { "$leaf changed" }
-        }
-        foreach ($rel in $made.Keys) { if ($rel -notlike 'profile:*' -and -not $now.Contains($rel)) { "gone: $(Split-Path -Leaf $rel)" } }
-    )
-    if ($what.Count) {
-        return New-DoctorResult -Id 'theme-inputs' -Status 'XX' -Text "Theme isn't what the repo and $label make now" -Detail $what @fix
-    }
-    New-DoctorResult -Id 'theme-inputs' -Status 'OK' -Text "Theme made from the current files, with $label"
-}
-
-function Test-DoctorPaletteLastRun {
-    # How the last theme run went (palette-status.json, written by the pipeline). A wallust
-    # failure leaves the old theme on screen by design -- this is where it says so, next to the
-    # toast 710.ahk showed at the time. Nothing to fix by command for a wallpaper wallust can't
-    # read, so it's [!!]; a target that failed is also why the stamp above says [XX].
-    $s = Get-PaletteStatus
-    if (-not $s) { return }
-    $when = try { $t = [datetime]::Parse("$($s.time)"); if ($t.Date -eq (Get-Date).Date) { $t.ToString('HH:mm') } else { $t.ToString('yyyy-MM-dd HH:mm') } } catch { "$($s.time)" }
-    $who = ''
-    if ("$($s.profile)" -in $script:PaletteProfileIds) {
-        $name = try { (Read-PaletteProfile -Id "$($s.profile)").name } catch { '' }
-        $who = Get-PaletteProfileLabel -Id "$($s.profile)" -Name $name
-    }
-    if ($s.ok) { return New-DoctorResult -Id 'palette-last' -Status 'OK' -Text "Last theme run: $when$(if ($who) { ", $who" })" }
-    $detail = @("$(ConvertTo-SafeText "$($s.reason)")")
-    if ($s.image) { $detail = @("wallpaper: $($s.image)") + $detail }
-    if ("$($s.stage)" -eq 'targets') {
-        return New-DoctorResult -Id 'palette-last' -Status '!!' -Text "The last theme run ($when) didn't apply everything" -Detail $detail -Fix '710sRice install -Only palette'
-    }
-    New-DoctorResult -Id 'palette-last' -Status '!!' -Text "The last theme run ($when) couldn't make a palette -- the theme on screen is from before it" `
-        -Detail $detail -Fix 'pick another wallpaper (SUPER+W), or another palette source (SUPER+Alt+Space > Palette profiles)'
-}
-
 # --- f. Integrations -----------------------------------------------------------------------------
 # The apps the stack leans on, set up the way install sets them up: Flow and Everything (file
 # search), the $PROFILE hook, and -- on a full-time machine -- the Windows settings -Activate
 # applies. (Windows Terminal and Defender's exclusions: their components. The $PROFILE hook:
-# tools\steps\profile.ps1.)
-
-function Test-DoctorFlowTheme {
-    # Flow on the palette's theme (tools\palette\targets\flow.ps1): selected in its settings and
-    # the file there. Skipped when the chosen profile switches Flow off, or Flow has never run
-    # (the line above says so). Picking another theme in Flow's own settings reads as [XX] here:
-    # the palette re-selects its own on every wallpaper change -- switch Flow off in the profile
-    # to keep one of yours.
-    $active = Resolve-ActivePaletteProfile
-    if ('flow' -in $active.Profile.off) {
-        return New-DoctorResult -Id 'flow-theme' -Status '..' -Text "Flow Launcher's colours: off in $(Get-PaletteProfileLabel -Id $active.Id -Name $active.Profile.name)"
-    }
-    $settingsPath = Join-Path $env:APPDATA 'FlowLauncher\Settings\Settings.json'
-    if (-not (Test-Path -LiteralPath $settingsPath)) { return }
-    $theme = "$(([IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json -AsHashtable)['Theme'])"
-    $file = Test-Path -LiteralPath (Join-Path $env:APPDATA 'FlowLauncher\Themes\710sRice.xaml')
-    if ($theme -eq '710sRice' -and $file) { return New-DoctorResult -Id 'flow-theme' -Status 'OK' -Text 'Flow Launcher themed (710sRice)' }
-    $why = if ($theme -ne '710sRice') { "it's on '$(if ($theme) { $theme } else { "Flow's default" })'" } else { '710sRice.xaml is missing' }
-    New-DoctorResult -Id 'flow-theme' -Status 'XX' -Text "Flow Launcher isn't on the palette's theme ($why)" -Fix '710sRice install -Only palette' -Step 'palette'
-}
+# tools\steps\profile.ps1. Flow's theme: tools\steps\theme.ps1.)
 
 # --- g. Conflicts and leftovers --------------------------------------------------------------------
 
