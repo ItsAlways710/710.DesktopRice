@@ -99,3 +99,7 @@ stack and built its own install, doctor and theming on top.
   columns two wide, scrolling sideways.
 - [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) shaped the Default
   palette: its look led to wallust's `kmeans`.
+
+---
+
+[← The manual](README.md)

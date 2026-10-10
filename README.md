@@ -8,6 +8,8 @@ A keyboard-first tiling desktop for Windows 11, themed from your wallpaper.
 
 https://github.com/user-attachments/assets/2cc17210-5323-44c0-bbde-60404939db0f
 
+*52 seconds, no sound: each caption names the key being pressed and what it does.*
+
 <a href="https://youtu.be/bE3JAw-zL8U"><img src="docs/images/youtube-link.jpg" width="420" alt="Full tour on YouTube, 2 minutes 38: the default wallpaper under the bar, with a play button"></a>
 
 Hey, thanks for dropping by. I mod Skyrim sometimes, but my day job is in tech. At home I have an older laptop running [Niri](https://github.com/YaLTeR/niri) + [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell), and I LOVE it. I wanted something like that on the Windows machines I daily drive, so I found ricing (komorebi, YASB, AutoHotkey, Flow Launcher), was pretty daunted by it all, and somehow found my way to [Winarchy](https://github.com/guidonaselli/winarchy).
@@ -40,7 +42,7 @@ that take the theme's colors.
 <p align="center"><img src="docs/images/bar-islands.webp" alt="The bar's three islands up close, stacked: home menu, screens, layout (Scrolling), workspace 1 and the window title; the clock and the weather; the tray, CPU, network, battery, wallpaper and settings"></p>
 
 **The menus.** <kbd>SUPER</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> opens the main menu (apps,
-capture, tiling, screens, palette profiles, game mode, doctor); <kbd>SUPER</kbd>+<kbd>K</kbd>
+capture, tiling, screens, palette profiles, game mode, stay awake, doctor); <kbd>SUPER</kbd>+<kbd>K</kbd>
 lists every key. Every menu is searchable: start typing.
 
 <img src="docs/images/menu-main.webp" width="49%" alt="The main menu: Apps, Files, Capture, Tiling, Screens, Palette profiles, Keybindings, Game mode, Stay awake, Reload stack, Doctor, System and Quit 710sRice, with their keys"> <img src="docs/images/keys.webp" width="49%" alt="SUPER+K's key list, searchable, under Windows: close window, wallpaper gallery, monocle, float or tile, pause tiling, reload, restart and more">

@@ -15,6 +15,7 @@ Throughout the manual, **SUPER** means the Windows key.
 | SUPER+S | Flow, file search |
 | SUPER+Alt+Space | Main menu: apps, capture, tiling, palette profiles, game mode, reload, quit |
 | SUPER+Esc | Power menu: lock, sleep, restart, shut down... |
+| SUPER+Ctrl+W | Stay awake: keeps the machine and its screen from sleeping until you press it again (a toast says on or off). It stays on through a restart of 710sRice, and only works while 710sRice is running |
 | SUPER+K | This hotkey list |
 | SUPER+Q | Close the window (instead of Windows' search; Win+X stays Windows' own menu) |
 | SUPER+W | Wallpaper gallery |
@@ -55,3 +56,7 @@ has six of them as buttons (see [The bar](desktop.md#the-bar)).
 The **Main Menu** entry at the top of the bar's home menu (the icon at the far left) opens
 the same menu as SUPER+Alt+Space. Every menu is searchable: start typing, use the arrow
 keys, Esc to go back.
+
+---
+
+[← The manual](README.md) · Next: [Screens, workspaces and the bar](desktop.md)

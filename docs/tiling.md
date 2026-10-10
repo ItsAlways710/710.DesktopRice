@@ -102,3 +102,7 @@ personal machine where you're the only user that's a small step, since UAC isn't
 security boundary to begin with, but on a shared or work-connected machine use
 `710sRice tiling normal`. komorebi's author also describes running it elevated as "not well
 tested", so if something odd shows up around admin windows, that's the first thing to try.
+
+---
+
+[← The manual](README.md) · Next: [Make it yours](customizing.md)

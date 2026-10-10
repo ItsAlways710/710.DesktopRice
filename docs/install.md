@@ -276,7 +276,9 @@ defaults. The installer saves each one the first time it changes it (the taskbar
 settings when a machine goes full-time). The one exception: an install made full-time before
 `710sRice activate` existed has no saved taskbar and Windows settings, so uninstall deletes
 those values instead, which hands each back to Windows' own default. On an on-demand machine
-uninstall leaves them alone: 710sRice never changed them there.
+uninstall leaves them alone: 710sRice never changed them there. One more exception: komorebi's and
+YASB's config variables (`KOMOREBI_CONFIG_HOME`, `YASB_CONFIG_HOME`) are taken off, not put back
+to values you had before install. Saving and restoring them is planned for a future update.
 
 Packages: anything the installer added is removed, except two kinds of row in
 [versions.md](../versions.md):
@@ -312,3 +314,7 @@ and the rest of what it kept there.
 It doesn't delete the repo folder or your personal files (`user.ahk`, `user.ps1`,
 `rules.local.toml` with your rules, games and pins, your palette profiles and scheme files).
 Delete the folder yourself if you're done with it.
+
+---
+
+[← The manual](README.md) · Next: [The 710sRice command](command.md)

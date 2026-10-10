@@ -70,3 +70,7 @@ way it already does (full-time or on demand). It doesn't take any other switch. 
 
 `710sRice install -?` lists the steps too. `710sRice doctor -repair` runs them for whatever
 doctor finds, never `theme`.
+
+---
+
+[← The manual](README.md) · Next: [Keys and menus](keys-and-menus.md)

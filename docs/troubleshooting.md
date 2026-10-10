@@ -40,3 +40,7 @@
   the screen numbers, so it isn't enough). Your own files stay -- `user.ahk`, `user.ps1`,
   `rules.local.toml`, your palette profiles: if the trouble is in one of them, move it to another
   folder, `710sRice restart`, and see.
+
+---
+
+[← The manual](README.md) · Next: [Under the hood](under-the-hood.md)

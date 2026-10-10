@@ -77,3 +77,7 @@ unplugged screen's workspaces and windows wait for it, and come back with it, pi
 - **Tray:** ShareX's icon is hidden here and Everything has none (see
   [What install always does](install.md#what-install-always-does)). YASB's own tray icon is off too;
   `710sRice restart` (SUPER+Ctrl+R) restarts the bar.
+
+---
+
+[← The manual](README.md) · Next: [Wallpapers and theming](theming.md)

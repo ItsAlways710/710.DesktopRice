@@ -97,3 +97,7 @@ ones the profile in use makes, and names the fix when they aren't.
 
 Theming another app takes one small file; `tools/palette/targets/README.md` explains how,
 with Flow Launcher as the example.
+
+---
+
+[← The manual](README.md) · Next: [Tiling: app rules and admin windows](tiling.md)

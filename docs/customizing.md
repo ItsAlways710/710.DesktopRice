@@ -36,3 +36,7 @@ These files are yours alone. Git ignores them, so neither `710sRice update` nor 
   doctor parts ([its README](../tools/components/README.md)).
 - **What lives where:** [Map: what lives where](map.md) says which file owns each piece, and
   the rules for changing the code.
+
+---
+
+[← The manual](README.md) · Next: [Troubleshooting](troubleshooting.md)
