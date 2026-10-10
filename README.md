@@ -20,11 +20,16 @@ But I knew there was more. So the palette profile was born, and to me it's one o
 
 **Palette profiles.** Change the wallpaper with <kbd>SUPER</kbd>+<kbd>W</kbd> and everything
 recolors to match: the bar, window borders, the Windows accent, Windows Terminal and the prompt,
-the menus, Flow Launcher and the lock screen. A palette profile decides how those colors are made
-and which goes where. Default ships with it; make up to ten of your own in the editor, from the
-wallpaper, from about 600 built-in themes, or a random one each time.
+the menus, Flow Launcher and the lock screen. [A palette profile](docs/theming.md#palette-profiles) decides how those colors
+are made and which goes where. Default ships with it; make up to ten of your own in
+[the editor](docs/theming.md#palette-profiles), from the wallpaper, from about 600 built-in themes, or a random one each
+time.
 
 ![The same desktop and wallpaper in thirds, under three palette profiles: Default (dark purple), Random (a dark theme it rolled, with a purple title bar) and Light (pale pink windows, red bar accents)](docs/images/profiles-three.webp)
+
+Each one is a profile you can make in the editor, with a live preview of every app it themes:
+
+![The palette profile editor on Default, which is in use. Left: Name, then Color source (Wallpaper picked, with kmeans, saturation boost 20) and the 16-color palette it made from the default wallpaper. Right: the preview of the bar, menus, Flow Launcher, Terminal and the prompt, and window borders, all in the profile's colors.](docs/images/editor-top.webp)
 
 **The bar.** Workspaces, the layout, the window title, the clock and weather, a taskbar drawer,
 system info, Wi-Fi and Bluetooth, a capture drawer and the wallpaper gallery, in three islands
@@ -306,6 +311,25 @@ Terminal reads the font list when it starts: close every Terminal window and ope
 More: [Troubleshooting](docs/troubleshooting.md). Found a bug?
 [Open an issue](https://github.com/ItsAlways710/710.DesktopRice/issues/new/choose); the form asks
 for doctor's output.
+
+## The manual
+
+Everything above in depth, and everything the front page leaves out ([the index](docs/README.md)):
+
+| Chapter | Inside |
+| --- | --- |
+| [Install](docs/install.md) | [Requirements](docs/install.md#requirements) · [Three ways to run it](docs/install.md#three-ways-to-run-it) · [What install always does](docs/install.md#what-install-always-does) · [Full-time](docs/install.md#full-time--activate) · [On demand](docs/install.md#on-demand) · [Switching](docs/install.md#switching-activate--deactivate) · [Updating](docs/install.md#updating) · [Run on demand](docs/install.md#run-on-demand) · [Uninstall](docs/install.md#uninstall) |
+| [The 710sRice command](docs/command.md) | Every command and its options · [Install steps](docs/command.md#install-steps) |
+| [Keys and menus](docs/keys-and-menus.md) | [Hotkeys](docs/keys-and-menus.md#hotkeys), the capture keys, the menus |
+| [Screens, workspaces and the bar](docs/desktop.md) | [Screens and workspaces](docs/desktop.md#screens-and-workspaces) · [The bar](docs/desktop.md#the-bar) |
+| [Wallpapers and theming](docs/theming.md) | The wallpaper gallery and your own folders · [Palette profiles](docs/theming.md#palette-profiles) and the editor |
+| [Tiling](docs/tiling.md) | [App rules](docs/tiling.md#app-rules) · [Adding a rule](docs/tiling.md#adding-a-rule) · [Removing and editing rules](docs/tiling.md#removing-and-editing-rules) · [Admin windows](docs/tiling.md#admin-windows) |
+| [Make it yours](docs/customizing.md) | Your own files · [Forking it, or changing what it installs](docs/customizing.md#forking-it-or-changing-what-it-installs) |
+| [Troubleshooting](docs/troubleshooting.md) | [Tips and known issues](docs/troubleshooting.md#tips-and-known-issues) |
+| [Under the hood](docs/under-the-hood.md) | [What starts what](docs/under-the-hood.md#what-starts-what) · [AutoHotkey with UI Access](docs/under-the-hood.md#autohotkey-with-ui-access) · [Rules](docs/under-the-hood.md#rules-compiled-from-four-layers) · [Pins](docs/under-the-hood.md#pins) · [What uninstall puts back](docs/under-the-hood.md#what-uninstall-puts-back) · [Why these tools](docs/under-the-hood.md#why-these-tools) · [Influences](docs/under-the-hood.md#influences) |
+
+For reference: [Windows settings changed by -Activate](docs/activate-windows-settings.md) ·
+[Map: what lives where](docs/map.md) · [versions.md](versions.md)
 
 ## Credits and License
 
