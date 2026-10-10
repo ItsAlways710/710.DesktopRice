@@ -215,7 +215,7 @@ settings, the bar's config, `710.ahk` and the theme templates. Whatever install 
 changed since goes back too -- Windows Terminal's font and default shell, Flow's preferences, full
 time's Windows settings, a sign-in task someone disabled: doctor marks each one `[XX]`. Update won't pull over your own edits to tracked files
 (those belong in `user.ahk`, `rules.local.toml` or `user.ps1` -- see
-[Make it yours](../README.md#make-it-yours)), and if your copy and GitHub have both moved, it tells you
+[Make it yours](customizing.md)), and if your copy and GitHub have both moved, it tells you
 what to run instead. Nothing new? It says so and runs a health check.
 
 There's no separate update checker, by design: `710sRice doctor` tells you when GitHub has a

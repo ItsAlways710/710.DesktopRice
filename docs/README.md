@@ -10,8 +10,9 @@ means the Windows key.
 4. [Screens, workspaces and the bar](desktop.md)
 5. [Wallpapers and theming](theming.md): the wallpaper gallery, palette profiles and their editor
 6. [Tiling: app rules and admin windows](tiling.md): rules, games, pins, and komorebi elevated
-7. [Troubleshooting](troubleshooting.md): tips and known issues
-8. [Under the hood](under-the-hood.md): how it's put together, and why
+7. [Make it yours](customizing.md): the files that are yours alone, and forking it
+8. [Troubleshooting](troubleshooting.md): tips and known issues
+9. [Under the hood](under-the-hood.md): how it's put together, and why
 
 For reference:
 

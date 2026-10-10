@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in 710.DesktopRice doesn't work the way the README or the manual says.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Doctor's report usually says most of what's needed, so it comes first.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: 710sRice doctor's output
+      description: |
+        From a PowerShell 7 window: `710sRice doctor`, then paste everything it prints.
+        It prints no user names or personal paths, but give it a look before you post.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: "From a PowerShell 7 window: `Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' | Select-Object DisplayVersion, CurrentBuild` (or winver)"
+      placeholder: "25H2, build 26200"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How it runs
+      options:
+        - On demand
+        - Full-time
+        - Full-time, komorebi not elevated
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, a log from `710sRice logs`, or anything you tried already.
