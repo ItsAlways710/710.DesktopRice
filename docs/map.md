@@ -21,6 +21,9 @@ adds a module or adds a check updates this file in the same commit.
   single-purpose script otherwise.
 - **A change existing installs need ships as a doctor check with its fix**, never a migration
   script: repair, and so `710sRice update`, applies it.
+- **The docs change with the code, in the same commit.** A change that alters what the README or
+  a manual chapter in `docs/` says updates that text; one that alters what a picture in
+  `docs/images/` shows retakes that picture. `docs/README.md` lists the chapters.
 
 ## How it runs
 

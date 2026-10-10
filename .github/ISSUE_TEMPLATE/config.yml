@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Run 710sRice doctor first
+    url: https://github.com/ItsAlways710/710.DesktopRice/blob/master/README.md#troubleshooting
+    about: "`710sRice doctor` names the fix for most problems, and `710sRice doctor -repair` runs it."
+  - name: The manual
+    url: https://github.com/ItsAlways710/710.DesktopRice/blob/master/docs/README.md
+    about: Install, every command, keys and menus, theming, tiling, troubleshooting, and how it's built.
