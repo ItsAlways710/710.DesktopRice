@@ -25,7 +25,10 @@ bars:
   primary-bar:
     enabled: true
     style: "adaptive"
-    style_adaptive_exclude: ["wallpapers", "systray"]
+    # systray stays IN the island: excluded, it hung off the right group's inner end as its own
+    # square-cornered box (.systray paints a background), out of step with the island's curves
+    # and border (Okinami's exclude list, carried over; fixed 2026-10-10).
+    style_adaptive_exclude: ["wallpapers"]
     screens:
     - '*'
     class_name: yasb-bar
