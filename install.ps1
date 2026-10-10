@@ -105,7 +105,7 @@
   only changes when one of those switches is passed; uninstall forgets it. Registering
   an elevated task needs an admin shell. An install without -Activate registers every
   component's task with no sign-in trigger, so Start-All.ps1 starts them the same way.
-  Security trade-off: see the README.
+  Security trade-off: see docs\tiling.md (Admin windows).
 
 .EXAMPLE
   .\install.ps1                # install/update everything this repo owns

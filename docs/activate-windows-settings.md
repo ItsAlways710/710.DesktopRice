@@ -1,7 +1,7 @@
 # Windows settings changed by -Activate
 
-[`710sRice activate`](../README.md#switching-activate--deactivate) and
-[`710sRice install -Activate`](../README.md#full-time--activate) turn these off. All of them
+[`710sRice activate`](install.md#switching-activate--deactivate) and
+[`710sRice install -Activate`](install.md#full-time--activate) turn these off. All of them
 are under `HKEY_CURRENT_USER`, so they affect only your account and need no admin rights.
 
 Before changing them, going full-time saves each one as it was (whether it existed, and its
@@ -20,7 +20,7 @@ uninstall leaves them alone.
 | `Software\Microsoft\Windows\CurrentVersion\SearchSettings` | `IsAADCloudSearchEnabled` | 0 | Work/school cloud results in search |
 | `Software\Microsoft\Windows\CurrentVersion\SearchSettings` | `IsMSACloudSearchEnabled` | 0 | Microsoft account cloud results in search |
 | `Software\Policies\Microsoft\Windows\Explorer` | `DisableSearchBoxSuggestions` | 1 | Web suggestions in the search box |
-| `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `TaskbarDa` | 0 | Widgets button (Windows may refuse this one; see [Tips](../README.md#tips-and-known-issues)) |
+| `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `TaskbarDa` | 0 | Widgets button (Windows may refuse this one; see [Tips](troubleshooting.md#tips-and-known-issues)) |
 | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `TaskbarMn` | 0 | Chat/Teams button |
 | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `ShowTaskViewButton` | 0 | Task View button |
 | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `ShowCopilotButton` | 0 | Copilot button |
