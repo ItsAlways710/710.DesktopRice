@@ -257,10 +257,10 @@ PalRefresh(sel := 0) {
             if !sel
                 break
         }
-    crumb := StrUpper(Pal.title)
-    for lvl in Pal.stack
-        crumb := StrUpper(lvl.title) ' ' Chr(0x203A) ' ' crumb
-    Pal.crumb.Text := crumb
+    crumb := ''                          ; outermost first: 710SRICE > SCREENS > DISPLAY 1 (MAIN)
+    for lvl in Pal.stack                 ; (prepending each level ran three or more backwards)
+        crumb .= StrUpper(lvl.title) ' ' Chr(0x203A) ' '
+    Pal.crumb.Text := crumb StrUpper(Pal.title)
     found := 0
     for e in list
         found += !e.HasOwnProp('header')
