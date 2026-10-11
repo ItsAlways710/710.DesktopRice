@@ -1,9 +1,11 @@
 <#
 .SYNOPSIS
   install's envvars step: KOMOREBI_CONFIG_HOME, YASB_CONFIG_HOME and DESKTOPRICE_HOME (User scope)
-  pointing at this clone, and the old weather widget's two variables gone; what uninstall puts
-  back (section 4: the three, where they still point here -- the old weather ones go there too);
-  doctor's envvars and weather lines. Loaded by tools\lib\activation.ps1. Only functions.
+  pointing at this clone -- the first two copied once beforehand, as you had them -- and the old
+  weather widget's two variables gone; what uninstall puts back (section 4: the first two from
+  that copy, DESKTOPRICE_HOME off, each only where it still points here -- the old weather ones
+  go there too); doctor's envvars and weather lines. Loaded by tools\lib\activation.ps1. Only
+  functions.
 #>
 
 # --- install's step -------------------------------------------------------------------------------
@@ -12,6 +14,7 @@ function Install-EnvVarsStep {
     Write-Host "`n-- Config environment variables --" -ForegroundColor Cyan
     $komorebiConfigHome = Join-Path $Root 'config\komorebi'
     $yasbConfigHome     = Join-Path $Root 'config\yasb'
+    Save-ConfigEnvVarsOriginal          # yours, before they first point here: uninstall puts them back
     [Environment]::SetEnvironmentVariable('KOMOREBI_CONFIG_HOME', $komorebiConfigHome, 'User')
     [Environment]::SetEnvironmentVariable('YASB_CONFIG_HOME', $yasbConfigHome, 'User')
     # The repo root. config\yasb\config.yaml builds every path it needs from this through
@@ -36,25 +39,86 @@ function Install-EnvVarsStep {
     }
 }
 
+# --- The copy uninstall puts back ---------------------------------------------------------------
+# KOMOREBI_CONFIG_HOME and YASB_CONFIG_HOME are komorebi's and YASB's own variables: you may have
+# pointed them at configs of your own before 710sRice. Install copies them, once, before it first
+# points them here (original-state\config-envvars.json; Save-OriginalState never overwrites a copy
+# it has), and uninstall puts them back from it. One already pointing at this clone isn't copied:
+# that's an install's own value, not yours. So an install from before the copy existed has none,
+# and its uninstall takes the two off, as uninstall always did.
+function Get-ConfigEnvVarHomes {
+    [ordered]@{ KOMOREBI_CONFIG_HOME = Join-Path $Root 'config\komorebi'; YASB_CONFIG_HOME = Join-Path $Root 'config\yasb' }
+}
+
+function Get-UserEnvVarAsStored {
+    # One user variable exactly as registered: %VARS% unexpanded, and its type (String or
+    # ExpandString), the way the user PATH is read (tools\lib\userenv.ps1). $null when it isn't
+    # set -- empty counts as not set, as it does for doctor.
+    param([Parameter(Mandatory)][string]$Name)
+    $key = Get-Item -LiteralPath 'HKCU:\Environment' -ErrorAction SilentlyContinue
+    if (-not $key -or -not "$($key.GetValue($Name))") { return $null }
+    [ordered]@{ Value = $key.GetValue($Name, $null, 'DoNotExpandEnvironmentNames'); Kind = "$($key.GetValueKind($Name))" }
+}
+
+function Save-ConfigEnvVarsOriginal {
+    # install's envvars step, before it points the two here. A variable that wasn't set is copied
+    # as that (Existed = false): uninstall then takes it off.
+    if (Get-OriginalState -Label 'config-envvars') { return }       # copied once already
+    $copy = [ordered]@{}
+    foreach ($e in (Get-ConfigEnvVarHomes).GetEnumerator()) {
+        $now = Get-UserEnvVarAsStored $e.Key
+        if (-not $now) { $copy[$e.Key] = [ordered]@{ Existed = $false }; continue }
+        if (Test-SamePathEntry $now.Value $e.Value) { continue }     # already here: not yours
+        $copy[$e.Key] = [ordered]@{ Existed = $true; Value = $now.Value; Kind = $now.Kind }
+        Step-Info "$($e.Key) was $(ConvertTo-SafePath $now.Value) -- uninstall puts it back"
+    }
+    if ($copy.Count) { Save-OriginalState -Label 'config-envvars' -Data $copy }
+}
+
 # --- Uninstall's part (section 4) ---------------------------------------------------------------
 function Undo-ConfigEnvVars {
-    # uninstall, section 4: KOMOREBI_CONFIG_HOME, YASB_CONFIG_HOME and DESKTOPRICE_HOME taken off,
-    # each only while it still points at this clone.
-    $komorebiConfigHome = Join-Path $Root 'config\komorebi'
-    $yasbConfigHome     = Join-Path $Root 'config\yasb'
-    # Only clear a var if it's still pointing at THIS repo -- if something else (a
-    # newer winarchy run, a manual edit) already moved it elsewhere, that's not this
-    # script's to touch. Matches the "last write wins, don't clobber a later write"
-    # posture install.ps1's own NOTES already accept for these shared vars.
-    if ([Environment]::GetEnvironmentVariable('KOMOREBI_CONFIG_HOME', 'User') -eq $komorebiConfigHome) {
-        [Environment]::SetEnvironmentVariable('KOMOREBI_CONFIG_HOME', $null, 'User')
-    }
-    if ([Environment]::GetEnvironmentVariable('YASB_CONFIG_HOME', 'User') -eq $yasbConfigHome) {
-        [Environment]::SetEnvironmentVariable('YASB_CONFIG_HOME', $null, 'User')
+    # uninstall, section 4; -DryRun only says what it would do. Each config variable still pointing
+    # at this clone goes back to install's copy, or comes off: it wasn't set before install, or this
+    # install is older than the copy. One that points somewhere else now isn't 710sRice's to touch
+    # (a newer winarchy run, a manual edit moved it) and is left alone. DESKTOPRICE_HOME is
+    # 710sRice's own: it comes off while it still points here. The copy goes once used, so a later
+    # install copies afresh.
+    param([switch]$DryRun)
+    $copy = Get-OriginalState -Label 'config-envvars'
+    $said = 0; $putBack = 0
+    foreach ($e in (Get-ConfigEnvVarHomes).GetEnumerator()) {
+        $name = $e.Key
+        $now = Get-UserEnvVar $name
+        if (-not $now) { continue }
+        $said++
+        if (-not (Test-SamePathEntry $now $e.Value)) {
+            if ($DryRun) { Write-Host "  [ ] Leave $name alone: it points somewhere else now" }
+            else { Step-Info "$name left alone: it points somewhere else now" }
+            continue
+        }
+        $was = if ($copy) { $copy[$name] } else { $null }
+        if ($was -and $was.Existed) {
+            $shown = ConvertTo-SafePath $was.Value
+            if ($DryRun) { Write-Host "  [ ] Put $name back: $shown"; continue }
+            $kind = if ($was.Kind -eq 'ExpandString') { 'ExpandString' } else { 'String' }
+            Set-ItemProperty -LiteralPath 'HKCU:\Environment' -Name $name -Value $was.Value -Type $kind
+            Step-Ok "$name put back: $shown"; $putBack++
+            continue
+        }
+        $why = if ($was) { "it wasn't set before install" } else { 'installed before 710sRice kept a copy of it' }
+        if ($DryRun) { Write-Host "  [ ] Take $name off ($why)"; continue }
+        Remove-UserEnvVar $name
+        Step-Ok "$name taken off ($why)"
     }
     if ([Environment]::GetEnvironmentVariable('DESKTOPRICE_HOME', 'User') -eq $Root) {
-        [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $null, 'User')
+        $said++
+        if ($DryRun) { Write-Host '  [ ] Take DESKTOPRICE_HOME off' }
+        else { [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $null, 'User'); Step-Ok 'DESKTOPRICE_HOME taken off' }
     }
+    if (-not $said) { Step-Info 'No config variable points at this clone: nothing to put back' }
+    if ($DryRun) { return }
+    Remove-OriginalState -Label 'config-envvars'
+    if ($putBack) { Send-SettingChangeBroadcast -Area 'Environment' }   # Set-ItemProperty sends none
 }
 
 # --- Doctor's checks: the envvars and weather lines in Repo and command ---------------------------

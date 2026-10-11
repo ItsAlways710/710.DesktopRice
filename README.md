@@ -123,9 +123,10 @@ On a work-managed machine, komorebi says so itself with a pop-up.
 - **komorebi, YASB, AutoHotkey, Flow Launcher:** the installer uses the copy you have (one older
   than its pin is moved up to it) and points komorebi and YASB at this repo's config through
   `KOMOREBI_CONFIG_HOME` and `YASB_CONFIG_HOME`. Your own config files stay on disk, unused.
-  A plain uninstall removes these packages, yours included (`-Keep` keeps one), and takes the two
-  variables off rather than putting back values you had set. Saving and restoring them is
-  planned for a future update.
+  A plain uninstall removes these packages, yours included (`-Keep` keeps one), and puts the two
+  variables back as you had them before install (install keeps a copy). An install from before
+  that copy existed has none, so its uninstall takes them off instead
+  (`710sRice uninstall -DryRun` says which).
 - **GlazeWM, Seelen UI, whkd:** two window or hotkey managers fight over the same windows and
   keys. Stop the other one and its autostart; `710sRice doctor` flags any of the three it finds
   running.

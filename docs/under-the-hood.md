@@ -63,13 +63,13 @@ your `rules.local.toml`.
 ## What uninstall puts back
 
 Before install changes something that was already there (your wallpaper, lock screen, accent
-color, Windows Terminal's settings, Flow Launcher's, ShareX's and Everything's settings, your
-PowerShell profile, Defender exclusions), it saves how it was, once, to
-`%LOCALAPPDATA%\710.DesktopRice\original-state\`. A second install, or a wallpaper change, never
-overwrites that copy with what is by then 710sRice's own state. Going full-time saves your
-taskbar and Windows settings the same way. Uninstall puts each one back from its copy and
-deletes the copy, so a later install starts fresh. It doesn't track changes you make after
-install: it puts back what was there before 710sRice, and leaves alone what 710sRice never
+color, Windows Terminal's settings, Flow Launcher's, ShareX's and Everything's settings,
+komorebi's and YASB's config variables, your PowerShell profile, Defender exclusions), it saves
+how it was, once, to `%LOCALAPPDATA%\710.DesktopRice\original-state\`. A second install, or a
+wallpaper change, never overwrites that copy with what is by then 710sRice's own state. Going
+full-time saves your taskbar and Windows settings the same way. Uninstall puts each one back from
+its copy and deletes the copy, so a later install starts fresh. It doesn't track changes you make
+after install: it puts back what was there before 710sRice, and leaves alone what 710sRice never
 changed. Packages go by [versions.md](../versions.md)'s Pre-existing? column
 ([Uninstall](install.md#uninstall)).
 

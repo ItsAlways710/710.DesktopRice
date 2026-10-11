@@ -208,7 +208,7 @@ if ($componentReverts.Count) {
 
 # --- 4. Revert env vars -------------------------------------------------------------
 Write-Host "`n-- Config environment variables --" -ForegroundColor Cyan
-Invoke-Step "Revert KOMOREBI_CONFIG_HOME / YASB_CONFIG_HOME / DESKTOPRICE_HOME (User scope, only where still pointing at this repo)" { Undo-ConfigEnvVars } 'Env vars reverted'
+try { Undo-ConfigEnvVars -DryRun:$DryRun } catch { Step-Warn "Config environment variables: $($_.Exception.Message)" }
 # The old weather widget's variables (Group 1 #1: unused since the bar's weather moved to
 # Open-Meteo) -- install's envvars step removes them too; whatever is still there goes.
 $oldWeather = @('YASB_WEATHER_API_KEY', 'YASB_WEATHER_LOCATION' | Where-Object { Get-UserEnvVar $_ })

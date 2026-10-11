@@ -270,15 +270,17 @@ From a PowerShell 7 window:
 This is a real uninstall: it stops everything, removes the Scheduled Tasks and the Start-menu
 commands, and puts back what was there before. Your original wallpaper, lock screen, accent color, Windows Terminal
 colors, font and default shell, Flow Launcher settings (its own startup setting and fonts included) and
-theme, ShareX's and Everything's settings (their update checks and tray icons, ShareX's own startup), taskbar,
+theme, ShareX's and Everything's settings (their update checks and tray icons, ShareX's own startup),
+komorebi's and YASB's config variables (`KOMOREBI_CONFIG_HOME`, `YASB_CONFIG_HOME`), taskbar,
 Windows settings, PowerShell profile and Defender exclusions are restored, not reset to
 defaults. The installer saves each one the first time it changes it (the taskbar and Windows
 settings when a machine goes full-time). The one exception: an install made full-time before
 `710sRice activate` existed has no saved taskbar and Windows settings, so uninstall deletes
 those values instead, which hands each back to Windows' own default. On an on-demand machine
-uninstall leaves them alone: 710sRice never changed them there. One more exception: komorebi's and
-YASB's config variables (`KOMOREBI_CONFIG_HOME`, `YASB_CONFIG_HOME`) are taken off, not put back
-to values you had before install. Saving and restoring them is planned for a future update.
+uninstall leaves them alone: 710sRice never changed them there. One more exception: an install
+that pointed komorebi's and YASB's config variables here before the installer saved them has no
+copy of them, so uninstall takes them off (`710sRice uninstall -DryRun` says which). Either one
+you've pointed somewhere else since install is left alone.
 
 Packages: anything the installer added is removed, except two kinds of row in
 [versions.md](../versions.md):
