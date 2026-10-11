@@ -17,13 +17,14 @@ layers, lowest to highest priority, and SUPER+Shift+R compiles them into komoreb
    and ShareX alone, so ShareX's editor and settings, and Flow's settings window, open as
    ordinary windows instead of being tiled.
 4. `config/komorebi/rules.local.toml`: **your** rules, for this machine only (git ignores
-   it), your games and your pins included. They win over everything above. Want a rule on
-   every machine? Move it into `rules.toml` (a game into `games.toml`) and commit it. Pins
-   stay here: they name this machine's screens.
+   it), your games, your pins and the shipped rules you turned off included. They win over
+   everything above. Want a rule on every machine? Move it into `rules.toml` (a game into
+   `games.toml`) and commit it. Pins stay here: they name this machine's screens.
 
-One limit: for the "extra behavior" rule types (Layered, Opaque and a few others), every
-layer's rules are added together, so your file can add them but can't cancel a shipped
-one. Edit `rules.toml` for that.
+Your rules win where a window can only go one way (float, ignore, manage). For the "extra
+behavior" rule types (Layered, Opaque and a few others), every layer's rules are added
+together, so a rule of yours can't outvote a shipped one, and a game in `games.toml` is always
+left alone. To switch one of those off on this machine, [turn it off](#turning-off-a-shipped-rule).
 
 ### Adding a rule
 
@@ -65,17 +66,35 @@ About pins:
   `[[pin]]` block with `exe = "chrome.exe"`, `screen = 2` and `workspace = 3`; a game is a
   `[[game]]` block with its `exe`.
 
+### Turning off a shipped rule
+
+**SUPER+Alt+Space → Tiling → Turn off a shipped rule...**, click the window. It lists the
+rules this repo ships (the community rules, `games.toml` and `rules.toml`) that komorebi
+matches to that window, each with what it does and where it comes from, for example
+`Layered · exe = steam.exe` from `ASC: Steam`, or `Game · exe = steam.exe` from `games.toml`.
+Pick one and confirm. It's off on this machine only: it's kept in your `rules.local.toml` as
+an `[[off]]` block, so `710sRice update` never touches it. komorebi restarts to drop the rule
+(windows already open behave as after removing a rule, below), and a game you turn off also
+stops counting for game mode.
+
+To turn it back on, **Tiling → Remove a rule...** lists it as `Turned off · ...`: remove that.
+If an update changes or drops the shipped rule, your `[[off]]` no longer matches anything; the
+compile says so, and `710sRice doctor` lists it under "komorebi.json compiles, with warnings".
+Remove it the same way.
+
 ### Removing and editing rules
 
-- **Tiling → Remove a rule...** lists your rules, games and pins; pick one and confirm.
-  komorebi restarts to drop a rule or a game. Windows that were already open keep the state
-  komorebi remembered for them (a window you un-floated stays floating, for example) until you
-  press **SUPER+T** on it or relaunch the app. A pin goes without a restart.
+- **Tiling → Remove a rule...** lists your rules, games, pins and the shipped rules you turned
+  off; pick one and confirm. komorebi restarts to drop a rule or a game. Windows that were
+  already open keep the state komorebi remembered for them (a window you un-floated stays
+  floating, for example) until you press **SUPER+T** on it or relaunch the app. A pin goes
+  without a restart, and so does a shipped rule turned back on.
 - **Tiling → Edit my rules...** opens `rules.local.toml` in whatever opens `.toml` files, or
   Notepad. Save, then SUPER+Shift+R to apply.
 
-Only your own rules are listed and removable here; the shipped ones are edited in
-`rules.toml` like any other config.
+Only your own rules are listed and removable here. A shipped one you can
+[turn off](#turning-off-a-shipped-rule) on this machine, or edit in `rules.toml` like any other
+config.
 
 ## Admin windows
 

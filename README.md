@@ -264,9 +264,9 @@ The keys to know first (**SUPER** is the Windows key):
 
 Four kinds of file are yours alone. Git ignores them, so neither `710sRice update` nor
 `git pull` touches them: `config/ahk/user.ahk` (your own hotkeys), `config/pwsh/user.ps1` (your
-PowerShell profile additions), `config/komorebi/rules.local.toml` (your app rules, games and
-pins) and your palette profiles in `config/palettes`. What each one does, and how to fork it or
-change what it installs: [Make it yours](docs/customizing.md).
+PowerShell profile additions), `config/komorebi/rules.local.toml` (your app rules, games, pins
+and the shipped rules you turned off) and your palette profiles in `config/palettes`. What each
+one does, and how to fork it or change what it installs: [Make it yours](docs/customizing.md).
 
 ## The 710sRice command
 

@@ -25,72 +25,14 @@
 ; doc Open item 38). A rule addition always rides komorebi's fast hot-reload
 ; path, so layouts survive. Every menu here is the palette -- same look,
 ; search and back-nav as SUPER+Esc / SUPER+Alt+Space.
-;
-; Picking is a tooltip + a temporary blocking *LButton hotkey, NOT a swapped
-; system crosshair cursor: if anything died mid-pick, a changed system cursor
-; would stay changed; a tooltip and a hook hotkey just go away with it.
-QuickPickActive := false, QuickTarget := ''
+QuickTarget := ''
 
-QuickAddRule(*) {
-    global QuickPickActive
-    if QuickPickActive
-        return
-    QuickPickActive := true
-    HotIf()                                   ; the two temp hotkeys live in the plain global context
-    Hotkey('*LButton', QuickPickClick, 'On')  ; blocking: the pick-click never reaches the window
-    Hotkey('*Esc', QuickPickCancel, 'On')
-    SetTimer(QuickPickTip, 50)
-    SetTimer(QuickPickTimeout, -15000)        ; walked away mid-pick? give the mouse back
-}
+QuickAddRule(*) => PickWindow('Quick add rule', 'to add a rule for', QuickAddPicked)   ; window-pick.ahk
 
-QuickPickTip() {
-    ToolTip('Click the window to add a rule for   (Esc cancels)')
-}
-
-QuickPickEnd() {
-    global QuickPickActive
-    QuickPickActive := false
-    SetTimer(QuickPickTip, 0)
-    SetTimer(QuickPickTimeout, 0)
-    ToolTip()
-    try Hotkey('*LButton', 'Off')
-    try Hotkey('*Esc', 'Off')
-}
-
-QuickPickCancel(*) {
-    QuickPickEnd()
-    TrayTip('Quick add rule cancelled', '710sRice')
-}
-
-QuickPickTimeout() {
-    global QuickPickActive
-    if QuickPickActive
-        QuickPickCancel()
-}
-
-QuickPickClick(*) {
+; The picked window ({hwnd, exe, cls, title}) -> what to match it on.
+QuickAddPicked(win) {
     global QuickTarget
-    QuickPickEnd()
-    CoordMode('Mouse', 'Screen')
-    MouseGetPos(, , &hwnd)
-    root := DllCall('GetAncestor', 'Ptr', hwnd, 'UInt', 2, 'Ptr')   ; GA_ROOT: the top-level window, never a child control
-    try {
-        exe   := WinGetProcessName('ahk_id ' root)
-        cls   := WinGetClass('ahk_id ' root)
-        title := WinGetTitle('ahk_id ' root)
-        pid   := WinGetPID('ahk_id ' root)
-    } catch {
-        ; typically an elevated window -- which non-elevated komorebi can't manage anyway
-        TrayTip("Couldn't read that window (an admin window?) -- quick add cancelled", '710sRice')
-        return
-    }
-    ; Not app windows: the desktop, the taskbars, the YASB bar, and this script's own GUIs.
-    if (cls ~= '^(Progman|WorkerW|Shell_TrayWnd|Shell_SecondaryTrayWnd)$')
-        || (StrLower(exe) = 'yasb.exe') || (pid = DllCall('GetCurrentProcessId')) {
-        TrayTip("That's not an app window -- quick add cancelled", '710sRice')
-        return
-    }
-    QuickTarget := {hwnd: root}
+    QuickTarget := {hwnd: win.hwnd}
     ; Suggest Layered for a window that has WS_EX_LAYERED AND isn't managed by
     ; komorebi -- exactly how Claude Desktop looked before its rule: turned away
     ; by komorebi's eligibility check. Both halves matter: komorebi's own
@@ -98,16 +40,16 @@ QuickPickClick(*) {
     ; pick click is blocked, so the picked window usually isn't focused. "Not
     ; managed" = its handle appears nowhere in `komorebic state`.
     suggest := false
-    try suggest := (WinGetExStyle('ahk_id ' root) & 0x80000)
-        && !RegExMatch(QueryKomorebic('state'), '"hwnd":\s*' root '\b')
+    try suggest := (WinGetExStyle('ahk_id ' win.hwnd) & 0x80000)
+        && !RegExMatch(QueryKomorebic('state'), '"hwnd":\s*' win.hwnd '\b')
     ; exe first so Enter takes the common case. Full values: the palette's label
     ; column ends anything too long in "..." on its own (and search still sees
     ; the whole value).
     items := [
-        {text: 'exe: '   exe, sub: QuickRuleItems('exe', exe, suggest)},
-        {text: 'class: ' cls, sub: QuickRuleItems('class', cls, suggest)} ]
-    if (title != '')
-        items.Push({text: 'title: ' title, sub: QuickRuleItems('title', title, suggest)})
+        {text: 'exe: '   win.exe, sub: QuickRuleItems('exe', win.exe, suggest)},
+        {text: 'class: ' win.cls, sub: QuickRuleItems('class', win.cls, suggest)} ]
+    if (win.title != '')
+        items.Push({text: 'title: ' win.title, sub: QuickRuleItems('title', win.title, suggest)})
     PalOpen('quick', items, 'Match on')
 }
 
@@ -203,15 +145,17 @@ QuickPinResult(code, exe) {
 }
 
 ; --- Remove a rule... / Edit my rules... (Tiling menu) -----------------------
-; Both work on YOUR rules only (rules.local.toml). The rules this repo ships
-; (rules.toml) aren't removable here -- edit and commit those like any config.
+; Both work on YOUR rules only (rules.local.toml), [[off]]s included: removing
+; one turns its shipped rule back on (rule-off.ahk). The rules this repo ships
+; aren't removable here -- edit and commit rules.toml like any config.
 LocalRulesPath() => RepoRoot '\config\komorebi\rules.local.toml'
 
 ; Your rules as {section, field, value, screen, workspace}, in file order. Same
 ; grammar as compile-komorebi-rules.ps1 and tools\remove-rule.ps1: a block is
 ; a [[section]] line plus the lines after it up to a blank line; its first
-; exe / class / title line names the rule. A pin's screen = N / workspace = N
-; (bare numbers) ride along; '' for every other rule.
+; exe / class / title line names the rule (an [[off]]'s first line: the shipped
+; rule's list and key). A pin's screen = N / workspace = N (bare numbers) ride
+; along; '' for every other rule.
 ReadLocalRules() {
     rules := []
     if !FileExist(LocalRulesPath())
@@ -224,7 +168,7 @@ ReadLocalRules() {
                 rules.Push(cur)
             cur := (line = '') ? '' : {section: m[1], field: '', value: '', screen: '', workspace: ''}
         } else if IsObject(cur) {
-            if (cur.field = '' && RegExMatch(line, '^(exe|class|title)\s*=\s*"([^"]*)"$', &m))
+            if (cur.field = '' && RegExMatch(line, (cur.section = 'off' ? '^(\w+)' : '^(exe|class|title)') '\s*=\s*"([^"]*)"$', &m))
                 cur.field := m[1], cur.value := m[2]
             else if (cur.screen = '' && RegExMatch(line, '^screen\s*=\s*(\d+)$', &m))
                 cur.screen := m[1]
@@ -238,6 +182,8 @@ ReadLocalRules() {
 RuleText(r) {
     if (r.section = 'pin')
         return 'Pin ' Chr(0xB7) ' ' PinText(r.value, r.screen, r.workspace)
+    if (r.section = 'off')
+        return 'Turned off ' Chr(0xB7) ' ' OffRuleText(r.field, r.value)
     return QuickRuleLabel(r.section) ' ' Chr(0xB7) ' ' r.field ' = ' r.value
 }
 
@@ -275,15 +221,15 @@ RemoveRuleNow(r) {
     ; is the exception: komorebi rebuilds workspace rules on every hot reload, so
     ; unpinning rides the fast one (see tools\remove-rule.ps1).
     if (code = 0) {
-        if (r.section = 'game')
-            LoadGames()                           ; no longer a game for game mode either
-        ReloadStack('Removed ' RuleText(r))
+        if (r.section = 'game' || r.section = 'off')
+            LoadGames()                           ; game mode counts it (no longer / again)
+        ReloadStack(r.section = 'off' ? 'Turned back on: ' OffRuleText(r.field, r.value) : 'Removed ' RuleText(r))
     } else
         TrayTip('Rule not removed (see remove-rule.log)', '710sRice')
 }
 
-; Opens your rules file, creating it first with the same header add-rule.ps1
-; writes (keep the two in step) so you never land in an empty mystery file.
+; Opens your rules file, creating it first with the same header add-rule.ps1 and
+; rule-off.ps1 write (keep the three in step): never an empty mystery file.
 ; Default app for .toml if Windows has one, else Notepad. Applying stays
 ; manual: save, then SUPER+Shift+R.
 EditMyRules(*) {

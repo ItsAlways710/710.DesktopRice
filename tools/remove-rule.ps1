@@ -18,7 +18,9 @@
   (plan doc Open item 38; edit and commit rules.toml for those).
 
   A [[game]] or [[pin]] block goes the same way (-Category game / pin -Field exe): a pin's
-  screen = / workspace = lines are part of its block.
+  screen = / workspace = lines are part of its block. So does an [[off]] (a shipped rule you
+  turned off -- tools\lib\rules-off.ps1): -Category off -Field <its list: ignore, layered, ...>,
+  the value its key; its rule comes back with the next compile (a hot reload: an addition).
 
   Doesn't reload anything itself -- the caller runs SUPER+Shift+R's reload-stack.ps1, which
   sees a rule was REMOVED and restarts komorebi (its hot reload can only add rules), so
@@ -39,7 +41,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^\w+$')][string]$Category,
-    [Parameter(Mandatory)][ValidateSet('exe', 'class', 'title')][string]$Field,
+    [Parameter(Mandatory)][ValidateSet('exe', 'class', 'title', 'ignore', 'manage', 'floating', 'layered', 'transparency_ignore',
+        'tray_and_multi_window', 'object_name_change', 'slow_application')][string]$Field,
     [string]$Value
 )
 $ErrorActionPreference = 'Stop'

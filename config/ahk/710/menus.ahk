@@ -44,6 +44,7 @@ CaptureItems := [
 TilingItems := [
     {text: 'Quick add rule...',                          action: (*) => QuickAddRule()},
     {text: 'Remove a rule...',                           action: (*) => RemoveRuleMenu()},
+    {text: 'Turn off a shipped rule...',                 action: (*) => TurnOffRuleMenu()},
     {text: 'Edit my rules...',                           action: (*) => EditMyRules()},
     {text: 'Manage this window',                         action: (*) => Komorebic('manage')},
     {text: 'Unmanage this window',                        action: (*) => Komorebic('unmanage')},

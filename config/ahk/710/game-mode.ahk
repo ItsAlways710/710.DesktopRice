@@ -34,8 +34,13 @@ LoadGames() {
             }
         }
     }
-    ; Yours: the [[game]] blocks of rules.local.toml (ReadLocalRules, below).
-    for r in ReadLocalRules()
+    ; A shipped game you turned off (an [[off]] of its ignore rule, rule-off.ahk) doesn't count;
+    ; yours, the [[game]] blocks of rules.local.toml (ReadLocalRules, quick-rule.ahk), do.
+    yours := ReadLocalRules()
+    for r in yours
+        if (r.section = 'off' && r.field = 'ignore' && RegExMatch(r.value, '^exe=(.+)/equals$', &m) && GameExes.Has(m[1]))
+            GameExes.Delete(m[1])
+    for r in yours
         if (r.section = 'game' && r.field = 'exe')
             GameExes[StrLower(r.value)] := true
 }

@@ -24,8 +24,8 @@
   Priority, low to high: vendor/asc -> games.toml -> config/komorebi/rules.toml (shipped,
   tracked) -> config/komorebi/rules.local.toml (yours, gitignored -- Quick add rule writes
   here; plan doc Open item 38). Because attribute categories are unioned, a local file can
-  ADD a layered/transparency_ignore/... rule but can't cancel a shipped one (accepted; a
-  "turn off a shipped rule" entry is a README future plan).
+  ADD a layered/transparency_ignore/... rule but can't outvote a shipped one: an [[off]] there
+  turns it off instead (tools\lib\rules-off.ps1; Tiling > Turn off a shipped rule...).
   "Same window" identity = kind+id (ignoring matching_strategy); a compound (array)
   rule's identity is the sorted combination of all its conditions.
 
@@ -214,7 +214,7 @@ function Get-UserRulesLayer {
     $disabled = @($sections | Where-Object { $_.__section -eq 'disable' } | ForEach-Object { $_['asc'] })
     $out = [System.Collections.Generic.List[object]]::new()
     $pins = [System.Collections.Generic.List[object]]::new()
-    foreach ($entry in ($sections | Where-Object { $_.__section -ne 'disable' })) {
+    foreach ($entry in ($sections | Where-Object { $_.__section -notin 'disable', 'off' })) {   # [[off]]: tools\lib\rules-off.ps1
         $section = $entry.__section
         if ($section -in 'game', 'pin') {
             if (-not $Local) {
@@ -400,6 +400,7 @@ try {
         ,$userRules.Entries                      # level 2 - shipped rules.toml
         ,$localRules.Entries                     # level 3 - highest priority: yours
     )
+    . (Join-Path $PSScriptRoot 'lib\rules-off.ps1'); $layers = (Remove-RiceOffRules -Layers $layers -Path $LocalRulesPath -Check:$Check).Layers   # your [[off]]s
     $merged = Merge-Rules -Layers $layers
 
     foreach ($cat in $merged.Keys) {

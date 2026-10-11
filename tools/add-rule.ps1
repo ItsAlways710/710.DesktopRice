@@ -153,7 +153,7 @@ function Add-RuleBlock([string[]]$BlockLines) {
         $lead = if (-not $f.Text) { '' } elseif ($f.Text.EndsWith("`n")) { $nl } else { $nl + $nl }
         [System.IO.File]::AppendAllText($RulesPath, $lead + ($BlockLines -join $nl) + $nl, [System.Text.UTF8Encoding]::new($false))
     } else {
-        # Same text as 710.ahk's EditMyRules() writes -- keep the two in step.
+        # Same text as 710.ahk's EditMyRules() and rule-off.ps1 write -- keep the three in step.
         $header = "# Your own komorebi rules -- this machine only (gitignored), the highest-priority`n" +
                   "# layer: above rules.toml (the rules this repo ships), games.toml and the vendored`n" +
                   "# community ASC rules. Quick add rule writes here; compiled into komorebi.json by`n" +

@@ -227,32 +227,14 @@ while ((Get-Date) -lt $overallDeadline) {
             # (a retile/ignore-rule doesn't retroactively unmanage them). Only matters when
             # komorebi (re)starts with a game open -- SUPER+Shift+R removing a rule, or a
             # crash -- never at a normal boot.
-            # The games: every `exe = "..."` line of games.toml, plus the [[game]] blocks of
-            # your rules.local.toml (Group 1 #5 -- Quick add's Game) -- read right here with
-            # 5.1-safe loops, the same grammar the compile reads. Until 2026-09-23 this
-            # dot-sourced winarchy's window-slots.ps1 instead, which needs PS7's ?. just to
-            # parse -- so under this script's 5.1 host the step threw on every single start
-            # and never ran once.
+            # The games: games.toml's, less any you turned off, plus the [[game]] blocks of your
+            # rules.local.toml (Group 1 #5 -- Quick add's Game): tools\lib\games.ps1, 5.1-safe,
+            # as game mode counts them. Until 2026-09-23 this dot-sourced winarchy's
+            # window-slots.ps1 instead, which needs PS7's ?. just to parse -- so under this
+            # script's 5.1 host the step threw on every single start and never ran once.
             try {
-                $gamesToml = Join-Path $root 'games.toml'
-                $localRules = Join-Path $root 'config\komorebi\rules.local.toml'
-                # outer @() so 0 or 1 games still gives an array (the plan doc's
-                # collapse-to-scalar gotcha)
-                $games = @(@(
-                    if (Test-Path $gamesToml) {
-                        foreach ($line in Get-Content $gamesToml -Encoding UTF8) {
-                            if ($line -match '^\s*exe\s*=\s*"([^"]+)"') { $Matches[1] }
-                        }
-                    }
-                    if (Test-Path $localRules) {
-                        $section = ''
-                        foreach ($line in Get-Content $localRules -Encoding UTF8) {
-                            $t = $line.Trim()
-                            if ($t -match '^\[\[(\w+)\]\]$') { $section = $Matches[1] }
-                            elseif ($section -eq 'game' -and $t -match '^exe\s*=\s*"([^"]+)"$') { $Matches[1] }
-                        }
-                    }
-                ) | Sort-Object -Unique)
+                . (Join-Path $root 'tools\lib\games.ps1')
+                $games = @(Get-RiceGameExes -Root $root)   # @(): 0 or 1 games is still an array
                 $stateJson = Invoke-Komorebic state | ConvertFrom-Json
                 $tiledExes = @(
                     foreach ($m in $stateJson.monitors.elements) {

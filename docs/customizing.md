@@ -10,8 +10,9 @@ These files are yours alone. Git ignores them, so neither `710sRice update` nor 
   `Hotkey("#q", (*) => MsgBox("my SUPER+Q"))` replaces what SUPER+Q does.
 - `config/pwsh/user.ps1` — your own PowerShell profile additions, loaded last by
   `config/pwsh/profile.ps1`. Open a new terminal to pick up changes.
-- `config/komorebi/rules.local.toml` — your own app rules, games and pins. Quick add rule
-  writes it for you; see [App rules](tiling.md#app-rules).
+- `config/komorebi/rules.local.toml` — your own app rules, games and pins, and the shipped
+  rules you turned off. Quick add rule and Turn off a shipped rule write it for you; see
+  [App rules](tiling.md#app-rules).
 - `config/palettes/profile0.json` … `profile9.json` — your palette profiles (the editor
   writes them; see [Palette profiles](theming.md#palette-profiles)), and any scheme files you put in
   `config/palettes/schemes`.

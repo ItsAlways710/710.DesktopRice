@@ -47,7 +47,8 @@ four rule layers in [App rules](tiling.md#app-rules), plus this machine's screen
 - **Where a window goes** (ignore, manage, float): when two layers disagree about the same
   window, the higher layer wins outright.
 - **How a window behaves** (layered, opaque and the others): every layer's rules are added
-  together, which is why your file can add one but can't cancel a shipped one.
+  together, which is why your file can add one but can't outvote a shipped one: an `[[off]]`
+  in it turns one off instead ([Turning off a shipped rule](tiling.md#turning-off-a-shipped-rule)).
 - **Only when it changed:** komorebi reloads the file a couple of seconds after any write, and
   that reload puts every workspace back to its starting layout. So the compiler only writes the
   file when the result is different.
