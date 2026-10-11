@@ -34,9 +34,11 @@ function Get-UserEnvVar {
 }
 
 function Remove-UserEnvVar {
-    # Gone from the user's registered variables and from this process.
+    # Gone from the user's registered variables and from this process. [NullString]::Value, not
+    # $null: PowerShell hands $null to a .NET string parameter as "", and since .NET 9 (PowerShell
+    # 7.5) "" sets an empty value instead of deleting -- the variable stayed behind, empty.
     param([Parameter(Mandatory)][string]$Name)
-    [Environment]::SetEnvironmentVariable($Name, $null, 'User')
+    [Environment]::SetEnvironmentVariable($Name, [NullString]::Value, 'User')
     Remove-Item -Path "env:$Name" -ErrorAction SilentlyContinue
 }
 

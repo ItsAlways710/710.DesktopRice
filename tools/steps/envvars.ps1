@@ -113,7 +113,7 @@ function Undo-ConfigEnvVars {
     if ([Environment]::GetEnvironmentVariable('DESKTOPRICE_HOME', 'User') -eq $Root) {
         $said++
         if ($DryRun) { Write-Host '  [ ] Take DESKTOPRICE_HOME off' }
-        else { [Environment]::SetEnvironmentVariable('DESKTOPRICE_HOME', $null, 'User'); Step-Ok 'DESKTOPRICE_HOME taken off' }
+        else { Remove-UserEnvVar 'DESKTOPRICE_HOME'; Step-Ok 'DESKTOPRICE_HOME taken off' }
     }
     if (-not $said) { Step-Info 'No config variable points at this clone: nothing to put back' }
     if ($DryRun) { return }
