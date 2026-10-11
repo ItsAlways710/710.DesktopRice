@@ -72,8 +72,9 @@ OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710s
 ; script starts them ("The apps 710.ahk starts"). wParam says which, added up: 1 the bar, 2 Flow,
 ; 4 ShareX; each starts only if it isn't running. Fire-and-forget: the sender waits for the
 ; process itself (Start-AhkStartedApps in tools\lib\stack.ps1; the theme pipeline's Flow
-; restart posts it with Send-PaletteAhkMessage, tools\lib\palette.ps1).
-OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.StartApps', 'UInt')), (wParam, *) => SetTimer(() => StartApps(wParam & 7, 'asked by 710sRice'), -1))
+; restart posts it with Send-PaletteAhkMessage, tools\lib\palette.ps1, and 8 on top: give
+; focus back once Flow is up -- StartAppsAsked, flow-focus.ahk).
+OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.StartApps', 'UInt')), (wParam, *) => SetTimer(() => StartAppsAsked(wParam), -1))
 
 ; Install's tasks step, right after it removed the old start-up tasks: restart-after-retire.txt is
 ; waiting (RestartRetired, "The apps 710.ahk starts"). The sender watches the file go, then the

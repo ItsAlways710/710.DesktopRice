@@ -170,6 +170,7 @@ inside them (`; ====` banners), reading the parts in place (`ReadScriptText`, `k
 | `stay-awake.ahk` | Stay awake |
 | `game-mode.ahk` | `games.toml`, `GameWatch` |
 | `started-apps.ahk` | The apps 710.ahk starts: `StartApps` (the bar, Flow, ShareX), `RestartRetired`, the start at load |
+| `flow-focus.ahk` | Focus back after a recolor restarts Flow: `StartAppsAsked` (the `710sRice.StartApps` message; its bit 8), `FlowFocusArm`, `FlowFocusWatch` |
 | `yasb-watchdog.ahk` | The bar's watchdog |
 | `monitor-watcher.ahk` | komorebi's monitor watcher: display-change nudges |
 | `scrolling.ahk` | Scrolling beside another screen: `ToggleScrolling` (SUPER+Alt+L) and its check, `ScreenHasSideNeighbour`; `ScrollingRuleAfterChange` (runs `tools\scrolling-rule.ps1`) and its toast |

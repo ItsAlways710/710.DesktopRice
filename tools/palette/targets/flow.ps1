@@ -84,7 +84,9 @@
         if ($settings['HideOnStartup'] -eq $false) {
             return @{ Status = 'ok'; Message = "Flow Launcher theme $how -- Flow was stopped; SUPER+Space starts it with the new colours" }
         }
-        if (-not (Send-PaletteAhkMessage -Name '710sRice.StartApps' -WParam 2)) {
+        # 2 = Flow, + 8: the window you're in gets focus back once Flow is up (a starting Flow
+        # takes it -- config\ahk\710\flow-focus.ahk). A 710.ahk from before 8 just starts Flow.
+        if (-not (Send-PaletteAhkMessage -Name '710sRice.StartApps' -WParam 10)) {
             return @{ Status = 'ok'; Message = "Flow Launcher theme $how -- Flow was stopped, and 710.ahk (which starts it) isn't running; 710sRice start starts both" }
         }
         @{ Status = 'ok'; Message = "Flow Launcher theme $how (710.ahk starts Flow again)" }
