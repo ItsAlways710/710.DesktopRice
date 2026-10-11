@@ -163,6 +163,16 @@ On a work-managed machine, komorebi says so itself with a pop-up.
 </details>
 
 <details>
+<summary><b>How long does it take, and how big is it?</b></summary>
+
+About 4 minutes and half a gigabyte. Measured on the test laptop (Windows 11, a fresh install on
+2026-10-11): the install took 4 minutes and downloaded 325 MB, the apps from winget plus wallust
+and two PowerShell modules. A machine without the JetBrainsMono Nerd Font downloads 112 MB more
+(that laptop had it), and one without git or PowerShell 7 gets those first. The repo itself is a
+63 MB download and about 125 MB on disk.
+</details>
+
+<details>
 <summary><b>How many screens?</b></summary>
 
 Up to four, each with workspaces 1–9. A fifth runs on komorebi's defaults. See
