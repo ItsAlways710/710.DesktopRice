@@ -114,6 +114,11 @@ widgets:
         path: ~\Documents
       - title: Pictures
         path: ~\Pictures
+      # ShareX's default save folder, Documents\ShareX\Screenshots (one <year-month> folder in it
+      # per month); 710sRice never changes where ShareX saves. YASB opens a path only if it exists,
+      # so this one does nothing until ShareX has saved its first capture.
+      - title: Screenshots
+        path: ~\Documents\ShareX\Screenshots
       - title: Wallpapers
         path: $env:DESKTOPRICE_HOME\assets\wallpapers
       system_menu: false
