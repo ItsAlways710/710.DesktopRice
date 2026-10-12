@@ -39,6 +39,15 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
+# --- one editor at a time, asked first: bringing an open one to the front loads nothing ---
+$script:Mutex = [System.Threading.Mutex]::new($false, 'Local\710sRice.PaletteEditor')
+$owned = $false
+try { $owned = $script:Mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $owned = $true }
+if (-not $owned) {
+    # The open one comes to the front (its unsaved changes are its own business).
+    try { Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::AppActivate('710sRice palette profiles') } catch { }
+    exit 0
+}
 . (Join-Path $Root 'tools\lib\palette.ps1')
 . (Join-Path $Root 'tools\lib\palette-edit.ps1')
 
@@ -58,15 +67,6 @@ function Write-EditorLog {
     } catch { }
 }
 
-# --- one editor at a time ------------------------------------------------------------------
-$script:Mutex = [System.Threading.Mutex]::new($false, 'Local\710sRice.PaletteEditor')
-$owned = $false
-try { $owned = $script:Mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $owned = $true }
-if (-not $owned) {
-    # The open one comes to the front (its unsaved changes are its own business).
-    try { Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::AppActivate('710sRice palette profiles') } catch { }
-    exit 0
-}
 if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
     Write-EditorLog 'not started -STA (WPF needs it) -- start it through 710sRice palette edit / the menu'
     exit 1
