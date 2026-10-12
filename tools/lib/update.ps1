@@ -112,7 +112,9 @@ function Invoke-RiceUpdate {
     if ($switch) {
         $want = if ($switch -eq '-Latest') { 'bleeding-edge' } else { 'official' }
         $had  = Get-RiceUpdateWay $git
-        $null = & $git -C $Root config --local 710srice.updates $want 2>$null
+        # A failed write reaches the refusal below, not a throw, even with a profile's
+        # $PSNativeCommandUseErrorActionPreference = $true (off in this one call's own scope).
+        $null = & { $PSNativeCommandUseErrorActionPreference = $false; & $git -C $Root config --local 710srice.updates $want 2>$null }
         if ($LASTEXITCODE -ne 0) { Write-UpdateRefusal "Couldn't save the choice in this clone's git config -- nothing changed"; return & $done 1 }
         $what = if ($want -eq 'official') { @('Official', 'updates take releases only') } else { @('Bleeding edge', "each update takes master's newest commit") }
         Write-Host "  [OK] $(if ($had -eq $want) { "$($what[0]), as it was: $($what[1])" } else { "$($what[0]) from now on: $($what[1]) (saved in this clone)" })" -ForegroundColor Green

@@ -40,7 +40,10 @@ function Invoke-DoctorGit {
     # A quick, local, read-only git call, in this process: Ok (exit 0) and its stdout Lines.
     # The arguments come as one array of strings, so nothing in them (-e, -1) can be mistaken
     # for a PowerShell parameter on the way. Captured, so nothing reaches the caller's output.
+    # Its "no" (exit 1: nothing saved, no tags, not an ancestor) is an answer, never an error, even
+    # with a profile's $PSNativeCommandUseErrorActionPreference = $true (in a run by path only).
     param([Parameter(Mandatory)][string]$Git, [Parameter(Mandatory)][string[]]$GitArgs)
+    $PSNativeCommandUseErrorActionPreference = $false
     $out = & $Git --no-optional-locks -C $Root @GitArgs 2>$null
     [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Lines = @($out) }
 }
