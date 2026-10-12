@@ -1519,7 +1519,7 @@ function Use-StartFrom {
 function Build-FromPanel {
     $panel = $script:Ui.FromPanel
     $panel.Children.Clear()
-    foreach ($p in Get-PaletteProfiles) {
+    foreach ($p in $script:Known) {   # Update-Known's read, not every profile again
         if (-not $p.Exists -or $p.Error) { continue }
         $rb = New-Seg -Text $p.Label -Tag $p.Id -Tip $p.Summary
         $rb.Add_Checked({
