@@ -157,9 +157,12 @@ function Invoke-RiceUpdate {
     if ($fetch.TimedOut) { Write-UpdateRefusal "Couldn't reach GitHub (no answer in 2 minutes) -- $nothing"; return & $done 1 }
     if ($fetch.ExitCode -ne 0) { Write-UpdateRefusal "Couldn't reach GitHub ($($fetch.Why)) -- $nothing"; return & $done 1 }
 
+    # What was fetched is what's followed, the decision included: a release pushed between the ask
+    # and the fetch counts.
+    if ($remote.Release) { $remote.Release = Get-RiceRef $git 'refs/remotes/origin/release' }
+    if ($remote.Master)  { $remote.Master  = Get-RiceRef $git 'refs/remotes/origin/master' }
     $head = Get-RiceRef $git 'HEAD'
-    $goal = if ($target -eq 'release') { if ($remote.Release) { Get-RiceRef $git 'refs/remotes/origin/release' } }
-            elseif ($remote.Master) { Get-RiceRef $git 'refs/remotes/origin/master' }
+    $goal = if ($target -eq 'release') { $remote.Release } else { $remote.Master }
     if (-not $head) { Write-UpdateRefusal "Couldn't read this copy's commit -- $nothing"; return & $done 1 }
     $s = Get-RiceCloneState -Git $git -Head $head -Branch $branch -Remote $remote
     if ($target -eq 'master' -and -not $goal) { Write-UpdateRefusal "GitHub has no master branch -- $nothing"; return & $done 1 }
@@ -167,7 +170,7 @@ function Invoke-RiceUpdate {
 
     # --- Official, and nothing to follow yet, or a build newer than every release: it stays ------
     if ($target -eq 'release' -and -not $goal) {
-        Write-Host "  [..] No release on GitHub yet -- this build ($($s.Build.Text)) stays as it is until the first one; 710sRice update -Latest follows master meanwhile" -ForegroundColor Cyan
+        Write-Host "  [..] No release on GitHub yet -- this build ($($s.Build.Plain)) stays as it is until the first one; 710sRice update -Latest follows master meanwhile" -ForegroundColor Cyan
         return & $done (Invoke-RiceDoctor)
     }
     if ($s.Held) {
@@ -236,7 +239,7 @@ function Invoke-RiceUpdate {
     if ($merge.TimedOut -or $merge.ExitCode -ne 0) {
         $why = if ($merge.TimedOut) { 'git took over 2 minutes' } else { $merge.Why }
         $now = Get-RiceRef $git 'HEAD'
-        if ($now -eq $head) { Write-UpdateRefusal "Couldn't fast-forward ($why) -- no files changed" -Detail $merge.More }
+        if ($now -eq $head) { Write-UpdateRefusal "Couldn't fast-forward ($why) -- no files changed$(if ($move) { "; this copy is on its $target branch now, at the commit it was on" })" -Detail $merge.More }
         else { Write-UpdateRefusal "The fast-forward stopped part-way ($why)" -Detail $merge.More -Fix 'git status shows where it stands; then 710sRice doctor -repair' }
         return & $done 1
     }

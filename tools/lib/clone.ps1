@@ -235,18 +235,20 @@ function Compare-RiceCommits {
 
 function Get-RiceBuild {
     # A commit as a version: Text -- '0.1.0' on a release, '0.1.0 + 4 commits (abc1234)' past one,
-    # just 'abc1234' when no release is in its history --, Base (the release tag it counts from;
+    # just 'abc1234' when no release is in its history --, Plain (the same, as it reads inside
+    # parentheses: '0.1.0 + 4 commits, abc1234'), Base (the release tag it counts from;
     # the newest one in its history), Count (commits past it) and Short (its short hash). $Tags:
     # Get-RiceReleaseTags', newest first.
     param([Parameter(Mandatory)][string]$Git, [Parameter(Mandatory)][string]$Commit, [object[]]$Tags = @())
     $short = "$((Invoke-DoctorGit $Git @('rev-parse', '--short', $Commit)).Lines)".Trim()
     if (-not $short) { $short = $Commit.Substring(0, [Math]::Min(7, $Commit.Length)) }
-    $b = [pscustomobject]@{ Text = $short; Base = $null; Count = 0; Short = $short }
+    $b = [pscustomobject]@{ Text = $short; Plain = $short; Base = $null; Count = 0; Short = $short }
     foreach ($t in $Tags) {
         if ($t.Commit -ne $Commit -and -not (Test-RiceAncestor $Git $t.Commit $Commit)) { continue }
         $b.Base  = $t
         $b.Count = if ($t.Commit -eq $Commit) { 0 } else { [int]"$((Invoke-DoctorGit $Git @('rev-list', '--count', "$($t.Commit)..$Commit")).Lines)".Trim() }
         $b.Text  = if ($b.Count) { "$($t.Version) + $(Get-DoctorPlural $b.Count 'commit' 'commits') ($short)" } else { $t.Version }
+        $b.Plain = if ($b.Count) { "$($t.Version) + $(Get-DoctorPlural $b.Count 'commit' 'commits'), $short" } else { $t.Version }
         break
     }
     $b
@@ -282,9 +284,7 @@ function Get-RiceCloneState {
 function Get-RiceHoldText {
     # The hold, as doctor and update both say it. $ReleaseName: the newest release's version.
     param([Parameter(Mandatory)]$State, [string]$ReleaseName)
-    $b = $State.Build
-    $build = if ($b.Base -and $b.Count) { "$($b.Base.Version) + $(Get-DoctorPlural $b.Count 'commit' 'commits'), $($b.Short)" } else { $b.Text }
-    "Official from the next release: this build ($build) is newer than $(if ($ReleaseName) { $ReleaseName } else { 'the release' }), so it stays until a release includes it"
+    "Official from the next release: this build ($($State.Build.Plain)) is newer than $(if ($ReleaseName) { $ReleaseName } else { 'the release' }), so it stays until a release includes it"
 }
 
 # --- Install runs from a clone ---------------------------------------------------------------------

@@ -13,7 +13,8 @@ This page is the checklist for cutting one, and the how-to for a fork.
 - **`release` only moves forward,** to each new release's tag. git refuses any other push to it
   without force, and nothing ever forces it. A bad release is fixed by the next one, never by
   moving `release` back: official clones never step back, and neither does the branch they follow.
-- **The numbers:** `0.1.1` for fixes, `0.2.0` for features, `1.0` when it's declared.
+- **The numbers:** `0.1.1` for fixes, `0.2.0` for features, `1.0.0` when it's declared. Always
+  three: doctor and update read only `vX.Y.Z` tags.
 - **The notes live on the GitHub Release** only: there's no changelog file in the repo. GitHub
   attaches the Source code zip and tar.gz itself; they aren't an install (install needs a git
   clone, because `710sRice update` runs on git).
@@ -49,6 +50,8 @@ the last release and `0.1.1` for the new one.
    ```powershell
    git -C C:\710.DesktopRice diff v0.1.0..master -- versions.md
    ```
+
+   (The first release has no last one to compare with: those two are for every release after it.)
 
 2. **The number and the notes.** Fixes only: the patch number goes up. Anything new: the minor
    one. The notes are for the people updating, not a commit list: what's new and what's fixed, in

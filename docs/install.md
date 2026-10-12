@@ -250,7 +250,8 @@ back to official keeps the build you have until the next release. A build that a
 includes moves onto it at once; one newer than every release stays exactly as it is, and update
 says so, until a release includes it. Doctor's first line says where you are: `0.1.0, official`,
 `0.1.0 + 4 commits (abc1234), bleeding edge`, or, newer than every release, `official from the
-next release`.
+next release`. A copy from before releases doesn't know the two switches yet: one plain
+`710sRice update` brings them, and from then on they work.
 
 There's no separate update checker, by design: `710sRice doctor` tells you when GitHub has a
 newer release (a newer commit, on bleeding edge), when you ask it. The apps' own update checks
