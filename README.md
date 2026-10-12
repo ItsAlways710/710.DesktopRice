@@ -349,7 +349,7 @@ Everything above in depth, and everything the front page leaves out ([the index]
 | [Under the hood](docs/under-the-hood.md) | [What starts what](docs/under-the-hood.md#what-starts-what) · [AutoHotkey with UI Access](docs/under-the-hood.md#autohotkey-with-ui-access) · [Rules](docs/under-the-hood.md#rules-compiled-from-four-layers) · [Pins](docs/under-the-hood.md#pins) · [What uninstall puts back](docs/under-the-hood.md#what-uninstall-puts-back) · [Why these tools](docs/under-the-hood.md#why-these-tools) · [Influences](docs/under-the-hood.md#influences) |
 
 For reference: [Windows settings changed by -Activate](docs/activate-windows-settings.md) ·
-[Map: what lives where](docs/map.md) · [versions.md](versions.md)
+[Map: what lives where](docs/map.md) · [Releasing](docs/releasing.md) · [versions.md](versions.md)
 
 ## Credits and License
 

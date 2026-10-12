@@ -19,3 +19,4 @@ For reference:
 - [Windows settings changed by -Activate](activate-windows-settings.md): every registry value,
   one by one
 - [Map: what lives where](map.md): which file owns each piece, for anyone changing the code
+- [Releasing](releasing.md): how a release is cut, the rules it keeps, and a fork's own releases
