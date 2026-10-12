@@ -10,9 +10,9 @@
     whatever has been built, on every change.
 
     tools\palette-editor.ps1 dot-sources this, so it runs in the editor's own scope: its
-    $script:Ui, $script:Layout, $script:Work and $script:Theme, and New-Swatch, New-Text,
-    Get-ExpressionWords, Get-PropLabel, Open-Picker and Reset-Override. WPF only, and the
-    editor's alone.
+    $script:Ui, $script:Layout, $script:Work, $script:Theme and $script:TargetById, and
+    New-Swatch, New-Text, Get-ExpressionWords, Get-PropLabel, Open-Picker and Reset-Override.
+    WPF only, and the editor's alone.
 #>
 
 function Build-RoleRows {
@@ -180,7 +180,7 @@ function Update-AppRows {
         $hex = $th.Targets[$p.Target][$p.Prop]
         $p.Swatch.Background = Get-Brush $hex
         $own = $script:Work.overrides.Contains($p.Target) -and $script:Work.overrides[$p.Target].Contains($p.Prop)
-        $def = (Get-PaletteTarget -Id $p.Target).Properties[$p.Prop].Default
+        $def = $script:TargetById[$p.Target].Properties[$p.Prop].Default
         $words = if ($own) { Get-ExpressionWords $script:Work.overrides[$p.Target][$p.Prop] } else { Get-ExpressionWords $def }
         $txt = if ($own) { "$words (its own)" } else { $words }
         if ($raised.ContainsKey($key)) { $txt += " $script:Dot made readable" }

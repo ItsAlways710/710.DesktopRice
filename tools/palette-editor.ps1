@@ -183,6 +183,9 @@ function Set-Backdrop {
 # ------------------------------------------------------------------------------------------
 $script:Targets = @(Get-PaletteTargets)
 $script:Shown = @($script:Targets | Where-Object { -not $_.Hidden })
+# Lookups made once (a pipeline per call was slow), in a scriptblock that keeps its loop variables.
+$script:TargetById = @{}; $script:PropLabels = @{}
+& { foreach ($t in $script:Targets) { $script:TargetById[$t.Id] = $t; foreach ($k in $t.Properties.Keys) { $script:PropLabels["$($t.Id).$k"] = "$($t.Label) $script:Chev $($t.Properties[$k].Label)" } } }
 $script:Layout = Get-PaletteEditorLayout -Targets $script:Targets
 $script:Mode = 'edit'          # edit | default | new
 $script:Id = $null             # the slot being edited ('default', 'profileN'); new: the slot it'll go in, if asked for
@@ -425,12 +428,8 @@ function New-Seg {
     $r
 }
 
-function Get-TargetLabel { param([string]$Id) (@($script:Targets | Where-Object Id -eq $Id) | Select-Object -First 1).Label }
-function Get-PropLabel {
-    param([string]$Target, [string]$Prop)
-    $t = @($script:Targets | Where-Object Id -eq $Target) | Select-Object -First 1
-    "$($t.Label) $script:Chev $($t.Properties[$Prop].Label)"
-}
+function Get-TargetLabel { param([string]$Id) $script:TargetById[$Id].Label }
+function Get-PropLabel { param([string]$Target, [string]$Prop) $script:PropLabels["$Target.$Prop"] ?? "$($script:TargetById[$Target].Label) $script:Chev " }
 
 function Get-ExpressionWords {
     <# An expression the way the editor says it: "Accent", "color3", "Accent, 25% lighter",
@@ -957,7 +956,7 @@ function Open-Picker {
         $script:Ui.PkAbout.Text = "$($script:PaletteRoles[$Role].About). Every app color under it follows."
         $script:Ui.PkReset.Content = "Default's color ($(Get-ExpressionWords $pk.Default))"
     } else {
-        $t = Get-PaletteTarget -Id $Target
+        $t = $script:TargetById[$Target]
         $def = $t.Properties[$Prop].Default
         $own = $script:Work.overrides.Contains($Target) -and $script:Work.overrides[$Target].Contains($Prop)
         $pk.Original = if ($own) { $script:Work.overrides[$Target][$Prop] } else { $null }
@@ -1619,7 +1618,7 @@ $u.Preview.Add_MouseLeftButtonUp({
     while ($o) {
         if (($o -is [System.Windows.FrameworkElement] -or $o -is [System.Windows.FrameworkContentElement]) -and "$($o.Tag)" -match '^\s*\w+\s*=\s*(\w+)\.(\w+)') {
             $t = $Matches[1]; $p = $Matches[2]
-            if (Get-PaletteTarget -Id $t) { Open-Picker -Kind 'prop' -Target $t -Prop $p; return }
+            if ($script:TargetById.Contains($t)) { Open-Picker -Kind 'prop' -Target $t -Prop $p; return }
         }
         $parent = [System.Windows.LogicalTreeHelper]::GetParent($o)
         if (-not $parent -and $o -is [System.Windows.Media.Visual]) { $parent = [System.Windows.Media.VisualTreeHelper]::GetParent($o) }
