@@ -6,14 +6,24 @@
 .DESCRIPTION
     tools\lib\palette.ps1 loads this (its "Expressions" section, moved here whole), so every
     caller of that library has it. Part of the theme stamp, like palette.ps1: what's here decides
-    the colours. The expressions themselves are described in palette.ps1's header.
+    the colours. The expressions themselves are described in palette.ps1's header. Each one is
+    read once per process, then kept.
 #>
+
+# Every expression read is kept, text -> tree: a profile's check reads each of its expressions
+# twice, and the profile list, the editor's layout and every theme read the same ones again and
+# again. Ordinal: the text exactly as written ('#ABCDEF' and '#abcdef' are kept apart). Callers
+# only read a tree, never change one; a text that doesn't read is never kept (it throws each time).
+$script:PaletteTrees = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
 
 function ConvertFrom-PaletteExpression {
     <# Parses one expression into a small tree: @{Kind='hex'; Value} | @{Kind='name'; Name} |
        @{Kind='lighten'|'darken'; Arg; Amount} | @{Kind='mix'; Arg; Other; Amount}. Throws a
-       readable message on anything else (the editor and doctor show it). #>
+       readable message on anything else (the editor and doctor show it). The same text gives the
+       same tree, kept ($script:PaletteTrees): never change one. #>
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+    $tree = $null
+    if ($script:PaletteTrees.TryGetValue($Text, [ref]$tree)) { return $tree }
     $state = @{ s = $Text; i = 0 }
     $skip = { while ($state.i -lt $state.s.Length -and [char]::IsWhiteSpace($state.s[$state.i])) { $state.i++ } }
     $parse = $null
@@ -62,6 +72,8 @@ function ConvertFrom-PaletteExpression {
     $tree = & $parse
     & $skip
     if ($state.i -lt $state.s.Length) { throw "unexpected '$($state.s.Substring($state.i))'" }
+    if ($script:PaletteTrees.Count -ge 4096) { $script:PaletteTrees.Clear() }   # an editor open for hours
+    $script:PaletteTrees[$Text] = $tree
     $tree
 }
 

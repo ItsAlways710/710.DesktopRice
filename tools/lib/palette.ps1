@@ -412,14 +412,14 @@ function Get-PaletteProfileLabel {
 }
 
 function Get-PaletteProfiles {
-    <# Every slot: Id, Exists, Name, Label, Error (a broken file), Active. #>
+    <# Every slot: Id, Exists, Name, Label, Error (a broken file), Active. Default is read once. #>
     $active = Get-ActivePaletteProfileId
     foreach ($id in $script:PaletteProfileIds) {
         $path = Get-PaletteProfilePath -Id $id
         $exists = Test-Path -LiteralPath $path
         $name = ''; $err = $null; $summary = ''
         if ($exists) {
-            try { $p = Read-PaletteProfile -Id $id; $name = $p.name; $summary = Get-PaletteSourceSummary -Source $p.source }
+            try { $p = if ($id -eq 'default') { Get-PaletteDefaultProfile } else { Read-PaletteProfile -Id $id }; $name = $p.name; $summary = Get-PaletteSourceSummary -Source $p.source }
             catch { $err = $_.Exception.Message }
         }
         [pscustomobject]@{
