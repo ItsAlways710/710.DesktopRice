@@ -286,3 +286,18 @@ function Get-RiceHoldText {
     $build = if ($b.Base -and $b.Count) { "$($b.Base.Version) + $(Get-DoctorPlural $b.Count 'commit' 'commits'), $($b.Short)" } else { $b.Text }
     "Official from the next release: this build ($build) is newer than $(if ($ReleaseName) { $ReleaseName } else { 'the release' }), so it stays until a release includes it"
 }
+
+# --- Install runs from a clone ---------------------------------------------------------------------
+
+function Test-RiceInstallClone {
+    # Install needs a git clone -- `710sRice update` runs on git. From anywhere else (a Source code
+    # download from the Releases page, a copy) this says so, names the one-liner (it clones), and
+    # returns $false: the caller stops before anything changes -- the dispatcher before its UAC
+    # prompt, install.ps1 at its first line.
+    param([Parameter(Mandatory)][string]$Path)
+    if (Test-Path -LiteralPath (Join-Path $Path '.git')) { return $true }
+    Write-Host "  [XX] This folder isn't a git clone, so it can't be installed: 710sRice update runs on git. Nothing was changed." -ForegroundColor Red
+    Write-Host '       fix: the one-line install clones it -- from a normal PowerShell window:' -ForegroundColor Yellow
+    Write-Host '            irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/release/boot.ps1 | iex' -ForegroundColor Yellow
+    $false
+}

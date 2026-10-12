@@ -199,6 +199,10 @@ keeps and removes: [Uninstall](docs/install.md#uninstall).
 irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/master/boot.ps1 | iex
 ```
 
+The Source code downloads on the [Releases page](https://github.com/ItsAlways710/710.DesktopRice/releases)
+aren't an install: install needs a git clone (`710sRice update` runs on git), so from a download
+it stops and points you at this one-liner.
+
 | | What happens |
 | --- | --- |
 | 1 | git and PowerShell 7 are installed if they're missing |

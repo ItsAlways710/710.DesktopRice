@@ -313,6 +313,7 @@ try {
                 Write-RiceError "Unknown option '$($rest[0])' for $name"
                 Show-RiceCommandHelp $name
                 $script:RiceExit = 1
+            } elseif ($name -eq 'install' -and -not $(. (Join-Path $Root 'tools\lib\clone.ps1'); Test-RiceInstallClone $Root)) { $script:RiceExit = 1   # not a clone: before UAC
             } elseif ($Commands[$name].Admin -eq 'Required' -and -not (Test-RiceAdmin)) {
                 # Never relaunch from a relaunch: if the admin window somehow isn't admin, stop
                 # here rather than asking for UAC again and again.

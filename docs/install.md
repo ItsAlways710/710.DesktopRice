@@ -69,6 +69,10 @@ git clone https://github.com/ItsAlways710/710.DesktopRice.git
 cd 710.DesktopRice
 ```
 
+It has to be a clone: a download of the source (the Releases page's Source code zip, or a copy
+without its `.git` folder) can't be installed, because `710sRice update` runs on git. Install
+says so and stops before anything changes, before its UAC prompt.
+
 The first install runs from a normal PowerShell 7 window in the repo folder, as
 `.\710sRice.ps1` (`install`, or `install -Activate` for full-time; both below). It opens an
 admin window for the install itself (one UAC prompt) and waits for it. After that, `710sRice`

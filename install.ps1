@@ -127,6 +127,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
+. (Join-Path $Root 'tools\lib\clone.ps1'); if (-not (Test-RiceInstallClone $Root)) { exit 1 }   # from a git clone only
 
 # Before anything else, so a contradictory command line changes nothing at all.
 if ($ElevatedTiling -and $NoElevatedTiling) {
