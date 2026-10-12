@@ -188,102 +188,9 @@ function Get-PaletteReadableHex {
 }
 
 # ------------------------------------------------------------------------------------------
-# Expressions
+# Expressions (tools\lib\palette-expressions.ps1: every caller of this library has it)
 # ------------------------------------------------------------------------------------------
-function ConvertFrom-PaletteExpression {
-    <# Parses one expression into a small tree: @{Kind='hex'; Value} | @{Kind='name'; Name} |
-       @{Kind='lighten'|'darken'; Arg; Amount} | @{Kind='mix'; Arg; Other; Amount}. Throws a
-       readable message on anything else (the editor and doctor show it). #>
-    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
-    $state = @{ s = $Text; i = 0 }
-    $skip = { while ($state.i -lt $state.s.Length -and [char]::IsWhiteSpace($state.s[$state.i])) { $state.i++ } }
-    $parse = $null
-    $parse = {
-        & $skip
-        $rest = $state.s.Substring($state.i)
-        if ($rest -match '^#[0-9A-Fa-f]{6}(?![0-9A-Za-z])') {
-            $state.i += 7
-            return @{ Kind = 'hex'; Value = $Matches[0] }
-        }
-        if ($rest -notmatch '^[A-Za-z][A-Za-z0-9]*') { throw "expected a colour at '$rest'" }
-        $word = $Matches[0]
-        $state.i += $word.Length
-        & $skip
-        if ($state.i -lt $state.s.Length -and $state.s[$state.i] -eq '(') {
-            $fn = $word.ToLowerInvariant()
-            if ($fn -notin 'lighten', 'darken', 'mix') { throw "unknown function '$word' (lighten, darken or mix)" }
-            $state.i++
-            $arg = & $parse
-            $other = $null
-            & $skip
-            if ($state.i -ge $state.s.Length -or $state.s[$state.i] -ne ',') { throw "$fn(...) needs a comma after its colour" }
-            $state.i++
-            if ($fn -eq 'mix') {
-                $other = & $parse
-                & $skip
-                if ($state.i -ge $state.s.Length -or $state.s[$state.i] -ne ',') { throw 'mix(a, b, n) needs three parts' }
-                $state.i++
-            }
-            & $skip
-            $num = $state.s.Substring($state.i)
-            if ($num -notmatch '^\d+(\.\d+)?') { throw "$fn(...) needs an amount from 0 to 100" }
-            $amount = [double]$Matches[0]
-            if ($amount -lt 0 -or $amount -gt 100) { throw "$fn(...) amount $amount isn't between 0 and 100" }
-            $state.i += $Matches[0].Length
-            & $skip
-            if ($state.i -ge $state.s.Length -or $state.s[$state.i] -ne ')') { throw "$fn(...) is missing its ')'" }
-            $state.i++
-            $node = @{ Kind = $fn; Arg = $arg; Amount = $amount }
-            if ($fn -eq 'mix') { $node.Other = $other }
-            return $node
-        }
-        @{ Kind = 'name'; Name = $word }
-    }
-    if (-not $Text.Trim()) { throw 'empty colour' }
-    $tree = & $parse
-    & $skip
-    if ($state.i -lt $state.s.Length) { throw "unexpected '$($state.s.Substring($state.i))'" }
-    $tree
-}
-
-function Resolve-PaletteExpression {
-    <# An expression -> '#rrggbb'. Names: the palette's 19 slots, then roles -- $Roles holds
-       either finished hex values or, while roles are being resolved, their expressions
-       ($RoleDefs + $Visiting catch a role that refers back to itself). #>
-    param([Parameter(Mandatory)][string]$Text, [Parameter(Mandatory)][System.Collections.IDictionary]$Palette,
-          [System.Collections.IDictionary]$Roles = @{}, [System.Collections.IDictionary]$RoleDefs = @{},
-          [System.Collections.Generic.HashSet[string]]$Visiting)
-    if ($null -eq $Visiting) { $Visiting = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase) }
-    $tree = ConvertFrom-PaletteExpression -Text $Text
-    Resolve-PaletteTree -Tree $tree -Palette $Palette -Roles $Roles -RoleDefs $RoleDefs -Visiting $Visiting
-}
-
-function Resolve-PaletteTree {
-    param($Tree, $Palette, $Roles, $RoleDefs, $Visiting)
-    switch ($Tree.Kind) {
-        'hex'  { return $Tree.Value }
-        'name' {
-            $n = $Tree.Name
-            if ($Palette.Contains($n)) { return $Palette[$n] }
-            if ($Roles.Contains($n)) { return $Roles[$n] }
-            if ($RoleDefs.Contains($n)) {
-                if (-not $Visiting.Add($n)) { throw "role '$n' refers back to itself" }
-                $v = Resolve-PaletteExpression -Text $RoleDefs[$n] -Palette $Palette -Roles $Roles -RoleDefs $RoleDefs -Visiting $Visiting
-                $null = $Visiting.Remove($n)
-                $Roles[$n] = $v
-                return $v
-            }
-            throw "unknown colour '$n'"
-        }
-        'lighten' { return Get-PaletteShadedHex -Hex (Resolve-PaletteTree $Tree.Arg $Palette $Roles $RoleDefs $Visiting) -Factor ($Tree.Amount / 100) }
-        'darken'  { return Get-PaletteShadedHex -Hex (Resolve-PaletteTree $Tree.Arg $Palette $Roles $RoleDefs $Visiting) -Factor (-$Tree.Amount / 100) }
-        'mix' {
-            return Get-PaletteMixedHex -A (Resolve-PaletteTree $Tree.Arg $Palette $Roles $RoleDefs $Visiting) `
-                                       -B (Resolve-PaletteTree $Tree.Other $Palette $Roles $RoleDefs $Visiting) -Weight ($Tree.Amount / 100)
-        }
-    }
-    throw "can't read that colour"
-}
+. (Join-Path $PSScriptRoot 'palette-expressions.ps1')
 
 # ------------------------------------------------------------------------------------------
 # Targets (tools\palette\targets\<id>.ps1)
@@ -868,15 +775,17 @@ function Test-PaletteIsAdmin {
 # ------------------------------------------------------------------------------------------
 function Get-PaletteThemeInputs {
     <# Everything that decides the colours, as "repo-relative path -> LF sha256": the entry
-       script, this library and palette-files.ps1, every file in tools\palette\targets, and the
-       active profile as "profile:<id>" (its file's hash -- Default's file when Default is active).
-       The pipeline writes these lines LAST (theme-inputs.sha256); doctor recomputes and compares. #>
+       script, this library and the palette-files.ps1 and palette-expressions.ps1 it loads, every
+       file in tools\palette\targets, and the active profile as "profile:<id>" (its file's hash --
+       Default's file when Default is active). The pipeline writes these lines LAST
+       (theme-inputs.sha256); doctor recomputes and compares. #>
     param([string]$ProfileId = (Get-ActivePaletteProfileId))
     $root = $script:PaletteLibRoot
     $inputs = [ordered]@{}
     $inputs['tools\apply-wallust-outputs.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\apply-wallust-outputs.ps1')
     $inputs['tools\lib\palette.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette.ps1')
     $inputs['tools\lib\palette-files.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette-files.ps1')
+    $inputs['tools\lib\palette-expressions.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette-expressions.ps1')
     foreach ($f in @(Get-ChildItem -LiteralPath (Get-PaletteTargetsDir) -File | Sort-Object Name)) {
         $inputs["tools\palette\targets\$($f.Name)"] = Get-PaletteLfSha256 -Path $f.FullName
     }
