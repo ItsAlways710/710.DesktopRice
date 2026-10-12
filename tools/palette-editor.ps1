@@ -1653,9 +1653,9 @@ foreach ($pair in @(@($u.PkSV, 'sv'), @($u.PkHue, 'hue'))) {
 
 $script:Window.Add_PreviewKeyDown({
     param($s, $e)
-    if ($e.Key -eq 'Escape') { $e.Handled = $true; Request-EditorClose; return }
+    if ($e.Key -eq 'Escape') { $e.Handled = $true; if ($script:Work) { Request-EditorClose }; return }
     $ctrl = ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -ne 0
-    if ($ctrl -and $e.Key -eq 'S') {
+    if ($ctrl -and $e.Key -eq 'S' -and $script:Work) {
         $e.Handled = $true
         if ($script:Ui.BtnSave.Visibility -eq 'Visible' -and $script:Ui.BtnSave.IsEnabled) { Invoke-EditorSave }
         elseif ($script:Ui.BtnSaveUse.IsEnabled -and $script:Mode -eq 'edit' -and $script:Id -eq (Get-ChosenId)) { Invoke-EditorSave -Use }
@@ -1692,32 +1692,11 @@ $script:Window.Dispatcher.Add_UnhandledException({
 })
 
 # ------------------------------------------------------------------------------------------
-# Go
+# Go: the window first, then everything in it (tools\lib\palette-editor-start.ps1)
 # ------------------------------------------------------------------------------------------
-$script:Image = Get-PaletteCurrentWallpaper
-if ($script:Image -and -not (Test-Path -LiteralPath $script:Image)) { $script:Image = $null }
-Update-Known
-Set-Backdrop -Image $script:Image
-Open-EditorProfile
-Build-PaletteStrip
-Build-RoleRows
-Build-TargetToggles
-Build-AnsiGrid
-Register-PreviewTags
-if ($script:Mode -eq 'new') { $script:Ui.FromRow.Visibility = 'Visible'; Build-FromPanel }
-Sync-SourceControls
-Sync-OptionControls
-Sync-Header
-Request-EditorPalette
-$script:Timer.Start()
-# Fit the screen (a 1080p laptop at 125 % has about 830 px of height to give).
-$wa = [System.Windows.SystemParameters]::WorkArea
-$script:Window.Width = [Math]::Min($script:Window.Width, [Math]::Floor($wa.Width * 0.95))
-$script:Window.Height = [Math]::Min($script:Window.Height, [Math]::Floor($wa.Height * 0.95))
-$script:Window.MinWidth = [Math]::Min($script:Window.MinWidth, $script:Window.Width)
-$script:Window.MinHeight = [Math]::Min($script:Window.MinHeight, $script:Window.Height)
+. (Join-Path $Root 'tools\lib\palette-editor-start.ps1')
+Initialize-EditorWindow
 $script:Window.Add_ContentRendered({ $null = $script:Window.Activate() })
-Write-EditorLog "opened: $(Get-EditorLabel) ($script:Mode)"
 try {
     $null = $script:Window.ShowDialog()
 } finally {
