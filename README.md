@@ -287,7 +287,7 @@ From any PowerShell 7 window. The ones that need admin rights ask with a UAC pro
 710sRice start              # start it (stop stops it; restart does both)
 710sRice doctor             # the health check: what's wrong, and the fix for each
 710sRice doctor -repair     # run those fixes
-710sRice update             # the newest version from GitHub, then repair
+710sRice update             # the newest release from GitHub, then repair
 710sRice activate           # full-time from now on (deactivate: back to on demand)
 710sRice palette use 3      # theme everything with palette profile 3
 710sRice uninstall -DryRun  # what uninstall would do; changes nothing
@@ -295,8 +295,10 @@ From any PowerShell 7 window. The ones that need admin rights ask with a UAC pro
 ```
 
 - **Update** keeps your wallpaper, theme and choices (full-time or on demand, the tiling mode,
-  your palette profiles, the screen numbers) and your own files. Updates are tested on real
-  machines before they ship: [the history](https://github.com/ItsAlways710/710.DesktopRice/commits/master).
+  your palette profiles, the screen numbers) and your own files. Releases are tested on both
+  machines (23H2 and 25H2) before they ship: [the releases](https://github.com/ItsAlways710/710.DesktopRice/releases).
+  `710sRice update -Latest` follows every commit instead (bleeding edge;
+  [Official or bleeding edge](docs/install.md#official-or-bleeding-edge)).
 - **Uninstall** puts back what install changed, restores rather than resets, and leaves the
   repo and your own files.
 
@@ -331,7 +333,7 @@ Everything above in depth, and everything the front page leaves out ([the index]
 
 | Chapter | Inside |
 | --- | --- |
-| [Install](docs/install.md) | [Requirements](docs/install.md#requirements) · [Three ways to run it](docs/install.md#three-ways-to-run-it) · [What install always does](docs/install.md#what-install-always-does) · [Full-time](docs/install.md#full-time--activate) · [On demand](docs/install.md#on-demand) · [Switching](docs/install.md#switching-activate--deactivate) · [Updating](docs/install.md#updating) · [Run on demand](docs/install.md#run-on-demand) · [Uninstall](docs/install.md#uninstall) |
+| [Install](docs/install.md) | [Requirements](docs/install.md#requirements) · [Three ways to run it](docs/install.md#three-ways-to-run-it) · [What install always does](docs/install.md#what-install-always-does) · [Full-time](docs/install.md#full-time--activate) · [On demand](docs/install.md#on-demand) · [Switching](docs/install.md#switching-activate--deactivate) · [Updating](docs/install.md#updating) · [Official or bleeding edge](docs/install.md#official-or-bleeding-edge) · [Run on demand](docs/install.md#run-on-demand) · [Uninstall](docs/install.md#uninstall) |
 | [The 710sRice command](docs/command.md) | Every command and its options · [Install steps](docs/command.md#install-steps) |
 | [Keys and menus](docs/keys-and-menus.md) | [Hotkeys](docs/keys-and-menus.md#hotkeys), the capture keys, the menus |
 | [Screens, workspaces and the bar](docs/desktop.md) | [Screens and workspaces](docs/desktop.md#screens-and-workspaces) · [The bar](docs/desktop.md#the-bar) |

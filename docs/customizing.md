@@ -25,10 +25,12 @@ These files are yours alone. Git ignores them, so neither `710sRice update` nor 
   one-line change to its row, then `710sRice update` on each machine (or
   `710sRice install -Only upgrade` on this one). Pins only move up; a copy newer than its pin is
   left alone.
-- **Your fork's updates:** `710sRice update` pulls `master` from the clone's own `origin`, and
-  doctor's version line asks the same place, so a clone of your fork follows your fork. The
-  one-liner is the exception: `boot.ps1` clones this repo, so a fork's one-liner needs its own
-  `boot.ps1` and its own raw URL.
+- **Your fork's updates:** `710sRice update` follows the clone's own `origin` -- its `release`
+  branch (official), or `master` with `-Latest` (bleeding edge) -- and doctor's first line asks
+  the same place, so a clone of your fork follows your fork. Until your fork has a release,
+  `710sRice update` says so and leaves the clone as it is; `-Latest` follows your master
+  meanwhile. The one-liner is the exception: `boot.ps1` clones this repo, so a fork's one-liner
+  needs its own `boot.ps1` and its own raw URL.
 - **Rules every machine gets:** shipped rules go in `config/komorebi/rules.toml` and shipped
   games in `games.toml`, both tracked; your file wins over them on your machine
   ([App rules](tiling.md#app-rules)).

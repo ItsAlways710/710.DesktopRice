@@ -50,7 +50,7 @@
   710sRice deactivate -DryRun         # what going back to on demand would do (changes nothing)
   710sRice doctor                     # what's wrong, and the command that fixes each thing
   710sRice doctor -repair             # ...and fix it (never the wallpaper or theme)
-  710sRice update                     # the newest version from GitHub, then doctor -repair
+  710sRice update                     # the newest release from GitHub, then doctor -repair (-Latest: every commit)
   710sRice reload bar                 # just the bar, e.g. after a config.yaml change
   710sRice tiling normal              # komorebi stops running as admin (next start)
 #>
@@ -117,14 +117,14 @@ $Commands = [ordered]@{
     # update: pull as you (tools\lib\update.ps1 -- loaded here, BEFORE the pull; nothing is loaded
     # after it), then doctor -repair in a new process started from the pulled files. The row runs
     # in any window; the repair asks for UAC itself (AsksAdmin: help says (admin)).
-    'update'    = @{ Usage = 'update'; Help = 'Get the newest version from GitHub, then repair -- keeps your wallpaper, theme and choices'; Admin = 'Any'; AsksAdmin = $true; NoOptions = $true
+    'update'    = @{ Usage = 'update [-Latest | -Release]'; Help = 'Get the newest release from GitHub, then repair -- keeps your wallpaper, theme and choices'; Admin = 'Any'; AsksAdmin = $true
+                     More = '-Latest: bleeding edge from now on -- every commit on master. -Release: official again; a newer build stays until a release includes it.'
                      Run = {
                          . (Join-Path $Root 'tools\lib\activation.ps1')
                          . (Join-Path $Root 'tools\lib\doctor.ps1')
                          . (Join-Path $Root 'tools\lib\update.ps1')
-                         $r = Invoke-RiceUpdate
-                         # A statement of its own, not an assignment: the repair's output goes
-                         # straight to the console (see Invoke-RiceUpdateHandOff).
+                         $r = Invoke-RiceUpdate @args   # it checks the options first (update.ps1)
+                         # A statement of its own: the repair's output goes straight to the console.
                          if ($r.HandOff) { Invoke-RiceUpdateHandOff } else { $script:RiceExit = $r.Exit }
                      } }
     'start'     = @{ Usage = 'start'; Help = 'Start the stack'; Admin = 'Any'

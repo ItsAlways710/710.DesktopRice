@@ -207,7 +207,7 @@ in, and the command that switches it.
 710sRice update
 ```
 
-It pulls the newest version from GitHub, then runs `710sRice doctor -repair` from it (one UAC
+It takes the newest release from GitHub, then runs `710sRice doctor -repair` from it (one UAC
 prompt). Repair keeps your wallpaper and theme: it moves pinned packages up to a new pin in
 [versions.md](../versions.md) (closing each app first and starting it again afterwards), and
 picks up changed rules, launchers, the profile hook, Flow's, ShareX's and Everything's
@@ -217,14 +217,6 @@ time's Windows settings, a sign-in task someone disabled: doctor marks each one 
 (those belong in `user.ahk`, `rules.local.toml` or `user.ps1` -- see
 [Make it yours](customizing.md)), and if your copy and GitHub have both moved, it tells you
 what to run instead. Nothing new? It says so and runs a health check.
-
-There's no separate update checker, by design: `710sRice doctor` tells you when GitHub has a
-newer version, when you ask it. The apps' own update checks are off too (YASB's, ShareX's,
-Everything's, Flow Launcher's): [versions.md](../versions.md) pins them, and `710sRice update`
-moves them.
-
-From a copy older than the `update` command, or if you'd rather run git yourself,
-`git pull` and then `710sRice doctor -repair` does the same thing by hand.
 
 Re-running the installer (`710sRice install`) is always safe too. A plain re-run keeps
 whatever you had: a full-time (`-Activate`) machine stays full-time (switching is
@@ -236,6 +228,35 @@ afterwards); one that's newer than its pin, and every unpinned one, is left alon
 
 `710sRice install -SkipPackages` skips the winget step and redoes everything else (config,
 theme, Flow setup), which is quicker when only the repo changed.
+
+### Official or bleeding edge
+
+A release is a tested version with a number, `0.1.0`, listed with its notes on the
+[Releases page](https://github.com/ItsAlways710/710.DesktopRice/releases). Your clone follows one
+of two ways, and remembers which (in its own git settings, so the choice outlives an uninstall):
+
+- **Official**, the default: `710sRice update` takes releases only. A new clone starts here, and
+  so does one made before there were releases.
+- **Bleeding edge**: every commit on master, as soon as it's pushed. `710sRice update -Latest`
+  switches to it and updates in the same run; from then on a plain `710sRice update` follows
+  master.
+
+`710sRice update -Release` switches back to official. Bleeding edge only goes forward: switching
+back to official keeps the build you have until the next release. A build that a release already
+includes moves onto it at once; one newer than every release stays exactly as it is, and update
+says so, until a release includes it. Doctor's first line says where you are: `0.1.0, official`,
+`0.1.0 + 4 commits (abc1234), bleeding edge`, or, newer than every release, `official from the
+next release`.
+
+There's no separate update checker, by design: `710sRice doctor` tells you when GitHub has a
+newer release (a newer commit, on bleeding edge), when you ask it. The apps' own update checks
+are off too (YASB's, ShareX's, Everything's, Flow Launcher's): [versions.md](../versions.md) pins
+them, and `710sRice update` moves them.
+
+If you'd rather run git yourself, `git pull` and then `710sRice doctor -repair` does the same
+thing by hand, for the branch your clone is on: `release` (official) or `master` (bleeding edge).
+A copy older than the `update` command is on master: the same two commands bring it up to date,
+and `710sRice update` takes it from there.
 
 ## Run on demand
 

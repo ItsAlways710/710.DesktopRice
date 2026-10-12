@@ -1,30 +1,43 @@
 <#
 .SYNOPSIS
-  `710sRice update` -- the newest version from GitHub, then `710sRice doctor -repair` run from it.
-  Dot-sourced by 710sRice.ps1 after activation.ps1 and doctor.ps1 (it uses doctor's
-  git helpers -- tools\lib\clone.ps1, which doctor.ps1 loads -- and, when there's nothing to
-  pull, doctor's report) -- never run directly.
+  `710sRice update [-Latest | -Release]` -- the newest release from GitHub (official), or master's
+  newest commit (bleeding edge), then `710sRice doctor -repair` run from it. Dot-sourced by
+  710sRice.ps1 after activation.ps1 and doctor.ps1 (it uses doctor's git helpers --
+  tools\lib\clone.ps1, which doctor.ps1 loads -- and, when no files move, doctor's report) --
+  never run directly.
 
 .DESCRIPTION
   Two halves (claude/cli-plan.md, Stage 5):
-    1. Invoke-RiceUpdate, here, in your window, as you: refuse unless the pull can be a clean
-       fast-forward (a git clone, on master, no tracked file changed, GitHub reachable, not
-       diverged) -- nothing changes on a refusal; fetch; show what's coming; fast-forward.
+    1. Invoke-RiceUpdate, here, in your window, as you: refuse unless the move can be a clean
+       fast-forward (a git clone, on release or master, no tracked file changed, GitHub reachable,
+       not diverged) -- nothing changes on a refusal but a switch's saved choice; ask GitHub, fetch;
+       show what's coming; fast-forward.
     2. Invoke-RiceUpdateHandOff: `710sRice doctor -repair` in a NEW process started from the
        pulled files, so the new version's checks decide what "healthy" means and its install
        steps do the fixing. From a normal window it's the usual admin window (one UAC prompt,
        its exit code passed on); from an admin window, a child in this same window.
-  Nothing to pull (the same commit as GitHub, or only ahead of it): doctor's report, right here --
-  read-only, no UAC. It still shows what a pull whose repair never ran left behind.
+  No files to move (up to date, only ahead of GitHub, the hold, or just a branch switch at the
+  same commit): doctor's report, right here -- read-only, no UAC. It still shows what an update
+  whose repair never ran left behind.
+
+  Which way it goes: the clone's saved choice (clone.ps1: Get-RiceUpdateWay), official when nothing
+  is saved. Official follows GitHub's release branch, which only ever moves to a release tag;
+  bleeding edge (-Latest) follows master. -Release goes back to official without a step back: a
+  build that a release already includes moves onto release now, and one newer than every release
+  stays exactly where it is (the hold) until a release includes it. Bleeding edge from release is
+  always forward: release is in master's history. Existing clones are official, on master: their
+  first update to this ran their old half 1 (master only, no tags); this one moves them onto
+  release, or holds.
 
   THE OLD CODE RUNS HALF 1. This file, the dispatcher and everything they loaded were read before
   the pull, and nothing is loaded after it -- old code in memory never mixes with new files; half
   2 is always a new process. So a change to half 1 only takes effect from the NEXT update, and
   every copy of half 1 out there, however old, hands off with `710sRice.ps1 --elevated doctor
   -repair` (normal window) or `710sRice.ps1 doctor -repair` (admin window): every future
-  dispatcher must keep both working.
+  dispatcher must keep both working. (Half 1 before 2026-10-12 fetches master only, without tags,
+  and refuses any branch but master.)
 
-  Exit code: a refusal, or a hand-off that didn't run, 1; nothing to pull, doctor's [XX] count;
+  Exit code: a refusal, or a hand-off that didn't run, 1; no files moved, doctor's [XX] count;
   pulled, repair's [XX] left (0 = updated and healthy).
 #>
 
@@ -53,11 +66,35 @@ function Invoke-UpdateGit {
     }
 }
 
+function Test-RiceOwnOrigin {
+    # Is origin this repo, ItsAlways710/710.DesktopRice on GitHub (its URL as configured)? Only then
+    # does update link a release's page: a fork's would be its owner's, and named here.
+    param([Parameter(Mandatory)][string]$Git)
+    "$((Invoke-DoctorGit $Git @('config', '--get', 'remote.origin.url')).Lines)".Trim() -match '^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)ItsAlways710/710\.DesktopRice(\.git)?/?$'
+}
+
 function Invoke-RiceUpdate {
-    <# Half 1. Returns Exit (710sRice's exit code) and HandOff ($true: pulled -- the caller runs
-       Invoke-RiceUpdateHandOff next, as a statement of its own, so the new process writes
-       straight to this console). Everything on screen goes through Write-Host. #>
+    <# Half 1. $args: nothing, -Latest or -Release, checked before anything happens. Returns Exit
+       (710sRice's exit code) and HandOff ($true: files moved -- the caller runs
+       Invoke-RiceUpdateHandOff next, as a statement of its own, so the new process writes straight
+       to this console). Everything on screen goes through Write-Host. #>
     $done = { param([int]$Exit) [pscustomobject]@{ Exit = $Exit; HandOff = $false } }
+
+    # --- The switches: any other option, or both, and nothing happens ------------------------------
+    $switch = $null
+    foreach ($a in $args) {
+        $o = "$a"
+        if ($o -notin '-Latest', '-Release') {
+            Write-RiceError "Unknown option '$o' for update"
+            Show-RiceCommandHelp 'update'
+            return & $done 1
+        }
+        if ($switch -and $switch -ne $o) {
+            Write-RiceError '-Latest and -Release contradict each other -- pick one. Nothing was changed.'
+            return & $done 1
+        }
+        $switch = $o
+    }
     Write-Host ''
 
     # --- Refusals that need no network (Topic 2: 1-3) -------------------------------------------
@@ -70,10 +107,24 @@ function Invoke-RiceUpdate {
         Write-UpdateRefusal "git isn't installed -- update needs it" -Fix 'winget install --id Git.Git -e, then 710sRice update'
         return & $done 1
     }
+    # A switch is saved first, so it holds even when this run then refuses (the line says so).
+    $nothing = 'nothing changed'
+    if ($switch) {
+        $want = if ($switch -eq '-Latest') { 'bleeding-edge' } else { 'official' }
+        $had  = Get-RiceUpdateWay $git
+        $null = & $git -C $Root config --local 710srice.updates $want 2>$null
+        if ($LASTEXITCODE -ne 0) { Write-UpdateRefusal "Couldn't save the choice in this clone's git config -- nothing changed"; return & $done 1 }
+        $what = if ($want -eq 'official') { @('Official', 'updates take releases only') } else { @('Bleeding edge', "each update takes master's newest commit") }
+        Write-Host "  [OK] $(if ($had -eq $want) { "$($what[0]), as it was: $($what[1])" } else { "$($what[0]) from now on: $($what[1]) (saved in this clone)" })" -ForegroundColor Green
+        $nothing = 'nothing else changed'
+    }
+    $way    = Get-RiceUpdateWay $git
+    $target = if ($way -eq 'official') { 'release' } else { 'master' }
     $branch = "$((Invoke-DoctorGit $git @('branch', '--show-current')).Lines)".Trim()
-    if ($branch -ne 'master') {
+    if ($branch -notin 'release', 'master') {
         $where = if ($branch) { "on branch $branch" } else { 'on a detached HEAD' }
-        Write-UpdateRefusal "This copy is $where -- update follows GitHub's master" -Fix 'git switch master, then 710sRice update'
+        $to    = if ($target -eq 'master' -or -not ((Get-RiceRef $git 'refs/heads/release') -or (Get-RiceRef $git 'refs/remotes/origin/release'))) { 'master' } else { 'release' }
+        Write-UpdateRefusal "This copy is $where -- update follows GitHub's $target ($(if ($way -eq 'official') { 'official' } else { 'bleeding edge' }))" -Fix "git switch $to, then 710sRice update"
         return & $done 1
     }
     # Any tracked file changed: doctor's own check (same list, same fix), as a refusal.
@@ -82,59 +133,110 @@ function Invoke-RiceUpdate {
     $local = Get-DoctorLocalChangesResult ([pscustomobject]@{ Reason = $null; Status = $status })
     if ($local.Status -ne 'OK') {
         $local.Status = 'XX'
-        if ($local.Text -like "Couldn't*") { $local.Text += ' -- nothing changed' }
+        if ($local.Text -like "Couldn't*") { $local.Text += " -- $nothing" }
         Write-DoctorResult $local
         return & $done 1
     }
 
     # --- GitHub (Topic 2: 4-5) ---------------------------------------------------------------------
-    # The fetch moves this clone's origin/master along (normal git); nothing else changes yet.
-    # It downloads, so it gets longer than doctor's ls-remote -- and a cap, because a stalled
-    # connection could otherwise hang here for good.
+    # Which branches and releases it has (a GitHub with no release yet is fine), then a fetch of
+    # just those and the release tags: it moves this clone's origin/master and origin/release
+    # along (normal git); nothing else changes yet. The fetch downloads, so it gets longer than the
+    # ask -- and a cap, because a stalled connection could otherwise hang here for good.
     Write-Host '  Checking GitHub...' -ForegroundColor DarkGray
-    $fetch = Invoke-UpdateGit $git @('fetch', '--no-tags', 'origin', '+refs/heads/master:refs/remotes/origin/master') -TimeoutSeconds 120
-    if ($fetch.TimedOut) { Write-UpdateRefusal "Couldn't reach GitHub (no answer in 2 minutes) -- nothing changed"; return & $done 1 }
-    if ($fetch.ExitCode -ne 0) { Write-UpdateRefusal "Couldn't reach GitHub ($($fetch.Why)) -- nothing changed"; return & $done 1 }
+    $ask = Invoke-UpdateGit $git (@('ls-remote', 'origin') + (Get-RiceRemoteRefNames)) -TimeoutSeconds 60
+    if ($ask.TimedOut) { Write-UpdateRefusal "Couldn't reach GitHub (no answer in a minute) -- $nothing"; return & $done 1 }
+    if ($ask.ExitCode -ne 0) { Write-UpdateRefusal "Couldn't reach GitHub ($($ask.Why)) -- $nothing"; return & $done 1 }
+    $remote = ConvertFrom-RiceRemoteRefs $ask.Lines
+    $specs = @(
+        if ($remote.Master)  { '+refs/heads/master:refs/remotes/origin/master' }
+        if ($remote.Release) { '+refs/heads/release:refs/remotes/origin/release' }
+        '+refs/tags/v*:refs/tags/v*'
+    )
+    $fetch = Invoke-UpdateGit $git (@('fetch', '--no-tags', 'origin') + $specs) -TimeoutSeconds 120
+    if ($fetch.TimedOut) { Write-UpdateRefusal "Couldn't reach GitHub (no answer in 2 minutes) -- $nothing"; return & $done 1 }
+    if ($fetch.ExitCode -ne 0) { Write-UpdateRefusal "Couldn't reach GitHub ($($fetch.Why)) -- $nothing"; return & $done 1 }
 
-    $remote = 'refs/remotes/origin/master'
-    $head   = "$((Invoke-DoctorGit $git @('rev-parse', 'HEAD')).Lines)".Trim()
-    $rl     = Invoke-DoctorGit $git @('rev-list', '--left-right', '--count', "HEAD...$remote")
-    $counts = "$($rl.Lines)".Trim() -split '\s+'
-    if (-not $head -or -not $rl.Ok -or $counts.Count -ne 2) {
-        Write-UpdateRefusal "Couldn't compare this copy with GitHub's master -- nothing changed"
-        return & $done 1
-    }
-    $ahead, $behind = [int]$counts[0], [int]$counts[1]
-    $short = { param($ref) "$((Invoke-DoctorGit $git @('rev-parse', '--short', $ref)).Lines)".Trim() }
+    $head = Get-RiceRef $git 'HEAD'
+    $goal = if ($target -eq 'release') { if ($remote.Release) { Get-RiceRef $git 'refs/remotes/origin/release' } }
+            elseif ($remote.Master) { Get-RiceRef $git 'refs/remotes/origin/master' }
+    if (-not $head) { Write-UpdateRefusal "Couldn't read this copy's commit -- $nothing"; return & $done 1 }
+    $s = Get-RiceCloneState -Git $git -Head $head -Branch $branch -Remote $remote
+    if ($target -eq 'master' -and -not $goal) { Write-UpdateRefusal "GitHub has no master branch -- $nothing"; return & $done 1 }
+    $name = if ($goal) { Get-RiceReleaseName $s.Tags $goal }
 
-    # --- Nothing to pull (Topic 3): doctor's report, right here ------------------------------------
-    if ($behind -eq 0) {
-        if ($ahead -eq 0) { Write-Host "  [OK] Already up to date with GitHub ($(& $short 'HEAD'))" -ForegroundColor Green }
-        else { Write-Host "  [..] Nothing to pull -- this copy is $(Get-DoctorPlural $ahead 'commit' 'commits') ahead of GitHub (not pushed)" -ForegroundColor Cyan }
+    # --- Official, and nothing to follow yet, or a build newer than every release: it stays ------
+    if ($target -eq 'release' -and -not $goal) {
+        Write-Host "  [..] No release on GitHub yet -- this build ($($s.Build.Text)) stays as it is until the first one; 710sRice update -Latest follows master meanwhile" -ForegroundColor Cyan
         return & $done (Invoke-RiceDoctor)
     }
-    if ($ahead -gt 0) {
-        Write-UpdateRefusal "Your copy and GitHub have both moved -- update won't merge or rebase for you" `
-            -Detail "$(Get-DoctorPlural $ahead 'commit' 'commits') here that GitHub doesn't have, $behind on GitHub that $(if ($behind -eq 1) { "isn't" } else { "aren't" }) here" `
+    if ($s.Held) {
+        Write-Host "  [..] $(Get-RiceHoldText $s $name)" -ForegroundColor Cyan
+        return & $done (Invoke-RiceDoctor)
+    }
+
+    # --- Onto the branch it follows (official from master, bleeding edge from release) -----------
+    # Only ever forward. The local branch is made, or moved, to this very commit -- so the switch
+    # itself moves no files -- unless it holds commits GitHub's doesn't have.
+    $move = $branch -ne $target
+    if ($move) {
+        $old = Get-RiceRef $git "refs/heads/$target"
+        if ($old -and $old -ne $head -and -not (Test-RiceAncestor $git $old $head) -and -not (Test-RiceAncestor $git $old $goal)) {
+            Write-UpdateRefusal "This copy's $target branch has commits GitHub's doesn't -- update won't move it ($nothing)" -Fix "git switch $target, then 710sRice update"
+            return & $done 1
+        }
+    }
+    $c = Compare-RiceCommits $git $head $goal
+    if (-not $c) { Write-UpdateRefusal "Couldn't compare this copy with GitHub's $target -- $nothing"; return & $done 1 }
+    if ($c.Ahead -and $c.Behind) {
+        Write-UpdateRefusal "Your copy and GitHub's $target have both moved -- update won't merge or rebase for you" `
+            -Detail "$(Get-DoctorPlural $c.Ahead 'commit' 'commits') here that GitHub doesn't have, $($c.Behind) on GitHub that $(if ($c.Behind -eq 1) { "isn't" } else { "aren't" }) here" `
             -Fix 'git pull --rebase, then 710sRice doctor -repair'
         return & $done 1
     }
+    if ($move) {
+        $zero = '0' * $head.Length
+        foreach ($step in @(@('update-ref', '-m', "710sRice update: onto $target", "refs/heads/$target", $head, $(if ($old) { $old } else { $zero })),
+                            @('branch', "--set-upstream-to=origin/$target", $target),
+                            @('symbolic-ref', '-m', "710sRice update: onto $target", 'HEAD', "refs/heads/$target"))) {
+            $r = Invoke-UpdateGit $git $step
+            if ($r.TimedOut -or $r.ExitCode -ne 0) {
+                Write-UpdateRefusal "Couldn't switch to the $target branch ($(if ($r.TimedOut) { 'git took over 30 seconds' } else { $r.Why })) -- no files changed" -Fix 'git status shows where it stands; then 710sRice update'
+                return & $done 1
+            }
+        }
+        Write-Host "  [OK] Onto the $target branch -- this copy follows $(if ($target -eq 'release') { 'releases' } else { 'every commit' }) from here" -ForegroundColor Green
+    }
+
+    # --- No files to move: doctor's report, right here (Topic 3) ---------------------------------
+    if (-not $c.Behind) {
+        if ($c.Ahead) { Write-Host "  [..] Nothing to pull -- this copy is $(Get-DoctorPlural $c.Ahead 'commit' 'commits') ahead of GitHub's $target (not pushed)" -ForegroundColor Cyan }
+        else { Write-Host "  [OK] $($s.Build.Text) is up to date ($(if ($target -eq 'release') { 'official' } else { 'bleeding edge' }))" -ForegroundColor Green }
+        return & $done (Invoke-RiceDoctor)
+    }
 
     # --- The pull: what's coming, then a fast-forward (Topic 5) ------------------------------------
-    $from = & $short 'HEAD'
-    $to   = & $short $remote
-    $log  = Invoke-UpdateGit $git @('log', '--reverse', '--format=%h %s', "HEAD..$remote")
-    Write-Host "  [OK] Updating $from -> $to ($(Get-DoctorPlural $behind 'commit' 'commits')):" -ForegroundColor Green
-    foreach ($l in @($log.Lines | Select-Object -First 15)) {
-        Write-Host "         $($l -replace '[\x00-\x1F\x7F]', '')" -ForegroundColor DarkGray
+    if ($target -eq 'release') {
+        $to = Get-RiceBuild $git $goal $s.Tags
+        Write-Host "  [OK] Updating $($s.Build.Text) -> $($to.Text) (official)" -ForegroundColor Green
+        $tag = (@($s.Tags | Where-Object { $_.Commit -eq $goal }) | Select-Object -First 1).Tag
+        if ($tag -and (Test-RiceOwnOrigin $git)) {
+            Write-Host "         What's new: https://github.com/ItsAlways710/710.DesktopRice/releases/tag/$tag" -ForegroundColor DarkGray
+        }
+    } else {
+        $log = Invoke-UpdateGit $git @('log', '--reverse', '--format=%h %s', "HEAD..$goal")
+        Write-Host "  [OK] Updating $($s.Build.Short) -> $((Get-RiceBuild $git $goal @()).Short) ($(Get-DoctorPlural $c.Behind 'commit' 'commits'), bleeding edge):" -ForegroundColor Green
+        foreach ($l in @($log.Lines | Select-Object -First 15)) {
+            Write-Host "         $($l -replace '[\x00-\x1F\x7F]', '')" -ForegroundColor DarkGray
+        }
+        if ($log.Lines.Count -gt 15) { Write-Host "         ... and $($log.Lines.Count - 15) more" -ForegroundColor DarkGray }
     }
-    if ($log.Lines.Count -gt 15) { Write-Host "         ... and $($log.Lines.Count - 15) more" -ForegroundColor DarkGray }
 
-    $merge = Invoke-UpdateGit $git @('merge', '--ff-only', '--quiet', $remote) -TimeoutSeconds 120
+    $merge = Invoke-UpdateGit $git @('merge', '--ff-only', '--quiet', $goal) -TimeoutSeconds 120
     if ($merge.TimedOut -or $merge.ExitCode -ne 0) {
         $why = if ($merge.TimedOut) { 'git took over 2 minutes' } else { $merge.Why }
-        $now = "$((Invoke-DoctorGit $git @('rev-parse', 'HEAD')).Lines)".Trim()
-        if ($now -eq $head) { Write-UpdateRefusal "Couldn't fast-forward ($why) -- nothing changed" -Detail $merge.More }
+        $now = Get-RiceRef $git 'HEAD'
+        if ($now -eq $head) { Write-UpdateRefusal "Couldn't fast-forward ($why) -- no files changed" -Detail $merge.More }
         else { Write-UpdateRefusal "The fast-forward stopped part-way ($why)" -Detail $merge.More -Fix 'git status shows where it stands; then 710sRice doctor -repair' }
         return & $done 1
     }

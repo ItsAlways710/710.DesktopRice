@@ -4,7 +4,7 @@ Everything the [front page](../README.md) leaves out, in reading order. Througho
 means the Windows key.
 
 1. [Install](install.md): requirements, the three ways to run it, switching between them,
-   updating, running on demand, uninstalling
+   updating (official releases or bleeding edge), running on demand, uninstalling
 2. [The 710sRice command](command.md): every command, and the installer's steps
 3. [Keys and menus](keys-and-menus.md): the hotkeys and the menus
 4. [Screens, workspaces and the bar](desktop.md)
