@@ -90,7 +90,7 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | Screens | `tools\screens.ps1`, `tools\lib\monitors.ps1`, `tools\write-display-index.ps1` |
 | Wallpaper rotation | `config\ahk\710\wallpaper-rotation.ahk` (the menu, the clock, what holds it); `tools\rotate-wallpaper.ps1` (a change: a random wallpaper from the gallery's folders, set, then `tools\apply-wallust-outputs.ps1`); in the logs folder, `wallpaper-rotation.ini` (on or off, how often, the next change) and `wallpaper-rotation.log` |
 | Scrolling beside another screen | `config\ahk\710\scrolling.ahk`: SUPER+Alt+L's check (`ToggleScrolling`, `ScreenHasSideNeighbour`), and the rule's run once a display change has settled (`monitor-watcher.ahk` calls `ScrollingRuleAfterChange`) with its toast; `tools\scrolling-rule.ps1`: the rule -- when komorebi's screens changed, Scrolling beside another screen goes to Columns -- also run by `scripts\Start-Komorebi.ps1` after every komorebi start; in the logs folder, the screens it last checked (`scrolling-screens.json`) and the toast (`scrolling-rule.txt`) |
-| doctor / repair / update | `tools\lib\doctor.ps1` (the groups, the checks that belong to no step, the shared helpers, the repair plan, the report; each step's checks are in its module), `tools\lib\clone.ps1` (this clone and GitHub: doctor's git calls, its header, the update and local-changes lines; `doctor.ps1` loads it, and update uses it too), `tools\lib\repair.ps1` (the rounds, starting what's down), `tools\lib\update.ps1` (the pull, then repair from the new files) |
+| doctor / repair / update | `tools\lib\doctor.ps1` (the groups, the checks that belong to no step, the shared helpers, the repair plan, the report; each step's checks are in its module), `tools\lib\clone.ps1` (this clone and GitHub: doctor's git calls; the version (the release tags) and which way the clone follows -- official or bleeding edge, saved in its `.git\config` --; doctor's first line, the update and local-changes lines; `doctor.ps1` loads it, and update uses it too), `tools\lib\repair.ps1` (the rounds, starting what's down), `tools\lib\update.ps1` (the pull, then repair from the new files) |
 
 ## Shared libraries
 
@@ -143,7 +143,7 @@ Component checks come at the end of their group, in install's order.
 
 | Group | Checks |
 |---|---|
-| (header) | `update` (`Get-DoctorUpdateResult`), `local-changes` (`Get-DoctorLocalChangesResult`) -- both in `tools\lib\clone.ps1` |
+| (header) | the first line: the version and which way the clone follows (`Get-DoctorHeader`, finished by the update check); `update` (`Get-DoctorUpdateResult`: against the branch the clone follows), `local-changes` (`Get-DoctorLocalChangesResult`) -- all in `tools\lib\clone.ps1` |
 | Repo and command | `path` (`tools\steps\path.ps1`), `envvars`, `weather` (`tools\steps\envvars.ps1`) |
 | Packages and pins | `pkg:*` (`Test-DoctorPinnedPackages`), `pins`, other packages (`Test-DoctorOtherPackages`) -- `tools\steps\packages.ps1`; `wallust` (`tools\steps\wallust.ps1`) |
 | Stack | `stack` / `stack:*` (`Test-DoctorStack`), `paused` (`Test-DoctorPaused`) -- both in `tools\lib\stack.ps1`; `stack:ahk` says when 710.ahk won't load (`tools\lib\ahk-load.ps1`) |

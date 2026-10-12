@@ -9,7 +9,7 @@ UAC prompt and run in their own admin window; there's no need to open one yourse
 | `710sRice install` | Install (safe to run again); `-Activate` makes it full-time, `-SkipPackages` skips winget, `-Only <step>` runs just those [steps](#install-steps) *(admin)* |
 | `710sRice uninstall` | Undo everything install did; `-DryRun` shows the plan first *(admin)* |
 | `710sRice activate` / `deactivate` | [Switch](install.md#switching-activate--deactivate) to full-time / back to on demand; `-DryRun` shows what it would do *(admin)* |
-| `710sRice doctor` | Health check: what's wrong, and the command that fixes each thing. Changes nothing; also says when GitHub has a newer version |
+| `710sRice doctor` | Health check: what's wrong, and the command that fixes each thing. Changes nothing. Its first line is the version (`0.1.0`, or `0.1.0 + 4 commits (abc1234)` past it) and which way this clone updates; it also says when GitHub has a newer one |
 | `710sRice doctor -repair` | Fix what doctor finds, then check again. Never touches your wallpaper, theme or the choices 710sRice gives you: full-time or on demand, the tiling mode, your palette profiles and the one in use, the screen numbers, your own files *(admin)* |
 | `710sRice update` | Get the newest version from GitHub, then repair from it. Keeps your wallpaper, theme and those choices *(admin)* |
 | `710sRice start` / `stop` | Start or stop the stack |

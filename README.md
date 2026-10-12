@@ -55,8 +55,8 @@ columns two wide.
 thing it finds; `710sRice doctor -repair` runs them. On a healthy machine:
 
 ```text
-== 710sRice doctor -- c52a460, 2026-10-10 ==
-  [OK] Up to date with GitHub
+== 710sRice doctor -- 0.1.0, official ==
+  [OK] Up to date -- 0.1.0 is the newest release
   …
 -- Stack --
   [OK] komorebi running
@@ -154,8 +154,8 @@ On a work-managed machine, komorebi says so itself with a pop-up.
 <summary><b>What goes online?</b></summary>
 
 - **The weather:** [Open-Meteo](https://open-meteo.com/), no account.
-- **GitHub:** the one-liner and `git clone`; `710sRice doctor` asks which commit is newest;
-  `710sRice update` pulls.
+- **GitHub:** the one-liner and `git clone`; `710sRice doctor` asks which release is newest
+  (which commit, on bleeding edge); `710sRice update` pulls.
 - **Installs and updates:** winget (and the Microsoft Store source for PowerShell 7), the
   PowerShell Gallery for two modules, and wallust's release on Codeberg (checksum-verified).
 - **The apps' own update checks are off** (YASB's, Flow Launcher's, ShareX's, Everything's).
