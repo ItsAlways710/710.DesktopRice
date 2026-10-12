@@ -2,7 +2,8 @@
 .SYNOPSIS
   `710sRice update` -- the newest version from GitHub, then `710sRice doctor -repair` run from it.
   Dot-sourced by 710sRice.ps1 after activation.ps1 and doctor.ps1 (it uses doctor's
-  git helpers and, when there's nothing to pull, doctor's report) -- never run directly.
+  git helpers -- tools\lib\clone.ps1, which doctor.ps1 loads -- and, when there's nothing to
+  pull, doctor's report) -- never run directly.
 
 .DESCRIPTION
   Two halves (claude/cli-plan.md, Stage 5):
