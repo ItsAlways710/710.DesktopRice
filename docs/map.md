@@ -130,7 +130,7 @@ report lines carry; repair runs the step named on an `[XX]` line (`Step`) or the
 | `tools\lib\bluetooth.ps1` | Does this machine have a Bluetooth adapter |
 | `tools\lib\palette.ps1`, `palette-edit.ps1` | Palette profiles, targets, the theme stamp |
 | `tools\lib\palette-files.ps1` | Rendering a target's template and writing the palette's files (`Write-PaletteFile`); `palette.ps1` loads it, and the theme stamp covers it |
-| `tools\lib\palette-role-rows.ps1` | The palette editor's roles: a row per role and, under each, the app colors that follow it (`Build-RoleRows`, `Switch-RoleOpen`, `Update-RoleRows`); the editor loads it |
+| `tools\lib\palette-role-rows.ps1` | The palette editor's roles: a row per role (`Build-RoleRows`) and, under each, the app colors that follow it, built the first time the role is opened (`Switch-RoleOpen`, `Build-RoleAppRows`); painting them (`Update-RoleRows`, `Update-AppRows`); the editor loads it |
 | `tools\lib\run-hidden.vbs` | Starts a task's program with no console window |
 
 ## Doctor's report
