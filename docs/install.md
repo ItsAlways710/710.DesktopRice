@@ -48,16 +48,16 @@ One thing to do once the bar is up: click the weather widget and pick your city 
 From a normal PowerShell window -- Windows PowerShell is fine, an admin one isn't:
 
 ```powershell
-irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/master/boot.ps1 | iex
+irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/release/boot.ps1 | iex
 ```
 
-It installs git and PowerShell 7 if they're missing, clones this repo to `C:\710.DesktopRice`
-and runs the installer, on demand: one UAC prompt, and the install itself runs in its own admin
-window. To put the repo somewhere else, set `$env:DESKTOPRICE_HOME = 'D:\710.DesktopRice'` in
-that window first. When it's done, open a new PowerShell 7 window: `710sRice start` starts it,
-and `710sRice activate` makes it [full-time](#switching-activate--deactivate). Run the
-one-liner again any time: it uses the clone that's there (`710sRice update` brings that up to
-date).
+It installs git and PowerShell 7 if they're missing, clones this repo's newest release (its
+`release` branch) to `C:\710.DesktopRice` and runs the installer, on demand: one UAC prompt, and
+the install itself runs in its own admin window. To put the repo somewhere else, set
+`$env:DESKTOPRICE_HOME = 'D:\710.DesktopRice'` in that window first. When it's done, open a new
+PowerShell 7 window: `710sRice start` starts it, and `710sRice activate` makes it
+[full-time](#switching-activate--deactivate). Run the one-liner again any time: it uses the clone
+that's there (`710sRice update` brings that up to date).
 
 ## By hand
 

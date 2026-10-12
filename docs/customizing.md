@@ -29,8 +29,8 @@ These files are yours alone. Git ignores them, so neither `710sRice update` nor 
   branch (official), or `master` with `-Latest` (bleeding edge) -- and doctor's first line asks
   the same place, so a clone of your fork follows your fork. Until your fork has a release,
   `710sRice update` says so and leaves the clone as it is; `-Latest` follows your master
-  meanwhile. The one-liner is the exception: `boot.ps1` clones this repo, so a fork's one-liner
-  needs its own `boot.ps1` and its own raw URL.
+  meanwhile. The one-liner is the exception: `boot.ps1` clones this repo's `release` branch, so a
+  fork's one-liner needs its own `boot.ps1` and its own raw URL.
 - **Rules every machine gets:** shipped rules go in `config/komorebi/rules.toml` and shipped
   games in `games.toml`, both tracked; your file wins over them on your machine
   ([App rules](tiling.md#app-rules)).

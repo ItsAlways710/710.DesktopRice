@@ -88,7 +88,8 @@ thing it finds; `710sRice doctor -repair` runs them. On a healthy machine:
 
 **The price, plainly:**
 
-- The one-liner runs a script from this repo's master branch, with one UAC prompt.
+- The one-liner runs a script from this repo's release branch (the newest release), not
+  master, with one UAC prompt.
   [Read `boot.ps1`](boot.ps1) first if you like.
 - Windows Defender exclusions for ShareX, Everything, `komorebic.exe`, PowerShell 7 and the repo
   (without them, captures and hotkeys lag while Defender scans).
@@ -196,7 +197,7 @@ keeps and removes: [Uninstall](docs/install.md#uninstall).
 > Run it from a **normal** PowerShell window, not an admin one. Windows PowerShell is fine.
 
 ```powershell
-irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/master/boot.ps1 | iex
+irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/release/boot.ps1 | iex
 ```
 
 The Source code downloads on the [Releases page](https://github.com/ItsAlways710/710.DesktopRice/releases)
@@ -206,7 +207,7 @@ it stops and points you at this one-liner.
 | | What happens |
 | --- | --- |
 | 1 | git and PowerShell 7 are installed if they're missing |
-| 2 | The repo is cloned to `C:\710.DesktopRice` (`$env:DESKTOPRICE_HOME` picks another place) |
+| 2 | The newest release is cloned to `C:\710.DesktopRice` (`$env:DESKTOPRICE_HOME` picks another place) |
 | 3 | One UAC prompt; the installer runs in its own admin window |
 | 4 | The packages install with winget, the pinned ones at their pins |
 | 5 | The config goes in, and everything is themed from the default wallpaper |

@@ -1,14 +1,16 @@
 # 710sRice's one-line install, from a normal PowerShell window (Windows PowerShell 5.1 will do):
 #
-#   irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/master/boot.ps1 | iex
+#   irm https://raw.githubusercontent.com/ItsAlways710/710.DesktopRice/release/boot.ps1 | iex
 #
-# It installs git and PowerShell 7 if they're missing, clones this repo to C:\710.DesktopRice
-# ($env:DESKTOPRICE_HOME, when set, picks another folder -- install sets that variable, so a
-# machine that had 710sRice finds its folder again), then runs the installer: on demand, one UAC
-# prompt. `710sRice activate` afterwards makes it start at every sign-in. A 710sRice clone already
-# in that folder is used as it is (`710sRice update` brings it up to date). A port of winarchy's
-# boot.ps1, reshaped. Runs on Windows PowerShell 5.1 -- nothing PowerShell 7-only here -- inside
-# one script block, so nothing it defines stays behind in your window, and it never closes it.
+# It installs git and PowerShell 7 if they're missing, clones this repo's release branch -- the
+# newest release -- to C:\710.DesktopRice ($env:DESKTOPRICE_HOME, when set, picks another folder
+# -- install sets that variable, so a machine that had 710sRice finds its folder again), then runs
+# the installer: on demand, one UAC prompt. `710sRice activate` afterwards makes it start at every
+# sign-in. A 710sRice clone already in that folder is used as it is (`710sRice update` brings it up
+# to date). master's copy of this file clones release too, so the one-liner's old URL (master's
+# boot.ps1) keeps working. A port of winarchy's boot.ps1, reshaped. Runs on Windows PowerShell 5.1
+# -- nothing PowerShell 7-only here -- inside one script block, so nothing it defines stays behind
+# in your window, and it never closes it.
 & {
     $repo = 'https://github.com/ItsAlways710/710.DesktopRice.git'
 
@@ -96,8 +98,14 @@
         if ($isClone) {
             Write-BootLine 'OK' "710sRice is already in $shown -- using it as it is (710sRice update brings it up to date)"
         } else {
-            Write-BootLine '..' "Cloning 710sRice into $shown..."
-            & git clone $repo $dir
+            # The release branch: the newest release, what 710sRice update follows from then on. A
+            # repo without one yet (a fork before its first release) is said plainly, before any clone.
+            $found = $null; $reached = $false
+            try { $found = & git ls-remote --heads $repo refs/heads/release 2>$null; $reached = $LASTEXITCODE -eq 0 } catch { }
+            if (-not $reached) { Write-BootLine 'XX' "Couldn't reach GitHub to clone 710sRice -- check the connection, then run this again. Nothing was cloned."; return }
+            if (-not $found) { Write-BootLine 'XX' "This repo has no release yet (no release branch on GitHub), so there's nothing to install. Nothing was cloned."; return }
+            Write-BootLine '..' "Cloning 710sRice (the newest release) into $shown..."
+            & git clone --branch release $repo $dir
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $dir '710sRice.ps1'))) {
                 Write-BootLine 'XX' "git clone failed (exit $LASTEXITCODE)."
                 return
