@@ -406,9 +406,14 @@ widgets:
         type: "magnified" # default/magnified/strip/slide - see "Gallery types" below
         orientation: "landscape" # landscape/portrait
         accent_color: "auto"
+      # Left-click: the gallery (SUPER+W too). Right-click: a random wallpaper from the same
+      # folders. Middle-click: 710.ahk's Wallpaper rotation menu (send-command.ahk
+      # wallpaper-rotation; SUPER+Ctrl+Alt+W too) -- a random one every so often, on a clock
+      # 710.ahk keeps; change_automatically above stays off (config\ahk\710\wallpaper-rotation.ahk
+      # says why). YASB runs an exec callback through cmd, hidden.
       callbacks:
         on_left: "toggle_gallery"
-        on_middle: "do_nothing"
+        on_middle: 'exec "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe" "$env:DESKTOPRICE_HOME\config\ahk\send-command.ahk" wallpaper-rotation'
         on_right: "change_wallpaper"
       keybindings:
         - keys: "ctrl+alt+w"

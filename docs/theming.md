@@ -6,6 +6,10 @@ color, Windows Terminal, the prompt, the menus, Flow Launcher and the lock scree
 does the color picking; the [palette profile](#palette-profiles) in use decides how, and
 which color goes where.
 
+The bar's wallpaper button: click it for the gallery (the same as SUPER+W), right-click it for
+a random wallpaper from the gallery's folders, and middle-click it for
+[Wallpaper rotation](#wallpaper-rotation).
+
 The lock screen takes the wallpaper itself, as your own lock-screen picture (the one
 Settings > Personalization > Lock screen sets), so it's there before sign-in straight away,
 even after a restart. Windows only shows that picture while its lock-screen choice is
@@ -38,6 +42,31 @@ The gallery shows:
   ```
 
   (then `710sRice reload bar` again). No need to edit `config/yasb/config.yaml`.
+
+## Wallpaper rotation
+
+A new random wallpaper every so often, from the folders the gallery shows. Middle-click the
+bar's wallpaper button, or press **SUPER+Ctrl+Alt+W**, for its menu:
+
+- **Auto-apply random wallpaper** turns it on or off. It's off after install. While it's on,
+  the time to the next change shows beside it.
+- **Every 15 minutes**, **30 minutes**, **hour**, **4 hours**, **24 hours** or **week**: how
+  often. It's every hour until you pick another.
+
+Turning it on, or picking an interval, starts the clock from that moment, and nothing else
+moves it: a wallpaper you pick yourself (the gallery, right-click, Windows Settings) or a
+palette profile switch leaves the next change where it was. Each change is a full re-theme, the
+same as picking that wallpaper in the gallery, and never the wallpaper that's already up.
+
+It waits while the window you're using is fullscreen (a game, a video, a slideshow: game mode
+is on) or Flow Launcher is open, and changes once that's over. A change missed while the PC was
+off or asleep, or 710sRice wasn't running, comes once it's back, and the clock carries on as
+set. It only runs while 710sRice is running, and it stays on through sign-out and
+`710sRice update`. `wallpaper-rotation.log`, in the logs folder (`710sRice logs`), says what
+each change did.
+
+No middle button on your touchpad? Settings > Bluetooth & devices > Touchpad > Three-finger
+gestures > Taps: **Middle mouse button** makes a three-finger tap a middle-click. Or use the key.
 
 ## Palette profiles
 

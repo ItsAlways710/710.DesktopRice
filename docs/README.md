@@ -8,7 +8,7 @@ means the Windows key.
 2. [The 710sRice command](command.md): every command, and the installer's steps
 3. [Keys and menus](keys-and-menus.md): the hotkeys and the menus
 4. [Screens, workspaces and the bar](desktop.md)
-5. [Wallpapers and theming](theming.md): the wallpaper gallery, palette profiles and their editor
+5. [Wallpapers and theming](theming.md): the wallpaper gallery, wallpaper rotation, palette profiles and their editor
 6. [Tiling: app rules and admin windows](tiling.md): rules, games, pins, and komorebi elevated
 7. [Make it yours](customizing.md): the files that are yours alone, and forking it
 8. [Troubleshooting](troubleshooting.md): tips and known issues

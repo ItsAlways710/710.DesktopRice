@@ -87,7 +87,9 @@ PalClosed(mode) {
 
 ; dropDown: open just under the bar with its left edge near the mouse, like a dropdown from the
 ; button that opened it (Screens, from the bar's monitor button), instead of centred like the rest.
-PalOpen(mode, items, title, dropDown := false) {
+; sel: the row to start on (its place in items) instead of the first -- Wallpaper rotation reopens
+; on the interval in use once it's turned on.
+PalOpen(mode, items, title, dropDown := false, sel := 0) {
     global Pal
     PalClose()
     c := PalColors()
@@ -140,7 +142,7 @@ PalOpen(mode, items, title, dropDown := false) {
     g.OnEvent('Close', (*) => PalClose())
     MouseGetPos(&ox, &oy)                   ; Screen coordinates (WorkAreaUnderMouse, above)
     Pal.openPos := ox ',' oy                ; see PalMouseMove
-    PalRefresh()
+    PalRefresh(sel)
 
     if dropDown {
         CoordMode('Mouse', 'Screen')

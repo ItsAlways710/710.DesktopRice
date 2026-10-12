@@ -19,6 +19,7 @@ Throughout the manual, **SUPER** means the Windows key.
 | SUPER+K | This hotkey list |
 | SUPER+Q | Close the window (instead of Windows' search; Win+X stays Windows' own menu) |
 | SUPER+W | Wallpaper gallery |
+| SUPER+Ctrl+Alt+W | Wallpaper rotation: a random wallpaper every 15 minutes to every week, or off (a middle-click on the bar's wallpaper button opens the same menu; see [Wallpaper rotation](theming.md#wallpaper-rotation)) |
 | SUPER+B / SUPER+E | Browser / File Explorer |
 | SUPER+Y / SUPER+M | YouTube / YouTube Music, each in its own browser window (SUPER+M instead of Windows' "minimize all") |
 | SUPER+O | Obsidian (a toast says so if it isn't installed) |

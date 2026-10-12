@@ -71,6 +71,10 @@ unplugged screen's workspaces and windows wait for it, and come back with it, pi
   it's dimmed while Bluetooth is off, and a machine with no Bluetooth adapter doesn't show it
   at all. Middle-click either one for its page in Windows Settings.
 - **Battery:** next to them, on a machine that has one. Click it for the percentage.
+- **Wallpaper:** the button just before the notifications at the right end. Click it for the
+  gallery (the same as SUPER+W), right-click it for a random wallpaper, and middle-click it for
+  [Wallpaper rotation](theming.md#wallpaper-rotation): a random wallpaper every so often, or
+  off (SUPER+Ctrl+Alt+W opens the same menu).
 - **Capture drawer:** the screenshot icon after the window title (a screen with a capture frame)
   unfolds six ShareX buttons (region, screen recording, stop recording, text from screen, scan a
   QR code, color picker); the arrow folds them again. Hover a button for its name.

@@ -50,6 +50,7 @@ GamesToml := RepoRoot "\games.toml"
 #Include 710\rule-off.ahk
 #Include 710\menus.ahk
 #Include 710\palette-profiles.ahk
+#Include 710\wallpaper-rotation.ahk
 #Include 710\main-menu.ahk
 #Include 710\stack-control.ahk
 

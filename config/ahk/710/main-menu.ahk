@@ -100,7 +100,10 @@ RiceCommands := Map(
     'screen-recording',  (*) => Sharex('ScreenRecorder'),
     'stop-recording',    (*) => Sharex('StopScreenRecording'),
     'text-from-screen',  (*) => Sharex('OCR'),
-    'screens',           OpenScreensMenu)      ; the bar's monitor button -- no Start-menu command
+    'screens',           OpenScreensMenu,
+    'wallpaper-rotation', (*) => OpenWallpaperRotation(true))
+; The last two have no Start-menu command: the bar's monitor button runs screens, and a middle-click on
+; its wallpaper button runs wallpaper-rotation (the menu drops down under the bar, like Screens).
 for name, fn in RiceCommands
     OnMessage(AllowFromNormalProcesses(DllCall('RegisterWindowMessage', 'Str', '710sRice.Command.' name, 'UInt')), RiceCommandHandler(fn))
 RiceCommandHandler(fn) => (*) => SetTimer(() => fn(), -1)
