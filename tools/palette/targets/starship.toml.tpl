@@ -12,6 +12,9 @@
 
 add_newline = true
 scan_timeout = 100
+# Ported from winarchy 8e27ad8: the first prompt after a boot timed out on node at starship's
+# default 500 ms. 2 s is patience, not a hang.
+command_timeout = 2000
 
 format = """
 $directory$git_branch$git_status$git_state$cmd_duration$python$nodejs$rust
