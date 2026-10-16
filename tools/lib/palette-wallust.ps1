@@ -69,10 +69,49 @@ function Read-PaletteDump {
     $pal
 }
 
+# salience on a wallpaper with very little colour in it. Before salience picks, wallust 4.1.0-alpha
+# merges look-alike colours at a threshold of its own choosing; on a nearly black wallpaper, or one
+# that's nearly all one blue, that leaves it 3-4 colours, and salience reads past the end of its
+# list: a crash, not an error (exit 101, "panicked at src/histogram/salience.rs:115:51: index out of
+# bounds: the len is 3 but the index is 4"; :109 and :124 on other settings). Every sampling,
+# intensity, backend, saturation and style crashed the same; a fixed threshold didn't: 10 and 5
+# made palettes from both wallpapers in under 2 s, 20 still crashed on one (2026-10-16, the pinned
+# wallust under wine). A fixed threshold makes a different palette on every wallpaper (all 21
+# shipped ones changed), so it's only the second try, after a salience crash -- his call, 10-16.
+$script:PaletteSalienceRetryThresholds = @(10, 5)
+
+function Get-PaletteWallustFailure {
+    <# A failed run's reason, short: wallust's own Error: line; for a crash, its panic message and
+       where (Rust prints "thread 'main' panicked at <file:line:col>:" with the message on the next
+       line -- the RUST_BACKTRACE note and the spinner's last frame come after, and were all the
+       old "last two lines" kept); else the last two lines it printed; else the exit code. #>
+    param([Parameter(Mandatory)]$Run)
+    $lines = @($Run.Output)
+    $err = @($lines | Where-Object { $_ -match '^\s*Error:' } | Select-Object -First 1)
+    if ($err.Count) { return $err[0].Trim() }
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -notmatch 'panicked at (\S+?):?\s*$') { continue }
+        $where = $Matches[1]
+        $msg = @($lines | Select-Object -Skip ($i + 1) | Where-Object {
+            $_ -notmatch '^\s*(note:|stack backtrace:|\[I\])' -and $_ -notmatch 'Generating color scheme' } | Select-Object -First 1)
+        return "crashed -- $(if ($msg.Count) { $msg[0].Trim() } else { 'no message' }) ($where)"
+    }
+    $why = @($lines | Where-Object { $_ -notmatch '^\s*\[I\]' } | Select-Object -Last 2) -join ' / '
+    if ($why) { $why } else { "exit $($Run.ExitCode)" }
+}
+
+function Test-PaletteSalienceCrash {
+    # The crash above: a wallpaper source on salience, exit 101 (Rust's panic exit), panicking in salience's own code.
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Source, [Parameter(Mandatory)]$Run)
+    $Source.kind -eq 'wallpaper' -and $Source.method -eq 'salience' -and $Run.ExitCode -eq 101 -and
+        [bool](@($Run.Output) -match 'panicked at \S*salience\.rs')
+}
+
 function Get-PaletteFromSource {
-    <# Runs wallust for a source and returns its palette, or throws with a short reason (the
-       last line wallust printed). $DumpPath is deleted first, so an old dump can never pass for
-       a new one. #>
+    <# Runs wallust for a source and returns its palette, or throws with a short reason
+       (Get-PaletteWallustFailure). $DumpPath is deleted first, so an old dump can never pass for
+       a new one. A salience crash is tried again at fixed thresholds (above); a palette made that
+       way says so in palette.log. #>
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Source, [string]$Image,
           [Parameter(Mandatory)][string]$ConfigDir, [Parameter(Mandatory)][string]$DumpPath,
           [string]$Exe = (Get-PaletteWallustExe))
@@ -85,11 +124,19 @@ function Get-PaletteFromSource {
     $args2 = Get-PaletteWallustArgs -Source $Source -Image $Image -ConfigDir $ConfigDir
     $r = Invoke-PaletteWallust -Arguments $args2 -Exe $Exe
     if ($r.TimedOut) { throw 'wallust took longer than 30 s and was stopped' }
-    if ($r.ExitCode -ne 0) {
-        $why = @($r.Output | Where-Object { $_ -match '^\s*Error:' } | Select-Object -First 1) -join ''
-        if (-not $why) { $why = @($r.Output | Where-Object { $_ -notmatch '^\s*\[I\]' } | Select-Object -Last 2) -join ' / ' }
-        if (-not $why) { $why = "exit $($r.ExitCode)" }
-        throw "wallust failed: $why"
+    if ($r.ExitCode -ne 0 -and (Test-PaletteSalienceCrash -Source $Source -Run $r)) {
+        $first = Get-PaletteWallustFailure -Run $r
+        foreach ($t in $script:PaletteSalienceRetryThresholds) {
+            if (Test-Path -LiteralPath $DumpPath) { Remove-Item -LiteralPath $DumpPath -Force }
+            $r = Invoke-PaletteWallust -Arguments ($args2 + @('-t', "$t")) -Exe $Exe
+            if ($r.TimedOut) { throw "wallust took longer than 30 s and was stopped (salience again, at threshold $t)" }
+            if ($r.ExitCode -eq 0) {
+                Write-PaletteLog "salience crashed on $(Split-Path -Leaf $Image) at wallust's own threshold ($first) -- made at threshold $t instead"
+                break
+            }
+        }
+        if ($r.ExitCode -ne 0) { throw "wallust failed: $first; and again at thresholds $($script:PaletteSalienceRetryThresholds -join ' and ')" }
     }
+    if ($r.ExitCode -ne 0) { throw "wallust failed: $(Get-PaletteWallustFailure -Run $r)" }
     Read-PaletteDump -Path $DumpPath
 }

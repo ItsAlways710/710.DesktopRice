@@ -121,8 +121,11 @@ From a PowerShell 7 window, `710sRice palette` lists the profiles, `710sRice pal
 (or its name) switches, and `710sRice palette edit` / `710sRice palette new` open the editor.
 
 If wallust can't make a palette from a wallpaper, nothing is left half-themed: the last theme
-stays and a notification says why. `710sRice doctor` checks that the colors on screen are the
-ones the profile in use makes, and names the fix when they aren't.
+stays and a notification says why. One case gets a second try: wallust's `salience` crashes on a
+wallpaper with very little color in it (nearly black, say, or nearly all one blue), so 710sRice
+runs it again at a fixed threshold, which makes a palette from most of them; `palette.log` in
+the logs folder (`710sRice logs`) says when it did. `710sRice doctor` checks that the colors on
+screen are the ones the profile in use makes, and names the fix when they aren't.
 
 Theming another app takes one small file; `tools/palette/targets/README.md` explains how,
 with Flow Launcher as the example.
