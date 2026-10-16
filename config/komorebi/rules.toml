@@ -44,3 +44,10 @@ exe = "ShareX.exe"
 # sticks: nothing tiled, nothing on the taskbar. The split-second flash of the reload stays.
 [[ignore]]
 class = "AutoHotkey"
+
+# Obsidian's vault manager -- the small window for opening or creating a vault, titled just
+# "Obsidian" -- floats instead of tiling. An exact-title match (Equals, the default), so the
+# main window still tiles: by the time it's shown its title is "<vault> - Obsidian <version>"
+# (it's "Obsidian" only for a moment while it starts). Proven as a local rule on Godzilla first.
+[[floating]]
+title = "Obsidian"
