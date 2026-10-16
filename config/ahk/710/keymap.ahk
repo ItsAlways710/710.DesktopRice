@@ -77,6 +77,8 @@ ParseKeymap(path, defaultTitle := '') {
             key := '1..9'
         else if (key = 'Left')
             key := Chr(0x2190) '/' Chr(0x2192) '/' Chr(0x2191) '/' Chr(0x2193)
+        else if (key = 'LButton' || key = 'RButton')           ; window-drag.ahk's: SUPER+Left drag
+            key := (key = 'LButton' ? 'Left' : 'Right') ' drag'
         desc := RegExMatch(rest, ';\s*(.+)$', &md) ? Trim(md[1]) : Trim(rest)
         disp := 'SUPER+' (InStr(mods, '+') ? 'Shift+' : '') (InStr(mods, '^') ? 'Ctrl+' : '') (InStr(mods, '!') ? 'Alt+' : '') key
         cur.items.Push({keys: disp, desc: StrUpper(SubStr(desc, 1, 1)) SubStr(desc, 2)})

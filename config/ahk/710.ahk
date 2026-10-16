@@ -30,6 +30,7 @@ GamesToml := RepoRoot "\games.toml"
 ; (ReadScriptText, 710\keymap.ahk).
 #Include 710\komorebi.ahk
 #Include 710\komorebi-keys.ahk
+#Include 710\window-drag.ahk
 #Include 710\sharex.ahk
 #Include 710\apps.ahk
 #Include 710\palette.ahk

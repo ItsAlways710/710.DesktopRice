@@ -165,6 +165,7 @@ inside them (`; ====` banners), reading the parts in place (`ReadScriptText`, `k
 |---|---|
 | `komorebi.ahk` | `Komorebic`, `QueryKomorebic`, `LaunchOnCursorMonitor`, `CloseWindow`, `RedrawApp`, `EndGpuHelpers` |
 | `komorebi-keys.ahk` | The window, focus, move, stack, resize, workspace and monitor hotkeys |
+| `window-drag.ahk` | SUPER+left-drag moves a window (dropped on a tile, it swaps with it; on another screen, it moves there) and SUPER+right-drag resizes it: `WindowDrag`, `DragMove`, `DragKomorebiScreenAt`, `DragResize` |
 | `sharex.ahk` | `Sharex()` and the capture hotkeys |
 | `apps.ahk` | App launchers: browser, Explorer, web apps, Obsidian, Claude |
 | `palette.ahk` | `PalOpen` and the themed popup every menu uses |

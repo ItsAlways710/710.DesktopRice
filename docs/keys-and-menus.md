@@ -30,6 +30,7 @@ Throughout the manual, **SUPER** means the Windows key.
 | SUPER+Ctrl+C | Redraw the app you're on: fixes the extra title bar a bar restart can leave on Chrome, the Claude app and other Chromium apps (see [Tips and known issues](troubleshooting.md#tips-and-known-issues)) |
 | SUPER+Arrows | Move focus |
 | SUPER+Shift+Arrows | Move the window |
+| SUPER+left-drag / SUPER+right-drag | Grab a window anywhere: drop it on another tile to swap with it, or on another screen to move it there / resize it from the nearest edge or corner |
 | SUPER+Alt+Arrows | Stack the window with its neighbor (tabs show on the stack); SUPER+Alt+, / SUPER+Alt+. switch tabs, SUPER+Alt+U unstacks |
 | SUPER+1…9 | Go to workspace 1–9 of the screen you're on (every screen has nine) |
 | SUPER+Shift+1…9 | Move the window to workspace 1–9 of its screen |
