@@ -174,7 +174,7 @@ try { Restore-FullTimeWindowsSettings -DryRun:$DryRun -FullTime $ComponentCtx.Fu
 catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_.Exception.Message)" }
 
 # --- 3. Revert unconditional install.ps1 steps: shell profile,
-#        wallpaper/accent/Terminal/Flow theming ----------------------------------------
+#        wallpaper/accent/Terminal/Flow/Obsidian theming -------------------------------
 # All of Section 4/8/9's effects below are also unconditional -- install.ps1 reaches them
 # whether or not -Activate was used -- so, like the shell profile hook, they're reverted
 # here regardless of -Activate history. Each Restore-* function is its own safe no-op if
@@ -184,14 +184,15 @@ catch { Step-Warn "Put back the taskbar / Windows settings / Startup delay: $($_
 Write-Host "`n-- Revert shell profile --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Remove the pwsh $PROFILE hook' { Remove-ShellProfile }
 
-# The theme's reverts: tools\steps\theme.ps1; the lock screen's: tools\lib\lockscreen.ps1.
-Write-Host "`n-- Revert wallpaper / lock screen / accent color / Flow Launcher --" -ForegroundColor Cyan
+# The theme's reverts: tools\steps\theme.ps1; the lock screen's: tools\lib\lockscreen.ps1; Obsidian's: tools\lib\obsidian.ps1.
+Write-Host "`n-- Revert wallpaper / lock screen / accent color / Flow Launcher / Obsidian --" -ForegroundColor Cyan
 Invoke-ActivationRevert 'Restore original desktop wallpaper' { Undo-Wallpaper }
 # After section 2's hardening revert: Restore-LockScreenPicture writes back the Spotlight /
 # Slideshow settings from before 710sRice, and hardening's revert must not undo them.
 Invoke-ActivationRevert 'Restore original lock-screen picture' { Undo-LockScreenPicture -WasFullTime $ComponentCtx.FullTime }
 Invoke-ActivationRevert 'Restore original Windows accent color / dark-mode settings' { Undo-WindowsAccent }
 Invoke-ActivationRevert 'Restore Flow Launcher''s own theme (Palette Profiles themed it)' { Undo-FlowTheme }
+Invoke-ActivationRevert 'Restore Obsidian''s vaults (Palette Profiles themed them)' { Undo-ObsidianTheme }
 
 # Each component's own revert (its Uninstall: restore from its snapshots, remove what it
 # added), the last one install runs first -- before the env vars and packages below go, like

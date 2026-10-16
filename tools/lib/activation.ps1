@@ -42,6 +42,7 @@ if (-not (Get-Command Get-RiceComponents -ErrorAction SilentlyContinue)) { . (Jo
 . (Join-Path $PSScriptRoot 'fonts.ps1')
 . (Join-Path $PSScriptRoot 'terminal.ps1')
 . (Join-Path $PSScriptRoot 'flow.ps1')
+. (Join-Path $PSScriptRoot 'obsidian.ps1')
 . (Join-Path $PSScriptRoot 'fulltime.ps1')
 . (Join-Path $PSScriptRoot 'stack.ps1')
 . (Join-Path $PSScriptRoot 'tiling.ps1')

@@ -65,7 +65,7 @@ your `rules.local.toml`.
 
 Before install changes something that was already there (your wallpaper, lock screen, accent
 color, Windows Terminal's settings, Flow Launcher's, ShareX's and Everything's settings,
-komorebi's and YASB's config variables, your PowerShell profile, Defender exclusions), it saves
+each Obsidian vault's appearance settings, komorebi's and YASB's config variables, your PowerShell profile, Defender exclusions), it saves
 how it was, once, to `%LOCALAPPDATA%\710.DesktopRice\original-state\`. A second install, or a
 wallpaper change, never overwrites that copy with what is by then 710sRice's own state. Going
 full-time saves your taskbar and Windows settings the same way. Uninstall puts each one back from

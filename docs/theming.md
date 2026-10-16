@@ -2,7 +2,7 @@
 
 Change the wallpaper with **SUPER+W** (or the wallpaper button on the bar) and everything
 recolors to match: the bar, komorebi's window borders and stack tabs, the Windows accent
-color, Windows Terminal, the prompt, the menus, Flow Launcher and the lock screen. wallust
+color, Windows Terminal, the prompt, the menus, Flow Launcher, Obsidian and the lock screen. wallust
 does the color picking; the [palette profile](#palette-profiles) in use decides how, and
 which color goes where.
 
@@ -126,6 +126,20 @@ wallpaper with very little color in it (nearly black, say, or nearly all one blu
 runs it again at a fixed threshold, which makes a palette from most of them; `palette.log` in
 the logs folder (`710sRice logs`) says when it did. `710sRice doctor` checks that the colors on
 screen are the ones the profile in use makes, and names the fix when they aren't.
+
+**Obsidian** gets the palette in every vault it lists on this machine: a CSS snippet,
+`.obsidian/snippets/710rice.css`, switched on in that vault's appearance settings (Settings >
+Appearance > CSS snippets). Your Obsidian theme stays; the snippet's colors sit on top of it, in
+light and dark mode alike. The accent (links, tags, buttons and checkboxes) is the palette's too,
+but only as the default: pick your own in Settings > Appearance > Accent color and it stays
+through every wallpaper change; that setting's restore-default arrow brings the palette's back.
+Obsidian repaints the moment the snippet changes, so every wallpaper
+change recolors it as it is; the first time only, restart Obsidian once, because it reads which
+snippets are on when it starts. A vault you sync between machines needs those two files,
+`.obsidian/snippets/710rice.css` and `.obsidian/appearance.json`, kept out of the sync on every
+machine (Syncthing: an ignore pattern for each; Obsidian Sync: its appearance settings and its
+themes and snippets switched off): each machine makes its own from its own wallpaper, and synced,
+they'd overwrite each other. To keep Obsidian's own colors, switch Obsidian off in the profile.
 
 Theming another app takes one small file; `tools/palette/targets/README.md` explains how,
 with Flow Launcher as the example.

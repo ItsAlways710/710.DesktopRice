@@ -234,6 +234,7 @@ function Get-DoctorGroups {
         ) }
         [pscustomobject]@{ Title = 'Integrations'; Checks = @(
             @{ Id = 'flow-theme'; Name = 'Flow Launcher theme';  Run = { Test-DoctorFlowTheme } }
+            @{ Id = 'obsidian-theme'; Name = 'Obsidian theme';   Run = { Test-DoctorObsidianTheme } }
             @{ Id = 'profile';    Name = 'Shell profile hook';   Run = { Test-DoctorProfileHook } }
             @{ Id = 'windows';    Name = 'Windows settings';     Run = { Test-DoctorWindowsSettings } }
         ) }

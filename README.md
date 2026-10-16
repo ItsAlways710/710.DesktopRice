@@ -22,7 +22,7 @@ But I knew there was more. So the palette profile was born, and to me it's one o
 
 **Palette profiles.** Change the wallpaper with <kbd>SUPER</kbd>+<kbd>W</kbd> and everything
 recolors to match: the bar, window borders, the Windows accent, Windows Terminal and the prompt,
-the menus, Flow Launcher and the lock screen. [A palette profile](docs/theming.md#palette-profiles) decides how those colors
+the menus, Flow Launcher, Obsidian and the lock screen. [A palette profile](docs/theming.md#palette-profiles) decides how those colors
 are made and which goes where. Default ships with it; make up to ten of your own in
 [the editor](docs/theming.md#palette-profiles), from the wallpaper, from about 600 built-in themes, or a random one each
 time.
