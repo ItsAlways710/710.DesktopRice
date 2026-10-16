@@ -543,89 +543,8 @@ function Get-PaletteSourceKey {
     }
 }
 
-function Get-PaletteWallustArgs {
-    <# wallust's arguments for a source. Always -s (never touch Windows Terminal) and the dump
-       config dir; templates stay on (the dump IS a template). #>
-    param([Parameter(Mandatory)][System.Collections.IDictionary]$Source, [string]$Image,
-          [Parameter(Mandatory)][string]$ConfigDir)
-    switch ($Source.kind) {
-        'wallpaper' {
-            $a = @('run', $Image, '--config-dir', $ConfigDir, '-s', '-p', $Source.method)
-            # -S only means something to salience and ansi (the notes' test: kmeans ignores it).
-            if ($Source.method -ne 'kmeans') { $a += @('-S', $Source.style) }
-            if ($Source.saturation) { $a += @('--saturation', "$([int]$Source.saturation)") }
-            if ($Source.colors16) { $a += '--use16cols' }
-            return , $a
-        }
-        'match'  { return , @('pick', $Image, '--config-dir', $ConfigDir, '-s', '-b') }
-        'theme'  { return , @('theme', $Source.name, '--config-dir', $ConfigDir, '-s') }
-        'random' { return , @('theme', 'random', '--config-dir', $ConfigDir, '-s') }
-        'scheme' { return , @('cs', (Join-Path (Get-PaletteSchemesDir) $Source.file), '--config-dir', $ConfigDir, '-s') }
-    }
-}
-
-function Invoke-PaletteWallust {
-    <# Runs wallust with the given arguments (no shell, no console window), UTF-8 output, a time
-       limit. -> ExitCode, Output (lines, escape codes stripped), TimedOut. #>
-    param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSec = 30, [string]$Exe = (Get-PaletteWallustExe))
-    $psi = [System.Diagnostics.ProcessStartInfo]::new($Exe)
-    foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
-    $psi.Environment['RUST_BACKTRACE'] = '0'   # a failure's reason is its Error: line, never a backtrace
-    $p = [System.Diagnostics.Process]::Start($psi)
-    $out = $p.StandardOutput.ReadToEndAsync()
-    $err = $p.StandardError.ReadToEndAsync()
-    $timedOut = -not $p.WaitForExit($TimeoutSec * 1000)
-    if ($timedOut) { try { $p.Kill($true) } catch { } ; $null = $p.WaitForExit(5000) }
-    $text = ''
-    try { $text = $out.GetAwaiter().GetResult() + "`n" + $err.GetAwaiter().GetResult() } catch { }
-    $lines = @($text -split "`r?`n" | ForEach-Object { ($_ -replace '\x1b\[[0-9;]*[A-Za-z]', '' -replace '\x1b\][^\x07\x1b]*(\x07|\x1b\\)?', '').TrimEnd() } | Where-Object { $_.Trim() })
-    [pscustomobject]@{ ExitCode = $(if ($timedOut) { -1 } else { $p.ExitCode }); Output = $lines; TimedOut = $timedOut }
-}
-
-function Read-PaletteDump {
-    <# The dump template's JSON -> an ordered palette of 19 '#RRGGBB' slots, or a throw. #>
-    param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { throw "wallust didn't write its palette" }
-    try { $d = [IO.File]::ReadAllText($Path) | ConvertFrom-Json -AsHashtable }
-    catch { throw "wallust's palette isn't readable JSON" }
-    $pal = [ordered]@{}
-    foreach ($k in $script:PaletteSlots) {
-        if (-not (Test-PaletteHex "$($d[$k])")) { throw "wallust's palette has no usable $k ('$($d[$k])')" }
-        $pal[$k] = "$($d[$k])"
-    }
-    $pal
-}
-
-function Get-PaletteFromSource {
-    <# Runs wallust for a source and returns its palette, or throws with a short reason (the
-       last line wallust printed). $DumpPath is deleted first, so an old dump can never pass for
-       a new one. #>
-    param([Parameter(Mandatory)][System.Collections.IDictionary]$Source, [string]$Image,
-          [Parameter(Mandatory)][string]$ConfigDir, [Parameter(Mandatory)][string]$DumpPath,
-          [string]$Exe = (Get-PaletteWallustExe))
-    if (-not (Test-Path -LiteralPath $Exe)) { throw "wallust isn't installed (710sRice install -Only wallust)" }
-    if ((Test-PaletteSourceUsesImage $Source) -and (-not $Image -or -not (Test-Path -LiteralPath $Image))) { throw "the wallpaper file isn't there" }
-    if ($Source.kind -eq 'scheme' -and -not (Test-Path -LiteralPath (Join-Path (Get-PaletteSchemesDir) $Source.file))) {
-        throw "scheme file $($Source.file) isn't in config\palettes\schemes"
-    }
-    if (Test-Path -LiteralPath $DumpPath) { Remove-Item -LiteralPath $DumpPath -Force }
-    $args2 = Get-PaletteWallustArgs -Source $Source -Image $Image -ConfigDir $ConfigDir
-    $r = Invoke-PaletteWallust -Arguments $args2 -Exe $Exe
-    if ($r.TimedOut) { throw 'wallust took longer than 30 s and was stopped' }
-    if ($r.ExitCode -ne 0) {
-        $why = @($r.Output | Where-Object { $_ -match '^\s*Error:' } | Select-Object -First 1) -join ''
-        if (-not $why) { $why = @($r.Output | Where-Object { $_ -notmatch '^\s*\[I\]' } | Select-Object -Last 2) -join ' / ' }
-        if (-not $why) { $why = "exit $($r.ExitCode)" }
-        throw "wallust failed: $why"
-    }
-    Read-PaletteDump -Path $DumpPath
-}
+# Running wallust (tools\lib\palette-wallust.ps1: every caller of this library has it)
+. (Join-Path $PSScriptRoot 'palette-wallust.ps1')
 
 # ------------------------------------------------------------------------------------------
 # Resolution: profile + palette -> roles + every target's properties
@@ -775,7 +694,8 @@ function Test-PaletteIsAdmin {
 # ------------------------------------------------------------------------------------------
 function Get-PaletteThemeInputs {
     <# Everything that decides the colours, as "repo-relative path -> LF sha256": the entry
-       script, this library and the palette-files.ps1 and palette-expressions.ps1 it loads, every
+       script, this library and the palette-files.ps1, palette-expressions.ps1 and
+       palette-wallust.ps1 it loads, every
        file in tools\palette\targets, and the active profile as "profile:<id>" (its file's hash --
        Default's file when Default is active). The pipeline writes these lines LAST
        (theme-inputs.sha256); doctor recomputes and compares. #>
@@ -786,6 +706,7 @@ function Get-PaletteThemeInputs {
     $inputs['tools\lib\palette.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette.ps1')
     $inputs['tools\lib\palette-files.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette-files.ps1')
     $inputs['tools\lib\palette-expressions.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette-expressions.ps1')
+    $inputs['tools\lib\palette-wallust.ps1'] = Get-PaletteLfSha256 -Path (Join-Path $root 'tools\lib\palette-wallust.ps1')
     foreach ($f in @(Get-ChildItem -LiteralPath (Get-PaletteTargetsDir) -File | Sort-Object Name)) {
         $inputs["tools\palette\targets\$($f.Name)"] = Get-PaletteLfSha256 -Path $f.FullName
     }
