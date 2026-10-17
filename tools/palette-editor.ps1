@@ -755,7 +755,7 @@ function Update-Preview {
     }
     $acc = $th.Targets['windows']['accent']
     if ($acc) { $script:Ui.MockAccentText.Foreground = Get-Brush (Get-TextOn $acc) }
-    # An app that's off keeps its own colors: its mock is dimmed and says so.
+    # An app that's off keeps whatever colors it has: its mock is dimmed and says so.
     $off = @($script:Work.off)
     foreach ($pair in @(@('yasb', 'MockBar', 'CapBar', 'BAR'), @('menus', 'MockMenu', 'CapMenu', 'MENUS'), @('flow', 'MockFlow', 'CapFlow', 'FLOW LAUNCHER'),
                         @('terminal', 'MockTerm', 'CapTerm', 'WINDOWS TERMINAL AND THE PROMPT'), @('komorebi', 'MockWin', 'CapWin', 'WINDOWS: BORDERS, STACK TABS, ACCENT'))) {

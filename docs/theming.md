@@ -102,7 +102,8 @@ The editor has:
   any of them can have a color of its own instead. Built-in themes and scheme files come in
   terminal order, so the **Terminal order** button suits them better than Default's map.
 - **Readable text** (colors too dim to read get lifted), **light or dark** Windows apps, and
-  which apps the profile themes at all. An app that's switched off keeps its own colors.
+  which apps the profile themes at all. An app that's switched off keeps whatever colors it
+  has: the profile leaves it alone.
 - **Preview**: the bar, the menus, Flow Launcher, Terminal and the prompt, window borders,
   stack tabs and the Windows accent, in the profile's colors on your wallpaper. Click any
   color in it to change it.
@@ -139,7 +140,9 @@ snippets are on when it starts. A vault you sync between machines needs those tw
 `.obsidian/snippets/710rice.css` and `.obsidian/appearance.json`, kept out of the sync on every
 machine (Syncthing: an ignore pattern for each; Obsidian Sync: its appearance settings and its
 themes and snippets switched off): each machine makes its own from its own wallpaper, and synced,
-they'd overwrite each other. To keep Obsidian's own colors, switch Obsidian off in the profile.
+they'd overwrite each other. To go back to Obsidian's own colors, switch Obsidian off in your
+profile (Default can't be changed: **Save as new**), so the palette leaves it alone, then switch
+710rice off in each vault's Settings > Appearance > CSS snippets.
 
 Theming another app takes one small file; `tools/palette/targets/README.md` explains how,
 with Flow Launcher as the example.
