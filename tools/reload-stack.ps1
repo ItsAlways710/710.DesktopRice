@@ -45,8 +45,8 @@
        komorebi was restarted in step 2 (the widgets need the new komorebi), or config.yaml
        differs from the fingerprint Start-Yasb.ps1 recorded at YASB's last start (or there
        is none). Otherwise it's left alone -- every restart makes Windows re-broadcast the
-       work area (YASB is an app bar), and Chromium apps (Chrome, Claude Desktop) can pick
-       up an extra title bar from it (plan doc Open item 40). styles.css and wallpaper
+       work area (YASB is an app bar) and moves every window twice (Chromium's extra title
+       bar, plan doc Open item 40, until base.json's Async). styles.css and wallpaper
        colours hot-reload on their own (watch_stylesheet) and never needed the restart.
        This script never STARTS the bar: only 710.ahk does (config\ahk\710.ahk, "The apps
        710.ahk starts" -- a bar started any other way runs in a job that keeps what you open

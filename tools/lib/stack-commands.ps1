@@ -158,7 +158,7 @@ function Invoke-RiceReloadBar {
 function Invoke-RiceRestart {
     # `restart` = stop, then start: the whole stack, every time. SUPER+Shift+R (`reload`) no
     # longer is that -- it restarts komorebi only when a rule was removed, and YASB only when
-    # it has to (Chromium apps' extra title bar per bar restart, plan doc #40). In between, it
+    # it has to (a bar restart moves every window twice, plan doc #40). In between, it
     # waits until everything has really exited: each launcher leaves alone a component it still
     # sees running, and Stop-All only gives each stop a few hundred ms. Something still up after
     # 10 s (Stop-All has already said why) keeps running as it was; the rest start anyway.

@@ -315,10 +315,11 @@ Start with `710sRice doctor` (or **Doctor** in the main menu). An `[XX]` is a pr
 `710sRice doctor -repair` fixes, unless doctor says it needs you; a `[!!]` is worth a look.
 
 <details>
-<summary><b>An app came back with an extra title bar after the bar restarted</b></summary>
+<summary><b>An app has an extra title bar, and clicks land a row off</b></summary>
 
-Chromium-based apps (Chrome, the Claude desktop app) can come back drawing a row low. Focus the
-app and press <kbd>SUPER</kbd>+<kbd>Ctrl</kbd>+<kbd>C</kbd>: it redraws in place. Keep it a
+Chromium-based apps (Chrome, Discord, Obsidian, the Claude desktop app) could pick one up when the
+bar restarted or a screen changed; a komorebi setting stops that now. If an app still shows one,
+focus it and press <kbd>SUPER</kbd>+<kbd>Ctrl</kbd>+<kbd>C</kbd>: it redraws in place. Keep it a
 now-and-then key ([why](docs/troubleshooting.md#tips-and-known-issues)).
 </details>
 

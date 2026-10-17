@@ -2,16 +2,18 @@
 
 ## Tips and known issues
 
-- **Extra title bar on an app after the bar restarts.** When the bar restarts it gives its
-  screen strip back and takes it again, and Windows tells every window. Chromium-based apps
-  (Chrome and the Claude desktop app so far; Edge never has) can come back drawing a row
-  low: an extra title bar on top, the bottom pushed off screen, clicks landing a row off.
-  Focus that app and press **SUPER+Ctrl+C**: its drawing helper restarts and the app redraws
-  in place without closing (relaunching it works too). Chromium switches an app to slower
-  software drawing after three of these close together (it forgives one every 5 minutes),
-  so keep it a now-and-then key. SUPER+Shift+R only restarts the bar when it has to (its
-  `config.yaml` changed, or komorebi restarted), so this is rare; `710sRice reload bar` and
-  `710sRice restart` always do.
+- **Extra title bar on an app.** When the space windows can use changes (the bar restarts,
+  a screen goes on or off, a screen's scale changes), Chromium-based apps (Chrome, Discord,
+  Obsidian, the Claude desktop app) move themselves into the new space, and komorebi moves
+  them at the same moment. With komorebi's default way of moving windows, the two moves could
+  land together and leave the app drawing a row low: an extra title bar on top, the bottom
+  pushed off screen, clicks landing a row off, and another row each time. 710sRice has
+  komorebi hand each move to the app to make in its own turn
+  (`window_handling_behaviour: Async` in `config\komorebi\base.json`), so the two no longer
+  collide. If an app still shows one (it was hit before you updated, say), focus it and press
+  **SUPER+Ctrl+C**: its drawing helper restarts and the app redraws in place without closing
+  (relaunching it works too). Chromium switches an app to slower software drawing after three
+  of these close together (it forgives one every 5 minutes), so keep it a now-and-then key.
 - **Widgets button still on the taskbar?** Windows won't let a script hide it. Turn it off
   in Settings > Personalization > Taskbar.
 - **Changed a wallpaper variable?** Restart the bar: `710sRice reload bar`.

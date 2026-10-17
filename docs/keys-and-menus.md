@@ -27,7 +27,7 @@ Throughout the manual, **SUPER** means the Windows key.
 | SUPER+Shift+A | Claude desktop app |
 | SUPER+Shift+R | Reload: re-applies config and rules, restarting only what changed |
 | SUPER+Ctrl+R | Restart the whole stack (stop, then start everything); a toast before and after |
-| SUPER+Ctrl+C | Redraw the app you're on: fixes the extra title bar a bar restart can leave on Chrome, the Claude app and other Chromium apps (see [Tips and known issues](troubleshooting.md#tips-and-known-issues)) |
+| SUPER+Ctrl+C | Redraw the app you're on: clears an extra title bar from Chrome, the Claude app or another Chromium app (see [Tips and known issues](troubleshooting.md#tips-and-known-issues)) |
 | SUPER+Arrows | Move focus |
 | SUPER+Shift+Arrows | Move the window |
 | SUPER+left-drag / SUPER+right-drag | Grab a window anywhere: drop it on another tile to swap with it, or on another screen to move it there / resize it from the nearest edge or corner |

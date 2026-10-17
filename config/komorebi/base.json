@@ -9,6 +9,7 @@
   "border_offset": -1,
   "border_style": "Rounded",
   "border_implementation": "Windows",
+  "window_handling_behaviour": "Async",
   "transparency": false,
   "transparency_alpha": 220,
   "mouse_follows_focus": false,

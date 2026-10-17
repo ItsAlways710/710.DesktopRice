@@ -101,9 +101,11 @@ CloseWindow() {
     }
 }
 
-; SUPER+Ctrl+C: redraw the focused app (plan doc Open item 40). A bar restart moves the bar's screen strip, and a
-; Chromium / Electron app (Chrome, the Claude desktop app, Discord...) can come back drawing a row low -- an extra
-; title bar on top, every click a row off -- until it's relaunched. What's stuck is the app's drawing helper, its
+; SUPER+Ctrl+C: redraw the focused app (plan doc Open item 40). When the work area changes (a bar restart, a screen
+; or scale change), a Chromium / Electron app (Chrome, the Claude desktop app, Discord...) moves itself while komorebi
+; moves it too. On komorebi's default (Sync) handling the two could collide and leave the app drawing a row low -- an
+; extra title bar on top, every click a row off -- until it's relaunched; base.json's window_handling_behaviour:
+; Async stops that (2026-10-17), and this stays the cure for an app hit anyway. What's stuck is its drawing helper, its
 ; --type=gpu-process child: end just that one and Chromium starts a fresh helper and redraws in place; the app itself
 ; never closes (proven on the Dell 2026-10-02 with Stop-Process; this ends it the same way, TerminateProcess with
 ; exit code -1). The focused app only, on purpose. Chromium puts an app on slow software drawing after three helper
